@@ -1,0 +1,21 @@
+{
+  "name": "sendtrace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SendTrace — painel da régua de pós-venda: em qual etapa cada pedido está, o que cada etapa envia e quantos clientes há em cada uma.",
+  "type": "module",
+  "scripts": {
+    "setup": "node --env-file-if-exists=.env server/setup.js",
+    "start": "node --env-file-if-exists=.env server/index.js",
+    "dev": "node --env-file-if-exists=.env --watch server/index.js",
+    "senha": "node --env-file-if-exists=.env server/senha.js"
+  },
+  "//scripts": "env-file-if-exists (não env-file): fora do container o .env manda; dentro dele não existe arquivo nenhum e as variáveis vêm do ambiente. O mesmo comando serve nos dois lugares.",
+  "engines": {
+    "node": ">=20.18"
+  },
+  "dependencies": {
+    "nodemailer": "^9.0.3",
+    "pg": "^8.13.1"
+  }
+}

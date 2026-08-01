@@ -1,0 +1,189 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Deploy do SendTrace no VPS
+#
+#  Constrói a imagem AQUI (runner do GitHub) e o VPS só baixa e sobe. Um VPS
+#  pequeno compilando a cada push gasta CPU e disco, e o que iria ao ar seria
+#  um artefato diferente do que passou pelo CI.
+#
+#  Roda a cada push na main, ou manualmente pela aba Actions.
+# ═══════════════════════════════════════════════════════════════════════════
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # Dois deploys ao mesmo tempo no mesmo servidor se atropelam. O novo espera
+  # o anterior — não cancela, porque um deploy cortado no meio deixa o VPS
+  # num estado indefinido.
+  group: deploy-producao
+  cancel-in-progress: false
+
+env:
+  REGISTRO: ghcr.io
+  IMAGEM: ${{ github.repository }}
+
+jobs:
+  # ── 1. o código ao menos carrega? ────────────────────────────────────────
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      # Barreira barata: um erro de sintaxe pararia o painel no ar, e é o tipo
+      # de coisa que o `node --check` pega em segundos.
+      - name: Sintaxe de todos os módulos
+        run: |
+          erros=0
+          for f in server/*.js public/*.js; do
+            node --check "$f" || { echo "FALHOU: $f"; erros=1; }
+          done
+          exit $erros
+
+      # O .env NUNCA pode estar versionado: ele tem a senha do banco.
+      - name: O .env vazou para o repositório?
+        run: |
+          if git ls-files --error-unmatch .env 2>/dev/null; then
+            echo "::error::.env está versionado. Remova com: git rm --cached .env"
+            exit 1
+          fi
+          echo "ok: .env fora do versionamento"
+
+  # ── 2. imagem ────────────────────────────────────────────────────────────
+  construir:
+    needs: verificar
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Entrar no registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRO }}
+          username: ${{ github.actor }}
+          # Token que o próprio Actions gera. Não precisa criar segredo.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Nome da imagem
+        id: meta
+        run: |
+          # Minúsculas: o Docker recusa maiúsculas no nome da imagem, e nome
+          # de usuário/organização no GitHub pode ter.
+          nome=$(echo "${{ env.REGISTRO }}/${{ env.IMAGEM }}" | tr '[:upper:]' '[:lower:]')
+          echo "tag=${nome}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "nome=${nome}" >> "$GITHUB_OUTPUT"
+
+      - name: Construir e publicar
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # Tag pelo commit E `latest`. A do commit é o que permite voltar
+          # atrás: `IMAGEM=...:<sha antigo> docker compose up -d`.
+          tags: |
+            ${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.nome }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── 3. subir no VPS ──────────────────────────────────────────────────────
+  publicar:
+    needs: construir
+    runs-on: ubuntu-latest
+    environment: producao
+    steps:
+      - name: Enviar para o VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+
+          # Dois caminhos de autenticação. Preencha UM dos dois segredos:
+          #
+          #   VPS_SSH_KEY  chave privada  — preferível: dá para desligar o
+          #                login por senha no servidor, e revogar é apagar
+          #                uma linha do authorized_keys.
+          #
+          #   VPS_SENHA    senha do usuário — mais simples de configurar, mas
+          #                obriga o SSH a continuar aceitando senha, então o
+          #                servidor segue recebendo tentativas de adivinhação.
+          #                Se usar, instale o fail2ban (ver DEPLOY.md).
+          #
+          # A action usa a chave quando ela existe e cai na senha quando não.
+          key: ${{ secrets.VPS_SSH_KEY }}
+          password: ${{ secrets.VPS_SENHA }}
+
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd ${{ secrets.VPS_CAMINHO }}
+
+            # Sem `docker login`: o pacote é público, então o VPS baixa sem
+            # credencial nenhuma. Um segredo a menos para guardar e renovar.
+            echo "→ baixando ${{ needs.construir.outputs.tag }}"
+            export IMAGEM='${{ needs.construir.outputs.tag }}'
+            # Grava a tag no .env do servidor: sem isto, um `docker compose up`
+            # feito à mão depois voltaria para `latest` e desfaria um rollback.
+            grep -v '^IMAGEM=' .env > .env.novo 2>/dev/null || true
+            echo "IMAGEM=$IMAGEM" >> .env.novo
+            mv .env.novo .env
+
+            # O erro de "não achei a imagem" é o MESMO para pacote privado e
+            # para pacote inexistente. Sem esta explicação, o primeiro deploy
+            # falha com "denied" e ninguém adivinha que falta um clique na
+            # visibilidade do pacote.
+            if ! docker compose -f docker-compose.prod.yml pull; then
+              echo ""
+              echo "════════════════════════════════════════════════════════"
+              echo " Não consegui baixar a imagem."
+              echo ""
+              echo " Se este é o PRIMEIRO deploy, o pacote acabou de nascer"
+              echo " PRIVADO. Torne-o público — uma vez só:"
+              echo ""
+              echo "   GitHub → seu perfil → Packages → sendtrace"
+              echo "   → Package settings → Danger Zone"
+              echo "   → Change visibility → Public"
+              echo ""
+              echo " Depois clique em Re-run jobs aqui no Actions."
+              echo "════════════════════════════════════════════════════════"
+              exit 1
+            fi
+
+            echo "→ migrações (idempotentes, com trava entre processos)"
+            docker compose -f docker-compose.prod.yml run --rm painel npm run setup
+
+            echo "→ subindo"
+            docker compose -f docker-compose.prod.yml up -d
+
+            echo "→ esperando ficar saudável"
+            for i in $(seq 1 30); do
+              if curl -fsS http://127.0.0.1:4300/api/vivo > /dev/null 2>&1; then
+                echo "no ar:"
+                curl -s http://127.0.0.1:4300/api/vivo
+                echo
+                docker image prune -f --filter "until=168h" || true
+                exit 0
+              fi
+              sleep 2
+            done
+
+            echo "::error::o painel não respondeu em 60s"
+            docker compose -f docker-compose.prod.yml logs --tail=50 painel
+            exit 1

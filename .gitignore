@@ -1,0 +1,34 @@
+# ── segredos ────────────────────────────────────────────────────────
+# O .env tem a senha do banco e o token do n8n. Uma vez enviado ao
+# GitHub ele fica no HISTÓRICO, mesmo se apagado no commit seguinte — e
+# a única correção real passa a ser trocar todas as credenciais.
+.env
+.env.*
+!.env.example
+
+# Chaves e certificados, caso algum dia parem nesta pasta.
+*.pem
+*.key
+id_rsa*
+*.p12
+
+# ── dependências e artefatos ────────────────────────────────────────
+node_modules/
+*.log
+npm-debug.log*
+
+# Dumps e backups do banco: contêm dados pessoais de clientes.
+*.sql.gz
+*.dump
+backups/
+
+# Configuração local da ferramenta de desenvolvimento: caminhos desta
+# máquina, não faz parte do projeto.
+.claude/
+
+# ── editores e sistema ──────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

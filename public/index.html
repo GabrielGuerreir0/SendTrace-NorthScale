@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SendTrace · régua de pós-venda</title>
+<link rel="stylesheet" href="styles.css">
+<!-- Favicon: o mesmo rastro da marca, desenhado em vetor para ficar nítido em
+     qualquer densidade de tela. Cores fixas porque a aba do navegador não
+     expõe o tema da página — estas duas têm contraste nas duas barras. -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'><path d='M5 21.5 L21.5 7' stroke='%231baf7a' stroke-width='1.7' stroke-linecap='round' opacity='.45'/><circle cx='5' cy='21.5' r='2.1' fill='%231baf7a' opacity='.6'/><circle cx='13.2' cy='14.3' r='3' fill='%231baf7a' opacity='.85'/><circle cx='21.6' cy='7' r='4.3' fill='%233987e5'/></svg>">
+</head>
+<body>
+
+<header class="topo">
+  <div class="marca">
+    <svg class="marca-selo" viewBox="0 0 28 28" aria-hidden="true" fill="none">
+      <path class="rastro-linha" d="M5 21.5 L21.5 7" stroke-width="1.7" stroke-linecap="round" opacity=".45"/>
+      <circle class="rastro-eco" cx="5" cy="21.5" r="2.1" opacity=".6"/>
+      <circle class="rastro-eco" cx="13.2" cy="14.3" r="3" opacity=".85"/>
+      <circle class="rastro-ponta" cx="21.6" cy="7" r="4.3"/>
+    </svg>
+    <div>
+      <h1 class="marca-nome"><b>SendTrace</b></h1>
+      <p class="marca-sub">Régua de pós-venda · <code>disparos_pos_venda</code></p>
+    </div>
+  </div>
+
+  <div class="topo-acoes">
+    <div class="pilula-live" id="pilula-live" data-estado="carregando">
+      <span class="pulso" aria-hidden="true"></span>
+      <span id="live-txt">conectando…</span>
+    </div>
+
+    <label class="campo-sel">
+      <span class="sr">Intervalo de atualização</span>
+      <select id="sel-intervalo">
+        <option value="5000">5 s</option>
+        <option value="10000" selected>10 s</option>
+        <option value="30000">30 s</option>
+        <option value="60000">1 min</option>
+        <option value="0">pausado</option>
+      </select>
+    </label>
+
+    <button class="btn btn-icone" id="btn-atualizar" title="Atualizar agora">
+      <span aria-hidden="true">↻</span><span class="sr">Atualizar agora</span>
+    </button>
+    <button class="btn" id="btn-demo" aria-pressed="false">Demo</button>
+    <button class="btn btn-icone" id="btn-tema" title="Alternar tema">
+      <span aria-hidden="true" id="ico-tema">☾</span><span class="sr">Alternar tema claro/escuro</span>
+    </button>
+
+    <div class="usuario-chip" id="usuario-chip" hidden>
+      <span class="usuario-inicial" id="usuario-inicial" aria-hidden="true">·</span>
+      <span class="usuario-nome" id="usuario-nome">—</span>
+      <span class="usuario-selo" id="usuario-selo" hidden>admin</span>
+    </div>
+    <button class="btn" id="btn-usuarios" hidden>Usuários</button>
+    <button class="btn btn-fantasma" id="btn-sair">Sair</button>
+  </div>
+</header>
+
+<!-- ── criar uma linha de copy nova ── -->
+<dialog class="janela janela--linha" id="janela-linha" aria-labelledby="linha-nova-tit">
+  <header class="janela-cabeca">
+    <div>
+      <h2 id="linha-nova-tit">Nova linha de copy</h2>
+      <p class="cartao-sub">Uma linha é um conjunto completo de mensagens — um e-mail e
+      um SMS por etapa. Ela só pode ser ativada quando estiver completa.</p>
+    </div>
+    <button class="btn btn-icone" id="fechar-linha" title="Fechar">
+      <span aria-hidden="true">✕</span><span class="sr">Fechar</span>
+    </button>
+  </header>
+
+  <div class="janela-corpo">
+    <p class="janela-msg" id="linha-msg" hidden></p>
+
+    <form id="form-linha">
+      <div class="editar-tripla">
+        <label class="campo campo--bloco">
+          <span>Número</span>
+          <input id="nl-numero" type="text" inputmode="numeric" maxlength="4" required
+                 autocomplete="off" placeholder="4">
+          <em class="campo-dica" id="nl-dica-numero">1 a 4 dígitos. É por ele que o
+          webhook ativa a linha.</em>
+        </label>
+        <label class="campo campo--bloco">
+          <span>Nome</span>
+          <input id="nl-nome" type="text" maxlength="60" required autocomplete="off"
+                 placeholder="Urgência">
+          <em class="campo-dica">Aparece na lista, no lugar do número.</em>
+        </label>
+        <label class="campo campo--bloco">
+          <span>Ordem</span>
+          <input id="nl-ordem" type="number" min="0" max="999" step="1" autocomplete="off">
+          <em class="campo-dica">Posição na lista. Menor aparece antes.</em>
+        </label>
+      </div>
+
+      <label class="campo campo--bloco">
+        <span>Intuito — a estratégia desta linha</span>
+        <textarea id="nl-intuito" rows="3" maxlength="600"
+                  placeholder="Para que serve esta linha e quando usá-la."></textarea>
+      </label>
+
+      <label class="campo campo--bloco" id="nl-campo-copiar">
+        <span>Começar a partir de</span>
+        <select id="nl-copiar"></select>
+        <em class="campo-dica">Copiar uma linha existente já entrega as 12 mensagens
+        prontas para editar. Em branco, você escreve todas do zero.</em>
+      </label>
+
+      <div class="editar-acoes">
+        <button class="btn btn-forte" id="nl-criar" type="submit">Criar linha</button>
+        <button class="btn btn-fantasma" id="nl-apagar" type="button" hidden>Apagar linha</button>
+        <span class="editar-estado" id="nl-estado"></span>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<!-- ── pré-visualização da mensagem (duplo clique num cartão) ── -->
+<dialog class="janela janela--previa" id="janela-previa" aria-labelledby="previa-tit">
+  <header class="janela-cabeca">
+    <div>
+      <h2 id="previa-tit">Mensagem</h2>
+      <p class="cartao-sub" id="previa-sub">—</p>
+    </div>
+    <div class="previa-acoes">
+      <div class="previa-modos" id="previa-modos" role="group" aria-label="Como exibir">
+        <button class="previa-modo" type="button" data-modo="render" aria-pressed="true">Renderizado</button>
+        <button class="previa-modo" type="button" data-modo="codigo" aria-pressed="false">Código</button>
+        <button class="previa-modo" type="button" data-modo="editar" aria-pressed="false" id="previa-modo-editar" hidden>Editar</button>
+      </div>
+      <button class="btn btn-icone" id="fechar-previa" title="Fechar">
+        <span aria-hidden="true">✕</span><span class="sr">Fechar</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="janela-corpo previa-corpo">
+    <p class="previa-nota" id="previa-nota"></p>
+    <!-- O iframe é CRIADO na hora, dentro desta caixa, e descartado ao sair do
+         modo renderizado. Reaproveitar o mesmo elemento dependia de o navegador
+         recarregar um srcdoc idêntico depois de escondê-lo — comportamento que
+         não é garantido. Um iframe novo sempre carrega. -->
+    <div class="previa-quadro-caixa" id="previa-quadro-caixa"></div>
+    <pre class="previa-codigo" id="previa-codigo" hidden></pre>
+
+    <!-- ── edição da copy ── -->
+    <form class="previa-editar" id="previa-editar" hidden>
+      <div class="editar-campos" id="editar-campos-email">
+        <label class="campo campo--bloco">
+          <span>Assunto do e-mail</span>
+          <input id="ed-assunto" type="text" autocomplete="off" spellcheck="false">
+        </label>
+        <div class="editar-dupla">
+          <label class="campo campo--bloco">
+            <span>Rótulo do botão</span>
+            <input id="ed-botao" type="text" autocomplete="off">
+          </label>
+          <label class="campo campo--bloco">
+            <span>Destino do botão</span>
+            <select id="ed-destino">
+              <option value="">— sem botão —</option>
+              <option value="EBOOK">EBOOK · e-book gratuito</option>
+              <option value="ASSISTENTE">ASSISTENTE · suporte</option>
+            </select>
+          </label>
+        </div>
+        <label class="campo campo--bloco">
+          <span>Corpo do e-mail — só o miolo, em HTML com estilo inline</span>
+          <textarea id="ed-corpo" rows="12" spellcheck="false"></textarea>
+          <em class="campo-dica">Sem &lt;html&gt;, &lt;head&gt; ou &lt;body&gt;. Cabeçalho,
+          botão, bloco de suporte e rodapé são montados pelo robô.</em>
+        </label>
+        <label class="campo campo--bloco">
+          <span>Descrição interna — só aparece aqui no painel</span>
+          <input id="ed-descricao" type="text" autocomplete="off">
+        </label>
+      </div>
+
+      <div class="editar-campos" id="editar-campos-sms" hidden>
+        <label class="campo campo--bloco">
+          <span>Texto do SMS</span>
+          <textarea id="ed-sms" rows="5" spellcheck="false"></textarea>
+          <em class="campo-dica">Inglês, sem acento e sem emoji. Termine com
+          <code>Reply STOP to end</code>.</em>
+        </label>
+        <p class="editar-medida" id="ed-medida"></p>
+      </div>
+
+      <p class="editar-avisos" id="ed-avisos" hidden></p>
+
+      <div class="editar-acoes">
+        <button class="btn btn-forte" id="ed-salvar" type="submit">Salvar</button>
+        <button class="btn btn-fantasma" id="ed-reverter" type="button">Desfazer alterações</button>
+        <span class="editar-estado" id="ed-estado"></span>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<!-- ── gestão de acesso (só administradores) ── -->
+<dialog class="janela" id="janela-usuarios" aria-labelledby="janela-usuarios-tit">
+  <header class="janela-cabeca">
+    <div>
+      <h2 id="janela-usuarios-tit">Quem tem acesso</h2>
+      <p class="cartao-sub">Administradores podem criar usuários e promover outros a
+      administrador. A senha definida aqui é provisória: a pessoa escolhe a dela no
+      primeiro acesso.</p>
+    </div>
+    <button class="btn btn-icone" id="fechar-usuarios" title="Fechar">
+      <span aria-hidden="true">✕</span><span class="sr">Fechar</span>
+    </button>
+  </header>
+
+  <div class="janela-corpo">
+    <p class="janela-msg" id="usuarios-msg" hidden></p>
+
+    <form class="novo-usuario" id="form-novo">
+      <label class="campo">
+        <span>E-mail</span>
+        <input id="n-email" type="email" required autocomplete="off" spellcheck="false">
+      </label>
+      <label class="campo">
+        <span>Nome (opcional)</span>
+        <input id="n-nome" type="text" autocomplete="off">
+      </label>
+      <label class="campo">
+        <span>Senha provisória</span>
+        <input id="n-senha" type="text" required autocomplete="off" spellcheck="false">
+      </label>
+      <label class="novo-usuario-admin">
+        <input id="n-admin" type="checkbox"> administrador
+      </label>
+      <label class="novo-usuario-admin" id="n-email-envio-caixa" hidden>
+        <input id="n-email-envio" type="checkbox" checked> enviar por e-mail
+      </label>
+      <button class="btn btn-fantasma" id="n-sortear" type="button">Sortear senha</button>
+      <button class="btn btn-forte" id="n-criar" type="submit">Criar</button>
+    </form>
+
+    <ul class="lista-usuarios" id="lista-usuarios"></ul>
+  </div>
+</dialog>
+
+<div class="faixa faixa--demo" id="faixa-demo" hidden>
+  <strong>Modo demonstração.</strong> Os números abaixo são gerados no navegador para você avaliar a
+  interface — <em>nada é lido nem gravado no banco</em>. Desligue em “Demo” para voltar aos dados reais.
+</div>
+<div class="faixa faixa--erro" id="faixa-erro" hidden></div>
+<div class="faixa faixa--demo" id="faixa-regua" hidden>
+  <strong>A régua ainda não existe no banco.</strong> Rode <code>npm run setup</code> para criar
+  <code>etapas_regua</code> e <code>mensagens_regua</code> — sem elas o painel desenha as etapas
+  sem nome, sem copy e sem espera.
+</div>
+
+<main class="conteudo">
+
+  <!-- ── linha 1: número-herói + indicadores ── -->
+  <section class="linha-heroi">
+    <div class="cartao heroi">
+      <p class="heroi-rotulo">Pedidos na régua agora</p>
+      <p class="heroi-valor" id="heroi-valor">—</p>
+      <p class="heroi-nota" id="heroi-nota">carregando…</p>
+    </div>
+    <div class="kpis" id="kpis"></div>
+  </section>
+
+  <!-- ── linha 2: o canvas ── -->
+  <section class="cartao cartao--canvas">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Fluxo de envio de mensagens</h2>
+        <p class="cartao-sub">
+          Cada nó é uma mensagem da régua: o canal, o texto que sai e quantos clientes
+          estão parados nela agora. A etiqueta na conexão é a espera até a próxima.
+        </p>
+      </div>
+      <div class="legenda" id="legenda" role="list" aria-label="Legenda dos estados"></div>
+    </header>
+
+    <div class="canvas-area" id="canvas-area"></div>
+
+    <div class="canvas-vazio" id="canvas-vazio" hidden>
+      <p class="canvas-vazio-tit">A régua está vazia</p>
+      <p>Nenhum pedido em <code>disparos_pos_venda</code> ainda. Os nós já estão montados
+      e vão se preencher sozinhos assim que o primeiro disparo entrar na fila.</p>
+    </div>
+
+    <footer class="canvas-rodape">
+      <span id="rodape-etapas">—</span>
+      <span class="ponto" aria-hidden="true">·</span>
+      <span>canvas travado: sem arrastar, sem zoom — a régua sempre cabe na tela</span>
+    </footer>
+  </section>
+
+  <!-- ── linha 2b: a copy de cada etapa, nos dois canais ── -->
+  <section class="cartao cartao--trilha">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Etapas de comunicação</h2>
+        <p class="cartao-sub">
+          O que cada etapa envia. Toda etapa dispara <b>e-mail e SMS ao mesmo tempo</b> —
+          o e-mail alcança quem tem endereço, o SMS quem tem telefone.
+        </p>
+      </div>
+      <p class="trilha-dica">
+        <b>Duplo clique</b> numa mensagem abre como o cliente recebe.<br>
+        Vem de <code>mensagens_regua</code>. Edite por SQL — o painel só lê.
+      </p>
+    </header>
+
+    <!-- ── seletor de linha: escolhe o que é EXIBIDO; ativar é um passo à parte ── -->
+    <div class="linha-barra" id="linha-barra" hidden>
+      <div class="linha-topo">
+        <label class="campo linha-seletor">
+          <span>Linha de copy</span>
+          <select id="linha-select"></select>
+        </label>
+
+        <!-- Qual está no ar, INDEPENDENTE do que está selecionado. Num dropdown
+             a seleção esconde as outras opções; sem este selo, trocar a
+             visualização faria perder de vista qual copy os clientes recebem. -->
+        <div class="linha-noar" id="linha-noar" hidden>
+          <span class="linha-noar-selo">no ar</span>
+          <span class="linha-noar-nome" id="linha-noar-nome">—</span>
+        </div>
+
+        <div class="linha-botoes-admin">
+          <button class="btn btn-fantasma" id="linha-editar" type="button" hidden>Editar linha</button>
+          <button class="btn btn-fantasma" id="linha-nova" type="button" hidden>+ Nova</button>
+        </div>
+
+        <div class="linha-estado">
+          <p class="linha-sub" id="linha-sub">—</p>
+          <button class="btn btn-forte linha-ativar" id="linha-ativar" type="button" hidden>
+            Ativar esta linha
+          </button>
+        </div>
+      </div>
+      <p class="linha-intuito" id="linha-intuito" hidden></p>
+    </div>
+
+    <div class="trilha" id="trilha"></div>
+  </section>
+
+  <!-- ── filtros que valem para os DOIS gráficos temporais ── -->
+  <section class="filtros-graf" role="search" aria-label="Filtros dos gráficos">
+    <span class="filtros-graf-rot">Gráficos</span>
+    <label class="campo">
+      <span>Etapa</span>
+      <select id="g-etapa"><option value="">Todas</option></select>
+    </label>
+    <label class="campo">
+      <span>Canal</span>
+      <select id="g-canal">
+        <option value="">Ambos</option>
+        <option value="email">Só quem recebe e-mail</option>
+        <option value="sms">Só quem recebe SMS</option>
+      </select>
+    </label>
+    <button class="btn btn-fantasma" id="g-limpar">Limpar</button>
+    <p class="filtros-graf-nota" id="g-nota">
+      O recorte vale para a onda de disparos e as entradas na régua. Os nós, os
+      indicadores e o alcance por canal continuam mostrando a régua inteira.
+    </p>
+  </section>
+
+  <!-- ── linha 3: onda + alertas ── -->
+  <section class="grade-3">
+    <div class="cartao span-2">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Onda de disparos</h2>
+          <p class="cartao-sub">Quantos disparos estão agendados para cada hora das próximas 48 h.</p>
+        </div>
+        <div class="destaque-atraso" id="destaque-atraso" hidden></div>
+      </header>
+      <div class="grafico" id="graf-onda"></div>
+    </div>
+
+    <div class="cartao">
+      <header class="cartao-cabeca"><div><h2>Precisa de atenção</h2></div></header>
+      <ul class="alertas" id="lista-alertas"></ul>
+    </div>
+  </section>
+
+  <!-- ── linha 4: entradas + status bruto ── -->
+  <section class="grade-3">
+    <div class="cartao span-2">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Entradas na régua</h2>
+          <p class="cartao-sub">Pedidos novos por dia, últimos 14 dias.</p>
+        </div>
+      </header>
+      <div class="grafico" id="graf-entradas"></div>
+    </div>
+
+    <div class="cartao">
+      <header class="cartao-cabeca"><div><h2>Alcance por canal</h2>
+        <p class="cartao-sub">Como toda etapa dispara nos dois, o que varia é quem
+        tem contato para receber.</p></div></header>
+      <ul class="canais" id="lista-canais"></ul>
+      <hr class="divisor">
+      <header class="cartao-cabeca cabeca-menor"><div><h2>Status no banco</h2>
+        <p class="cartao-sub">Valores brutos da coluna <code>status</code>.</p></div></header>
+      <ul class="status-bruto" id="status-bruto"></ul>
+    </div>
+  </section>
+
+  <!-- ── linha 5: tabela ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Pedidos</h2>
+        <p class="cartao-sub">A leitura completa: cada pedido, sua etapa e seu próximo disparo.</p>
+      </div>
+    </header>
+
+    <div class="filtros" role="search">
+      <label class="campo">
+        <span>Etapa</span>
+        <select id="f-etapa"><option value="">Todas</option></select>
+      </label>
+      <label class="campo">
+        <span>Estado</span>
+        <select id="f-estado"><option value="">Todos</option></select>
+      </label>
+      <label class="campo">
+        <span>Etapa envia por</span>
+        <select id="f-canal">
+          <option value="">Qualquer canal</option>
+          <option value="email">E-mail</option>
+          <option value="sms">SMS</option>
+        </select>
+      </label>
+      <label class="campo">
+        <span>Situação</span>
+        <select id="f-problema">
+          <option value="">Qualquer uma</option>
+          <option value="com_erro">Com erro registrado</option>
+          <option value="sem_contato">Sem o contato — não recebe</option>
+          <option value="com_contato">Com o contato — recebe</option>
+        </select>
+      </label>
+      <label class="campo">
+        <span>Ordenar por</span>
+        <select id="f-ordem">
+          <option value="proximo">Próximo disparo</option>
+          <option value="recente">Entrada mais recente</option>
+          <option value="tentativas">Mais tentativas</option>
+        </select>
+      </label>
+      <label class="campo campo--cresce">
+        <span>Buscar</span>
+        <input id="f-busca" type="search" placeholder="nome, e-mail, telefone, produto ou transação" autocomplete="off">
+      </label>
+      <button class="btn btn-fantasma" id="f-limpar">Limpar</button>
+    </div>
+
+    <div class="tabela-envolve">
+      <table class="tabela">
+        <thead>
+          <tr>
+            <th scope="col">Transação</th>
+            <th scope="col">Cliente</th>
+            <th scope="col">Produto</th>
+            <th scope="col">Etapa</th>
+            <th scope="col">Estado</th>
+            <th scope="col">Próximo disparo</th>
+            <th scope="col" class="num">Tent.</th>
+            <th scope="col">Último erro</th>
+          </tr>
+        </thead>
+        <tbody id="tabela-corpo"></tbody>
+      </table>
+    </div>
+
+    <footer class="paginacao">
+      <span id="pag-info">—</span>
+      <div class="pag-botoes">
+        <button class="btn btn-fantasma" id="pag-ant">Anterior</button>
+        <button class="btn btn-fantasma" id="pag-prox">Próxima</button>
+      </div>
+    </footer>
+  </section>
+
+  <p class="rodape-nota" id="rodape-nota"></p>
+</main>
+
+<div class="tooltip" id="tooltip" role="status" aria-live="polite" hidden></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

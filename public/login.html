@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Entrar · SendTrace</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'><path d='M5 21.5 L21.5 7' stroke='%231baf7a' stroke-width='1.7' stroke-linecap='round' opacity='.45'/><circle cx='5' cy='21.5' r='2.1' fill='%231baf7a' opacity='.6'/><circle cx='13.2' cy='14.3' r='3' fill='%231baf7a' opacity='.85'/><circle cx='21.6' cy='7' r='4.3' fill='%233987e5'/></svg>">
+</head>
+<body class="corpo-login">
+
+<main class="login-palco">
+
+<!-- ── quadro da arte ── -->
+<aside class="login-arte" aria-hidden="true">
+  <div class="login-arte-topo">
+    <svg class="marca-selo marca-selo--grande" viewBox="0 0 28 28" fill="none">
+      <path class="rastro-linha" d="M5 21.5 L21.5 7" stroke-width="1.7" stroke-linecap="round" opacity=".45"/>
+      <circle class="rastro-eco" cx="5" cy="21.5" r="2.1" opacity=".6"/>
+      <circle class="rastro-eco" cx="13.2" cy="14.3" r="3" opacity=".85"/>
+      <circle class="rastro-ponta" cx="21.6" cy="7" r="4.3"/>
+    </svg>
+    <p class="login-arte-marca">SendTrace</p>
+  </div>
+
+  <!-- A arte é o próprio produto: a régua desenhada, com o pacote andando
+       pela conexão. Uma ilustração genérica não diria o que este sistema é. -->
+  <svg class="login-cena" viewBox="0 0 340 210" fill="none">
+    <defs>
+      <linearGradient id="lg-trilho" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" class="cena-g1"/><stop offset="1" class="cena-g2"/>
+      </linearGradient>
+    </defs>
+
+    <path class="cena-trilho" d="M46 46 H206 a24 24 0 0 1 24 24 v24 a24 24 0 0 0 24 24 H294"
+          stroke-linecap="round"/>
+    <!-- Ramo de baixo: termina num ponto de saída em vez de sumir no meio do
+         quadro, que lia como desenho cortado. -->
+    <path class="cena-trilho cena-trilho--fraco" d="M46 164 H150" stroke-linecap="round"
+          stroke-dasharray="1 7"/>
+    <circle class="cena-fim" cx="156" cy="164" r="4.5"/>
+    <path class="cena-fim-tique" d="M153.4 164 l1.9 1.9 l3.4 -3.8" stroke-linecap="round"
+          stroke-linejoin="round" fill="none"/>
+
+    <g class="cena-no cena-no--1">
+      <rect x="18" y="30" width="56" height="32" rx="9"/>
+      <circle cx="34" cy="46" r="5" class="cena-ponto"/>
+      <rect x="44" y="41" width="22" height="3.4" rx="1.7" class="cena-barra"/>
+      <rect x="44" y="48" width="14" height="3.4" rx="1.7" class="cena-barra cena-barra--fraca"/>
+    </g>
+    <g class="cena-no cena-no--2">
+      <rect x="176" y="54" width="56" height="32" rx="9"/>
+      <circle cx="192" cy="70" r="5" class="cena-ponto cena-ponto--2"/>
+      <rect x="202" y="65" width="22" height="3.4" rx="1.7" class="cena-barra"/>
+      <rect x="202" y="72" width="16" height="3.4" rx="1.7" class="cena-barra cena-barra--fraca"/>
+    </g>
+    <g class="cena-no cena-no--3">
+      <rect x="266" y="102" width="56" height="32" rx="9"/>
+      <circle cx="282" cy="118" r="5" class="cena-ponto cena-ponto--3"/>
+      <rect x="292" y="113" width="20" height="3.4" rx="1.7" class="cena-barra"/>
+      <rect x="292" y="120" width="12" height="3.4" rx="1.7" class="cena-barra cena-barra--fraca"/>
+    </g>
+    <g class="cena-no cena-no--4">
+      <rect x="18" y="148" width="56" height="32" rx="9"/>
+      <circle cx="34" cy="164" r="5" class="cena-ponto cena-ponto--4"/>
+      <rect x="44" y="159" width="18" height="3.4" rx="1.7" class="cena-barra"/>
+      <rect x="44" y="166" width="22" height="3.4" rx="1.7" class="cena-barra cena-barra--fraca"/>
+    </g>
+
+    <!-- O pacote em trânsito. Some com prefers-reduced-motion. -->
+    <circle class="cena-pacote" r="4">
+      <animateMotion dur="4.2s" repeatCount="indefinite"
+        path="M46 46 H206 a24 24 0 0 1 24 24 v24 a24 24 0 0 0 24 24 H294"/>
+    </circle>
+  </svg>
+
+  <div class="login-arte-texto">
+    <p class="login-arte-frase">Cada pedido tem um rastro.</p>
+    <p class="login-arte-sub">
+      Em qual etapa cada cliente está, o que a próxima mensagem diz e quanto
+      falta para ela sair — e-mail e SMS, lado a lado.
+    </p>
+  </div>
+</aside>
+
+<!-- ── quadro da autenticação ── -->
+<div class="login-caixa">
+  <div class="login-marca login-marca--compacta">
+    <svg class="marca-selo" viewBox="0 0 28 28" aria-hidden="true" fill="none">
+      <path class="rastro-linha" d="M5 21.5 L21.5 7" stroke-width="1.7" stroke-linecap="round" opacity=".45"/>
+      <circle class="rastro-eco" cx="5" cy="21.5" r="2.1" opacity=".6"/>
+      <circle class="rastro-eco" cx="13.2" cy="14.3" r="3" opacity=".85"/>
+      <circle class="rastro-ponta" cx="21.6" cy="7" r="4.3"/>
+    </svg>
+    <div>
+      <h1 class="marca-nome"><b>SendTrace</b></h1>
+      <p class="marca-sub">Régua de pós-venda</p>
+    </div>
+  </div>
+
+  <!-- ── entrar ── -->
+  <form class="login-form" id="form-entrar" novalidate>
+    <p class="login-tit">Entrar</p>
+
+    <label class="campo campo--bloco">
+      <span>E-mail</span>
+      <input id="e-email" type="email" name="email" autocomplete="username"
+             required autofocus inputmode="email" spellcheck="false">
+    </label>
+
+    <label class="campo campo--bloco">
+      <span>Senha</span>
+      <input id="e-senha" type="password" name="senha" autocomplete="current-password" required>
+    </label>
+
+    <p class="login-erro" id="e-erro" role="alert" hidden></p>
+
+    <button class="btn btn-forte" id="e-enviar" type="submit">Entrar</button>
+  </form>
+
+  <!-- ── definir senha própria (primeiro acesso) ── -->
+  <form class="login-form" id="form-senha" novalidate hidden>
+    <p class="login-tit">Defina a sua senha</p>
+    <p class="login-nota">
+      A senha que você usou é provisória e foi vista por quem criou a conta.
+      Escolha uma que só você conheça.
+    </p>
+
+    <label class="campo campo--bloco">
+      <span>Senha atual (a provisória)</span>
+      <input id="s-atual" type="password" autocomplete="current-password" required>
+    </label>
+
+    <label class="campo campo--bloco">
+      <span>Nova senha</span>
+      <input id="s-nova" type="password" autocomplete="new-password" required>
+      <em class="campo-dica">Mínimo 10 caracteres, com pelo menos dois tipos
+      (maiúscula, minúscula, número ou símbolo). Uma frase longa funciona bem.</em>
+    </label>
+
+    <label class="campo campo--bloco">
+      <span>Repita a nova senha</span>
+      <input id="s-repete" type="password" autocomplete="new-password" required>
+    </label>
+
+    <p class="login-erro" id="s-erro" role="alert" hidden></p>
+
+    <button class="btn btn-forte" id="s-enviar" type="submit">Salvar e entrar</button>
+  </form>
+
+  <p class="login-rodape">
+    Esqueceu a senha? Quem administra o painel pode reenviar o convite, ou use
+    <code>npm run senha -- seu@email.com</code> no servidor.
+  </p>
+</div>
+</main>
+
+<script type="module" src="login.js"></script>
+</body>
+</html>

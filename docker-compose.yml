@@ -1,0 +1,63 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  SendTrace — o painel em container, com o BANCO EXTERNO (Neon).
+#
+#  Não há serviço de Postgres aqui de propósito: seus dados já vivem no Neon,
+#  e subir um banco local só criaria um segundo lugar para a verdade morar.
+#
+#    docker compose run --rm painel npm run setup   # cria tabelas e o admin
+#    docker compose up -d                           # sobe o painel
+#    docker compose logs -f painel                  # acompanha
+# ═══════════════════════════════════════════════════════════════════════════
+
+services:
+  painel:
+    build: .
+    image: sendtrace:local
+    container_name: sendtrace
+
+    # Lê o .env da máquina e injeta como VARIÁVEIS DE AMBIENTE. O arquivo não
+    # entra na imagem (ver .dockerignore): fica só no host, e o segredo não
+    # vira camada distribuível.
+    env_file:
+      - .env
+
+    environment:
+      # Sobrepõem o que estiver no .env. Dentro do container o servidor precisa
+      # escutar em todas as interfaces, senão o mapeamento de porta não alcança
+      # nada — e o HOST=127.0.0.1 do uso local viria junto pelo env_file.
+      HOST: 0.0.0.0
+      PORT: 4300
+      NODE_ENV: production
+
+    ports:
+      # Publica só no loopback do HOST. Para expor na rede, troque por
+      # "4300:4300" — e, se for para fora da sua rede, ponha HTTPS na frente:
+      # em HTTP o cookie de sessão viaja em claro.
+      - "127.0.0.1:4300:4300"
+
+    restart: unless-stopped
+
+    # PID 1 que recolhe processos órfãos e repassa os sinais. Sem isso, um
+    # `docker stop` esperaria o timeout inteiro antes de matar à força.
+    init: true
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4300/api/vivo"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+    # Endurecimento barato: o container não escreve nada em disco além do que
+    # está declarado aqui, e nenhum processo dentro dele ganha privilégio novo.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,0 +1,30 @@
+# O QUE NUNCA ENTRA NA IMAGEM
+#
+# O .env é o mais importante daqui: ele tem a senha do banco e o token do n8n.
+# Copiado para dentro da imagem, viraria parte de uma camada — e qualquer um
+# com acesso à imagem poderia extraí-lo, mesmo que um passo seguinte o
+# apagasse. As variáveis entram em tempo de execução, não de build.
+.env
+.env.*
+!.env.example
+
+# Reinstalado dentro da imagem com `npm ci`. Copiar o de fora traria binários
+# compilados para o SO errado.
+node_modules
+
+.git
+.gitignore
+*.log
+npm-debug.log*
+
+# Meta do projeto: não faz falta em produção e invalida cache à toa.
+README.md
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Editores e SO
+.vscode
+.idea
+.DS_Store
+Thumbs.db

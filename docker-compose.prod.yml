@@ -1,0 +1,81 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  SendTrace — o PAINEL em produção. O banco NÃO está aqui.
+#
+#  O Postgres já roda no VPS, no container `sendtrace-postgres`, subido pelo
+#  compose de /opt/sendtrace. Este arquivo só sobe a aplicação e se pluga
+#  naquela rede — declarar um segundo Postgres criaria um banco vazio paralelo
+#  ao verdadeiro, e o painel abriria bonito mostrando zero pedidos.
+#
+#  Fica numa SUBPASTA (/opt/sendtrace/painel) de propósito: o compose do banco
+#  tem o próprio .env em /opt/sendtrace, e dois .env no mesmo diretório se
+#  atropelariam.
+#
+#    docker compose -f docker-compose.prod.yml pull
+#    docker compose -f docker-compose.prod.yml up -d
+# ═══════════════════════════════════════════════════════════════════════════
+
+services:
+  painel:
+    # A tag do commit é gravada no .env pelo deploy. `latest` é o padrão para
+    # quem subir à mão.
+    image: ${IMAGEM:-ghcr.io/OWNER/sendtrace:latest}
+    container_name: sendtrace-painel
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4300
+      NODE_ENV: production
+
+      # O host é o NOME DO CONTAINER do banco, não 127.0.0.1.
+      #
+      # Dentro de um container, 127.0.0.1 é o próprio container: a conexão nem
+      # sairia à procura do Postgres. `sendtrace-postgres` só resolve porque o
+      # serviço entra na mesma rede, declarada como externa lá embaixo.
+      #
+      # sslmode=disable: o banco do VPS não tem TLS. Sem isto, uma mudança
+      # futura no driver poderia passar a exigir SSL e derrubar a conexão.
+      DATABASE_URL: postgresql://${DB_USUARIO:-sendtrace}:${DB_SENHA:?defina DB_SENHA no .env}@${DB_HOST:-sendtrace-postgres}:${DB_PORTA:-5432}/${DB_NOME:-sendtrace}?sslmode=disable
+      DB_SSL_INSECURE: "false"
+
+    networks:
+      - banco
+
+    ports:
+      # Só no loopback: quem publica para a internet é o proxy reverso com
+      # HTTPS. Em HTTP o cookie de sessão viaja em claro.
+      - "127.0.0.1:4300:4300"
+
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+    healthcheck:
+      # /api/vivo não consulta o banco de propósito: um healthcheck que
+      # dependesse do Postgres reiniciaria o painel toda vez que o banco
+      # piscasse — e reiniciar não conserta banco nenhum.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4300/api/vivo"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+networks:
+  banco:
+    # `external: true` = a rede JÁ EXISTE e não deve ser criada aqui. É a que
+    # o compose do banco criou em /opt/sendtrace.
+    #
+    # Confira o nome com:  docker network ls
+    # e ajuste DOCKER_REDE_BANCO no .env se for diferente.
+    external: true
+    name: ${DOCKER_REDE_BANCO:-sendtrace_default}
