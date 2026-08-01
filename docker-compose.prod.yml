@@ -54,9 +54,14 @@ services:
       - banco
 
     ports:
-      # Só no loopback: se um dia a API for pública, quem publica é o proxy
-      # reverso com HTTPS — em HTTP o token viaja em claro.
-      - "127.0.0.1:4400:4400"
+      # Pública de propósito: o chatbot de suporte roda em OUTRA VPS e fala
+      # com a API por http://<ip-deste-vps>:4400. Toda rota exige token (o de
+      # serviço ou JWT), então abrir a porta não deixa dado exposto — mas em
+      # HTTP puro o token viaja em claro, como já acontece com a API antiga
+      # na 8000. Quando o domínio + Caddy chegarem, isto volta para
+      # 127.0.0.1 e só o proxy publica 80/443 — mudança feita AQUI, no repo,
+      # nunca à mão no servidor: o deploy recria o compose a partir da fonte.
+      - "4400:4400"
 
     init: true
     read_only: true
@@ -123,9 +128,11 @@ services:
       - banco
 
     ports:
-      # Só no loopback: quem publica para a internet é o proxy reverso com
-      # HTTPS. Em HTTP o cookie de sessão viaja em claro.
-      - "127.0.0.1:4300:4300"
+      # Pública enquanto não há domínio + proxy: é como o time acessa o
+      # painel hoje. Em HTTP o cookie de sessão viaja em claro — quando o
+      # Caddy entrar, isto volta para 127.0.0.1 e só o proxy publica 80/443
+      # (mudança feita aqui no repo, commit e deploy — nunca no servidor).
+      - "4300:4300"
 
     init: true
     read_only: true
