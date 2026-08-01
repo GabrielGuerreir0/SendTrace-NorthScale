@@ -1391,23 +1391,57 @@ $('form-novo').addEventListener('submit', async (ev) => {
 /* ═══════════════  atendimento do cliente (resumo do chatbot)  ═══════ */
 
 /**
- * O chatbot de suporte grava no banco um resumo de cada atendimento
- * (motivo, humor, o que foi tentado, desfecho). Duplo clique numa linha
- * da tabela abre esse resumo — é a memória do suporte sobre o cliente.
+ * O chatbot de suporte grava um registro por conversa encerrada (motivo,
+ * humor, o que foi tentado, desfecho). Duplo clique numa linha abre a
+ * LINHA DO TEMPO desses atendimentos, do mais novo ao mais antigo — a
+ * memória completa do suporte sobre o cliente, vinda do histórico da API.
  */
-function abrirChatCliente(p) {
+function itemAtendimento(a) {
+  const art = document.createElement('article');
+  art.className = 'chat-atendimento';
+  const cab = document.createElement('p');
+  cab.className = 'cartao-sub';
+  cab.textContent = [
+    a.criado_em ? dataHora(a.criado_em) : null,
+    a.desfecho || null,
+    a.risco_chargeback ? '⚠ risco de chargeback' : null,
+  ].filter(Boolean).join(' · ');
+  const txt = document.createElement('p');
+  txt.className = 'chat-resumo-texto';
+  txt.textContent = a.resumo;
+  art.append(cab, txt);
+  return art;
+}
+
+const avisoChat = (texto) =>
+  Object.assign(document.createElement('p'), { className: 'cel-fraca', textContent: texto });
+
+async function abrirChatCliente(p) {
   $('chat-quem').textContent =
     [p.nome, p.email].filter(Boolean).join(' · ') || p.transacao_id;
-  const tem = Boolean(p.chat_resumo);
-  $('chat-resumo').textContent = tem
-    ? p.chat_resumo
-    : 'Este cliente ainda não tem atendimento registrado pelo chatbot de suporte.';
-  $('chat-resumo').classList.toggle('cel-fraca', !tem);
-  $('chat-quando').hidden = !p.chat_resumo_em;
-  if (p.chat_resumo_em) {
-    $('chat-quando').textContent = `Registrado em ${dataHora(p.chat_resumo_em)}.`;
-  }
+  const alvo = $('chat-historico');
+  alvo.replaceChildren(avisoChat('Carregando…'));
   $('janela-chat').showModal();
+
+  let historico = [];
+  if (p.email) {
+    try {
+      const r = await api(`/api/atendimentos?email=${encodeURIComponent(p.email)}`);
+      if (r.ok) historico = r.dados.atendimentos ?? [];
+    } catch { /* 401 já redirecionou */ }
+  }
+  // Resumos de antes do histórico existir vivem só na coluna do pedido —
+  // entram como um item único, para não sumirem da tela.
+  if (!historico.length && p.chat_resumo) {
+    historico = [{
+      resumo: p.chat_resumo, criado_em: p.chat_resumo_em,
+      desfecho: null, risco_chargeback: false,
+    }];
+  }
+
+  alvo.replaceChildren(...(historico.length
+    ? historico.map(itemAtendimento)
+    : [avisoChat('Este cliente ainda não tem atendimento registrado pelo chatbot de suporte.')]));
 }
 
 $('fechar-chat').addEventListener('click', () => $('janela-chat').close());

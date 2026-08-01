@@ -63,6 +63,24 @@ export const DisparoEntrada = {
   required: ['transacao_id'],
 };
 
+/* ───────────────────  atendimentos do chatbot de suporte  ──────────────── */
+
+export const Atendimento = {
+  $id: 'Atendimento',
+  type: 'object',
+  description: 'Uma conversa de suporte encerrada: o resumo que o chatbot gravou, '
+    + 'o desfecho e se houve risco de chargeback. A IA lê os últimos antes de responder.',
+  properties: {
+    id: { type: 'integer', readOnly: true },
+    email: { type: 'string', maxLength: 200, description: 'E-mail do cliente atendido.' },
+    resumo: { type: 'string', maxLength: 10_000, description: 'Motivo, humor, o que foi tentado e desfecho — escrito pela IA.' },
+    desfecho: { ...texto(120), description: "Ex.: 'resolvido (cliente retido)', 'escalado para humano'." },
+    risco_chargeback: { type: 'boolean', default: false, description: 'O detector de risco disparou nesta conversa.' },
+    criado_em: { ...dataHora, readOnly: true },
+  },
+  required: ['email', 'resumo'],
+};
+
 /* ─────────────────────  conhecimento da IA de suporte  ─────────────────── */
 
 export const ProdutoReadme = {
@@ -311,7 +329,7 @@ export const ContagemStatus = {
 
 /** Todos, na ordem em que o Swagger vai listá-los. */
 export const TODOS = [
-  DisparoPosVenda, DisparoEntrada, ProdutoReadme, EtapaRegua, MensagemRegua, PainelLinhaCopy,
+  DisparoPosVenda, DisparoEntrada, ProdutoReadme, Atendimento, EtapaRegua, MensagemRegua, PainelLinhaCopy,
   PainelLinhaMensagens, PainelLinhaHistorico, ConfigDisparo, PainelUsuario,
   Credenciais, ParTokens, PedidoRefresh, Erro,
   ContagemPorEstado, ResumoEtapa, Produto, Balde, EntradaDia, ContagemStatus,

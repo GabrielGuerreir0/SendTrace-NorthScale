@@ -631,6 +631,14 @@ async function atender(req, res, url, sessao) {
     return json(res, 200, { readmes: r.results ?? [] });
   }
 
+  /* ── histórico de atendimentos do chatbot (o modal do duplo clique) ── */
+  if (url.pathname === '/api/atendimentos' && req.method === 'GET') {
+    const email = String(url.searchParams.get('email') ?? '').trim();
+    if (!email) return json(res, 400, { erro: 'Informe ?email=.' });
+    const r = await obterApi('/api/atendimentos/', { email, page_size: 10 });
+    return json(res, 200, { atendimentos: r.results ?? [] });
+  }
+
   const rotaReadme = /^\/api\/produtos-ia\/(.+)$/.exec(url.pathname);
   if (rotaReadme && (req.method === 'PUT' || req.method === 'DELETE')) {
     if (!usuario.admin) {
