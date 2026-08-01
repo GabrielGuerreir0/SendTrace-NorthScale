@@ -69,16 +69,19 @@ export const Atendimento = {
   $id: 'Atendimento',
   type: 'object',
   description: 'Uma conversa de suporte encerrada: o resumo que o chatbot gravou, '
-    + 'o desfecho e se houve risco de chargeback. A IA lê os últimos antes de responder.',
+    + 'o desfecho e se houve risco de chargeback. Chaveada pelo ID DE TRANSAÇÃO '
+    + 'do pedido; informe transacao_id ou email — a rota resolve o que faltar '
+    + 'consultando a fila.',
   properties: {
     id: { type: 'integer', readOnly: true },
-    email: { type: 'string', maxLength: 200, description: 'E-mail do cliente atendido.' },
+    transacao_id: { ...texto(120), description: 'O pedido a que a conversa pertence — a chave preferida.' },
+    email: { ...texto(200), description: 'E-mail do cliente. Opcional; preenchido a partir do pedido quando ausente.' },
     resumo: { type: 'string', maxLength: 10_000, description: 'Motivo, humor, o que foi tentado e desfecho — escrito pela IA.' },
     desfecho: { ...texto(120), description: "Ex.: 'resolvido (cliente retido)', 'escalado para humano'." },
     risco_chargeback: { type: 'boolean', default: false, description: 'O detector de risco disparou nesta conversa.' },
     criado_em: { ...dataHora, readOnly: true },
   },
-  required: ['email', 'resumo'],
+  required: ['resumo'],
 };
 
 /* ─────────────────────  conhecimento da IA de suporte  ─────────────────── */

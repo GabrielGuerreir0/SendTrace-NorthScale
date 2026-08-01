@@ -1424,9 +1424,14 @@ async function abrirChatCliente(p) {
   $('janela-chat').showModal();
 
   let historico = [];
-  if (p.email) {
+  if (p.transacao_id || p.email) {
+    // A chave é a TRANSAÇÃO do pedido clicado; o e-mail vai junto para
+    // costurar atendimentos antigos, de antes da chave existir.
+    const params = new URLSearchParams();
+    if (p.transacao_id) params.set('transacao_id', p.transacao_id);
+    if (p.email) params.set('email', p.email);
     try {
-      const r = await api(`/api/atendimentos?email=${encodeURIComponent(p.email)}`);
+      const r = await api(`/api/atendimentos?${params}`);
       if (r.ok) historico = r.dados.atendimentos ?? [];
     } catch { /* 401 já redirecionou */ }
   }

@@ -633,9 +633,16 @@ async function atender(req, res, url, sessao) {
 
   /* ── histórico de atendimentos do chatbot (o modal do duplo clique) ── */
   if (url.pathname === '/api/atendimentos' && req.method === 'GET') {
+    const transacao = String(url.searchParams.get('transacao_id') ?? '').trim();
     const email = String(url.searchParams.get('email') ?? '').trim();
-    if (!email) return json(res, 400, { erro: 'Informe ?email=.' });
-    const r = await obterApi('/api/atendimentos/', { email, page_size: 10 });
+    if (!transacao && !email) return json(res, 400, { erro: 'Informe ?transacao_id= ou ?email=.' });
+    // Com os dois, a API casa qualquer um (OR) — o histórico novo por
+    // transação e o antigo por e-mail chegam juntos.
+    const r = await obterApi('/api/atendimentos/', {
+      ...(transacao ? { transacao_id: transacao } : {}),
+      ...(email ? { email } : {}),
+      page_size: 10,
+    });
     return json(res, 200, { atendimentos: r.results ?? [] });
   }
 
