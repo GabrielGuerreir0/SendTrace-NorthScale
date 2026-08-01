@@ -161,6 +161,9 @@ su - deploy
 mkdir -p /opt/sendtrace/painel && cd /opt/sendtrace/painel
 ```
 
+> O deploy também cria este diretório sozinho. Criar agora é só para você
+> poder escrever o `.env` antes do primeiro push.
+
 Descubra o nome exato da rede do banco:
 
 ```bash
@@ -203,7 +206,12 @@ chmod 600 .env
 > tem usuário nenhum, e o seu já tem os dois que vieram do Neon. Entre com a
 > senha que você já usava lá.
 
-Copie o `docker-compose.prod.yml` do repositório para esta pasta.
+**O `docker-compose.prod.yml` não precisa ser copiado**: o deploy o envia do
+repositório a cada execução, então o servidor nunca fica com uma versão antiga.
+
+O diretório em si também é criado pelo deploy. O que ele **não** pode criar é
+este `.env` — ele tem a senha do banco e o token do n8n, que não devem sair do
+servidor. Se faltar, o Actions falha com a instrução na tela.
 
 ### 1.6 Firewall
 

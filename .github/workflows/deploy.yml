@@ -108,6 +108,38 @@ jobs:
     runs-on: ubuntu-latest
     environment: producao
     steps:
+      # O diretório precisa existir ANTES do envio do compose. Falhar aqui com
+      # "cd ***: No such file or directory" é ilegível: o GitHub mascara o
+      # valor do segredo, então nem dá para ver qual caminho faltou.
+      - name: Preparar o diretório no VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          password: ${{ secrets.VPS_SENHA }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            mkdir -p '${{ secrets.VPS_CAMINHO }}'
+            echo "diretório pronto"
+
+      # O compose vem do repositório a cada deploy: assim o servidor nunca
+      # fica com uma versão antiga do arquivo, e é um passo manual a menos.
+      - uses: actions/checkout@v4
+
+      - name: Enviar o docker-compose.prod.yml
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          password: ${{ secrets.VPS_SENHA }}
+          source: docker-compose.prod.yml
+          target: ${{ secrets.VPS_CAMINHO }}
+
       - name: Enviar para o VPS
         uses: appleboy/ssh-action@v1
         with:
@@ -133,7 +165,27 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            cd ${{ secrets.VPS_CAMINHO }}
+            cd '${{ secrets.VPS_CAMINHO }}'
+
+            # O .env é o ÚNICO arquivo que este workflow não pode criar: ele
+            # tem a senha do banco e o token do n8n, que não devem sair do
+            # servidor. Sem ele o compose falharia com um erro de variável
+            # indefinida, longe da causa real.
+            if [ ! -f .env ]; then
+              echo ""
+              echo "════════════════════════════════════════════════════════"
+              echo " Falta o arquivo .env no diretório do painel."
+              echo ""
+              echo " Ele guarda a senha do banco e o token do n8n, então"
+              echo " precisa ser criado à mão no servidor — o modelo está na"
+              echo " seção 1.5 do DEPLOY.md. No servidor:"
+              echo ""
+              echo "   cd <VPS_CAMINHO> && nano .env && chmod 600 .env"
+              echo ""
+              echo " Depois clique em Re-run jobs aqui no Actions."
+              echo "════════════════════════════════════════════════════════"
+              exit 1
+            fi
 
             # Sem `docker login`: o pacote é público, então o VPS baixa sem
             # credencial nenhuma. Um segredo a menos para guardar e renovar.
