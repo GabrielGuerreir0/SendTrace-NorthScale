@@ -204,29 +204,21 @@ jobs:
               exit 1
             fi
 
-            # A API sobe junto com o painel e precisa do segredo que assina
-            # os tokens. Sem ele o compose para com "variable is not set" —
-            # verdadeiro, mas longe da causa. Conferir aqui explica o que
-            # falta e onde. (API_URL deixou de ser obrigatória: o padrão é a
-            # API deste mesmo compose.)
-            faltando=""
-            for chave in API_JWT_SEGREDO; do
-              grep -qE "^${chave}=." .env || faltando="$faltando $chave"
-            done
-            if [ -n "$faltando" ]; then
-              echo ""
-              echo "════════════════════════════════════════════════════════"
-              echo " O .env do servidor não tem:$faltando"
-              echo ""
-              echo " A API agora sobe junto com o painel e assina os tokens"
-              echo " de login com esse segredo. Gere um e grave no servidor:"
-              echo ""
-              echo "   node -e \"console.log(require('crypto').randomBytes(48).toString('base64url'))\""
-              echo "   cd <VPS_CAMINHO> && nano .env"
-              echo ""
-              echo " O modelo está na seção 1.5 do DEPLOY.md."
-              echo "════════════════════════════════════════════════════════"
-              exit 1
+            # A API sobe junto com o painel e assina os tokens de login com
+            # este segredo. Se o .env ainda não o tem, o deploy gera UM e
+            # grava — de propósito, uma vez só: gerar a cada deploy invalidaria
+            # a sessão de todo mundo em todo push. Ele nasce e morre no
+            # servidor; não passa pelo GitHub. (API_URL deixou de ser
+            # obrigatória: o padrão é a API deste mesmo compose.)
+            if ! grep -qE '^API_JWT_SEGREDO=.' .env; then
+              echo "→ .env sem API_JWT_SEGREDO; gerando um agora (só nesta primeira vez)"
+              segredo=$(openssl rand -base64 48 | tr '+/' '-_' | tr -d '=\n')
+              # Remove uma eventual linha vazia (API_JWT_SEGREDO=) antes de
+              # gravar, senão a vazia continuaria valendo para o compose.
+              grep -v '^API_JWT_SEGREDO=' .env > .env.novo 2>/dev/null || true
+              echo "API_JWT_SEGREDO=$segredo" >> .env.novo
+              mv .env.novo .env
+              chmod 600 .env
             fi
 
             # Sem `docker login`: o pacote é público, então o VPS baixa sem

@@ -181,10 +181,12 @@ cat > .env <<'EOF'
 # NÃO defina API_URL — ela só serve para apontar para uma instância
 # externa, fora deste compose.
 
-# Assina os tokens de login da API. Obrigatório, mínimo 32 caracteres;
-# sem ele o compose se recusa a subir. Gere um com:
+# Assina os tokens de login da API. Se você deixar de fora, o PRÓPRIO
+# DEPLOY gera um na primeira vez e grava aqui — ele nasce e morre no
+# servidor, sem passar pelo GitHub. Só preencha à mão se quiser um
+# valor seu (mínimo 32 caracteres):
 #   node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
-API_JWT_SEGREDO=<segredo gerado>
+#API_JWT_SEGREDO=
 
 # Teto de registros baixados. A API não agrega, então medir a fila é
 # baixá-la; passando disto o painel avisa que os números são parciais.
