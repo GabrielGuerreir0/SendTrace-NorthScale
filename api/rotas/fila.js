@@ -7,10 +7,11 @@
  */
 import { query } from '../../server/db.js';
 import { DisparoPosVenda, DisparoEntrada, paginado, paginacaoParams } from '../esquemas.js';
-import { registrarCrud, fatiar, montarBusca, montarOrdem } from '../comum.js';
+import { registrarCrud, fatiar, montarBusca, montarOrdem, ErroHttp } from '../comum.js';
 
 const COLUNAS = `id, transacao_id, nome, email, telefone, produto, etapa_atual,
-  proximo_disparo, status, tentativas, ultimo_erro, claimed_at, criado_em`;
+  proximo_disparo, status, tentativas, ultimo_erro, claimed_at, criado_em,
+  chat_resumo, chat_resumo_em`;
 
 const BUSCA_EM = ['transacao_id', 'nome', 'email', 'telefone', 'produto'];
 const ORDENAVEIS = ['id', 'criado_em', 'proximo_disparo', 'etapa_atual', 'tentativas', 'status'];
@@ -66,6 +67,62 @@ export default async function rotasFila(app) {
     return envelope(rows);
   });
 
+  /*
+   * O resumo do chat de suporte, gravado pelo CHATBOT (outra aplicação).
+   *
+   * O bot conhece o E-MAIL do cliente, não o id do pedido — então a rota
+   * localiza por e-mail, sem diferenciar maiúsculas, e grava o resumo em
+   * todos os pedidos daquele cliente. Exige sessão, não administrador: o
+   * resumo é anotação interna e não muda nada do que sai para o cliente —
+   * a regra "só admin escreve" existe para o que os clientes recebem.
+   *
+   * Declarada ANTES do CRUD pelo mesmo motivo de /pendentes/: "chat" não
+   * pode ser engolido como se fosse um :id.
+   */
+  app.put('/api/disparos/chat/', {
+    schema: {
+      tags: ['Fila'],
+      summary: 'Grava o resumo do chat de suporte de um cliente',
+      description: 'Para o chatbot de suporte: localiza os pedidos pelo e-mail do cliente '
+        + '(sem diferenciar maiúsculas) e grava o resumo do atendimento em todos eles, '
+        + 'com o horário. Mandar `resumo: null` apaga o resumo.',
+      security: [{ bearerAuth: [] }],
+      body: {
+        type: 'object',
+        required: ['email', 'resumo'],
+        properties: {
+          email: { type: 'string', maxLength: 200, description: 'E-mail do cliente, como está na fila.' },
+          resumo: { type: ['string', 'null'], maxLength: 10_000, description: 'O resumo da conversa. Nulo apaga.' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            atualizados: { type: 'integer', description: 'Quantos pedidos receberam o resumo.' },
+            ids: { type: 'array', items: { type: 'integer' } },
+          },
+        },
+        404: { $ref: 'Erro#' },
+      },
+    },
+    onRequest: [app.exigirSessao],
+  }, async (req) => {
+    const { email, resumo } = req.body;
+    // Apagar o resumo apaga o carimbo junto: um "quando" sem resumo mentiria
+    // que houve chat.
+    const { rows, rowCount } = await query(
+      `UPDATE disparos_pos_venda
+       SET chat_resumo = $2,
+           chat_resumo_em = CASE WHEN $2::text IS NULL THEN NULL ELSE now() END
+       WHERE lower(email) = lower($1)
+       RETURNING id`,
+      [email, resumo],
+    );
+    if (!rowCount) throw new ErroHttp(404, `Nenhum pedido com o e-mail ${email}.`);
+    return { atualizados: rowCount, ids: rows.map((r) => r.id) };
+  });
+
   registrarCrud(app, {
     rota: '/api/disparos/',
     tabela: 'disparos_pos_venda',
@@ -74,6 +131,11 @@ export default async function rotasFila(app) {
     esquemaEntrada: DisparoEntrada,
     tag: 'Fila',
     colunas: COLUNAS,
+    // Quem gravar chat_resumo pelo CRUD (admin) ganha o carimbo de horário
+    // junto — sem isso o resumo mudaria e o "quando" ficaria mentindo.
+    aoEntrar: (corpo) => (corpo.chat_resumo !== undefined
+      ? { ...corpo, chat_resumo_em: new Date() }
+      : corpo),
     buscaEm: BUSCA_EM,
     ordenaveis: ORDENAVEIS,
     ordemPadrao: 'proximo_disparo ASC NULLS LAST',

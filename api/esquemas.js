@@ -37,6 +37,8 @@ export const DisparoPosVenda = {
     ultimo_erro: texto(500),
     claimed_at: { type: ['string', 'null'], format: 'date-time', description: 'Quando o worker pegou o item. Nulo = ninguém o tem.' },
     criado_em: { ...dataHora, readOnly: true },
+    chat_resumo: { type: ['string', 'null'], maxLength: 10_000, description: 'Resumo do atendimento, gravado pelo chatbot de suporte. Nulo = nunca houve chat.' },
+    chat_resumo_em: { type: ['string', 'null'], format: 'date-time', readOnly: true, description: 'Quando o resumo foi gravado/atualizado pela última vez.' },
   },
   required: ['id', 'transacao_id', 'proximo_disparo', 'criado_em'],
 };
@@ -56,6 +58,7 @@ export const DisparoEntrada = {
     tentativas: { type: 'integer' },
     ultimo_erro: texto(500),
     claimed_at: { type: ['string', 'null'], format: 'date-time' },
+    chat_resumo: { type: ['string', 'null'], maxLength: 10_000 },
   },
   required: ['transacao_id'],
 };
