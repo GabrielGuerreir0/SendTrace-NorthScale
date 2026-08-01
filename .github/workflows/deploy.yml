@@ -67,6 +67,7 @@ jobs:
       packages: write
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
+      url_pacote: ${{ steps.meta.outputs.url_pacote }}
     steps:
       - uses: actions/checkout@v4
 
@@ -88,6 +89,19 @@ jobs:
           nome=$(echo "${{ env.REGISTRO }}/${{ env.IMAGEM }}" | tr '[:upper:]' '[:lower:]')
           echo "tag=${nome}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
           echo "nome=${nome}" >> "$GITHUB_OUTPUT"
+
+          # Link direto para as configurações do pacote. Sem ele, a mensagem de
+          # erro manda "procure em Packages" — e o nome do pacote é o do
+          # repositório em MINÚSCULAS, que raramente é o que a pessoa espera
+          # ver. A URL muda conforme o dono seja uma conta ou uma organização.
+          pacote=$(echo "${{ github.repository }}" | cut -d/ -f2 | tr '[:upper:]' '[:lower:]')
+          dono='${{ github.repository_owner }}'
+          if [ '${{ github.event.repository.owner.type }}' = 'Organization' ]; then
+            base="https://github.com/orgs/${dono}"
+          else
+            base="https://github.com/users/${dono}"
+          fi
+          echo "url_pacote=${base}/packages/container/${pacote}/settings" >> "$GITHUB_OUTPUT"
 
       - name: Construir e publicar
         uses: docker/build-push-action@v6
@@ -204,15 +218,13 @@ jobs:
             if ! docker compose -f docker-compose.prod.yml pull; then
               echo ""
               echo "════════════════════════════════════════════════════════"
-              echo " Não consegui baixar a imagem."
+              echo " Não consegui baixar a imagem: o pacote está PRIVADO."
               echo ""
-              echo " Se este é o PRIMEIRO deploy, o pacote acabou de nascer"
-              echo " PRIVADO. Torne-o público — uma vez só:"
+              echo " Abra este link e mude para Public — uma vez só:"
               echo ""
-              echo "   GitHub → seu perfil → Packages → sendtrace"
-              echo "   → Package settings → Danger Zone"
-              echo "   → Change visibility → Public"
+              echo "   ${{ needs.construir.outputs.url_pacote }}"
               echo ""
+              echo " Role até Danger Zone → Change visibility → Public."
               echo " Depois clique em Re-run jobs aqui no Actions."
               echo "════════════════════════════════════════════════════════"
               exit 1
