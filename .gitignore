@@ -32,3 +32,6 @@ backups/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Projeto do chatbot de suporte: repositório próprio, não deste painel.
+NorthSupportCB/
