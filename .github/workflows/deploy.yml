@@ -136,7 +136,6 @@ jobs:
           port: ${{ secrets.VPS_PORT || 22 }}
           key: ${{ secrets.VPS_SSH_KEY }}
           password: ${{ secrets.VPS_SENHA }}
-          script_stop: true
           script: |
             set -euo pipefail
             mkdir -p '${{ secrets.VPS_CAMINHO }}'
@@ -179,7 +178,6 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           password: ${{ secrets.VPS_SENHA }}
 
-          script_stop: true
           script: |
             set -euo pipefail
             cd '${{ secrets.VPS_CAMINHO }}'

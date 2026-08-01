@@ -177,7 +177,7 @@ Crie o `.env` — **só existe no servidor**, nunca no git:
 cat > .env <<'EOF'
 # ── API do SendTrace: de onde vêm TODOS os números ────────────────
 # A API sobe JUNTO com o painel, neste mesmo compose, e o painel a
-# encontra sozinho pela rede interna (http://sendtrace-api:4400).
+# encontra sozinho pela rede interna (http://sendtrace-painel-api:4400).
 # NÃO defina API_URL — ela só serve para apontar para uma instância
 # externa, fora deste compose.
 

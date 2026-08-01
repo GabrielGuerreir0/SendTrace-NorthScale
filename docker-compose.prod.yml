@@ -8,8 +8,8 @@
 #  ao verdadeiro, e o painel abriria bonito mostrando zero pedidos.
 #
 #  As duas pontas saem da MESMA imagem — só muda o comando. O painel fala com
-#  a API pelo nome do container (http://sendtrace-api:4400), pela rede do
-#  banco, sem passar pela internet.
+#  a API pelo nome do container (http://sendtrace-painel-api:4400), pela rede
+#  do banco, sem passar pela internet.
 #
 #  Fica numa SUBPASTA (/opt/sendtrace/painel) de propósito: o compose do banco
 #  tem o próprio .env em /opt/sendtrace, e dois .env no mesmo diretório se
@@ -23,7 +23,10 @@ services:
   # ── o back: a API, direto sobre o Postgres ────────────────────────────────
   api:
     image: ${IMAGEM:-ghcr.io/OWNER/sendtrace:latest}
-    container_name: sendtrace-api
+    # NÃO "sendtrace-api": esse nome já pertence à API antiga (Django), que
+    # roda no mesmo VPS pelo compose de /opt/sendtrace. Dois containers não
+    # podem ter o mesmo nome, e o deploy quebrava exatamente nisso.
+    container_name: sendtrace-painel-api
     command: npm run api
     restart: unless-stopped
 
@@ -100,7 +103,7 @@ services:
       # pessoa entra com a própria conta da API. O padrão é a API DESTE
       # compose, pelo nome do container e pela rede interna; preencha API_URL
       # no .env só se quiser apontar para uma instância externa.
-      API_URL: ${API_URL:-http://sendtrace-api:4400}
+      API_URL: ${API_URL:-http://sendtrace-painel-api:4400}
       API_FILA_MAX: ${API_FILA_MAX:-20000}
       API_CACHE_MS: ${API_CACHE_MS:-4000}
       API_TIMEOUT_MS: ${API_TIMEOUT_MS:-20000}
