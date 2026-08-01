@@ -897,6 +897,10 @@ export async function listarPedidos({
       proximo_disparo: d.proximo_disparo,
       claimed_at: d.claimed_at,
       criado_em: d.criado_em,
+      // O que o chatbot de suporte registrou sobre este cliente — a tabela
+      // abre isto no duplo clique da linha.
+      chat_resumo: d.chat_resumo ?? null,
+      chat_resumo_em: d.chat_resumo_em ?? null,
     })),
     total: filtrados.length,
   };

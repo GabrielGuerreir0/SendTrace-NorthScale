@@ -1237,3 +1237,10 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
   }
   .conexao-fluxo { opacity: .55; }
 }
+
+/* ── resumo do atendimento (duplo clique na tabela) ─────────────────── */
+.chat-resumo-texto {
+  white-space: pre-wrap;
+  line-height: 1.55;
+  max-width: 60ch;
+}

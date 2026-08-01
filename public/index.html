@@ -267,6 +267,24 @@
   </div>
 </dialog>
 
+<!-- ── atendimento do cliente: o resumo que o chatbot gravou no banco ── -->
+<dialog class="janela" id="janela-chat" aria-labelledby="janela-chat-tit">
+  <header class="janela-cabeca">
+    <div>
+      <h2 id="janela-chat-tit">Atendimento do suporte</h2>
+      <p class="cartao-sub" id="chat-quem">—</p>
+    </div>
+    <button class="btn btn-icone" id="fechar-chat" title="Fechar">
+      <span aria-hidden="true">✕</span><span class="sr">Fechar</span>
+    </button>
+  </header>
+
+  <div class="janela-corpo">
+    <p class="chat-resumo-texto" id="chat-resumo"></p>
+    <p class="cartao-sub" id="chat-quando" hidden></p>
+  </div>
+</dialog>
+
 <!-- ── readmes de produto: o que a IA de suporte sabe (só administradores) ── -->
 <dialog class="janela" id="janela-produtos" aria-labelledby="janela-produtos-tit">
   <header class="janela-cabeca">

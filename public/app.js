@@ -807,6 +807,11 @@ function renderTabela({ pedidos, total }) {
   corpo.replaceChildren(...pedidos.map((p) => {
     const tr = document.createElement('tr');
 
+    // Duplo clique abre o que o chatbot de suporte registrou deste cliente.
+    // Clique simples continua livre para selecionar/copiar texto da linha.
+    tr.title = 'Duplo clique: atendimento do suporte';
+    tr.addEventListener('dblclick', () => abrirChatCliente(p));
+
     tr.append(celula(p.transacao_id, 'cel-mono'));
 
     const cliente = document.createElement('div');
@@ -1382,6 +1387,30 @@ $('form-novo').addEventListener('submit', async (ev) => {
     if (lista.ok) renderUsuarios(lista.dados);
   } catch { /* 401 já redirecionou */ }
 });
+
+/* ═══════════════  atendimento do cliente (resumo do chatbot)  ═══════ */
+
+/**
+ * O chatbot de suporte grava no banco um resumo de cada atendimento
+ * (motivo, humor, o que foi tentado, desfecho). Duplo clique numa linha
+ * da tabela abre esse resumo — é a memória do suporte sobre o cliente.
+ */
+function abrirChatCliente(p) {
+  $('chat-quem').textContent =
+    [p.nome, p.email].filter(Boolean).join(' · ') || p.transacao_id;
+  const tem = Boolean(p.chat_resumo);
+  $('chat-resumo').textContent = tem
+    ? p.chat_resumo
+    : 'Este cliente ainda não tem atendimento registrado pelo chatbot de suporte.';
+  $('chat-resumo').classList.toggle('cel-fraca', !tem);
+  $('chat-quando').hidden = !p.chat_resumo_em;
+  if (p.chat_resumo_em) {
+    $('chat-quando').textContent = `Registrado em ${dataHora(p.chat_resumo_em)}.`;
+  }
+  $('janela-chat').showModal();
+}
+
+$('fechar-chat').addEventListener('click', () => $('janela-chat').close());
 
 /* ═══════════════  readmes de produto (conhecimento da IA)  ══════════ */
 
