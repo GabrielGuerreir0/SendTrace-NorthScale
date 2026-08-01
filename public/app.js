@@ -23,6 +23,9 @@ const ESTADOS = [
   { id: 'processando', label: 'Processando', icone: '◐' },
   { id: 'travado',     label: 'Travado',     icone: '■' },
   { id: 'finalizado',  label: 'Finalizado',  icone: '✓' },
+  // Cancelado é estado próprio, não um sabor de "finalizado": quem cancelou
+  // não concluiu a régua, e contá-lo junto afirmaria o contrário.
+  { id: 'cancelado',   label: 'Cancelado',   icone: '✕' },
 ];
 const ROTULO_ESTADO = Object.fromEntries(ESTADOS.map((e) => [e.id, e]));
 
@@ -83,6 +86,9 @@ const estado = {
   timer: null,
   filtros: { etapa: null, estado: null, canal: null, problema: null, busca: '', ordem: 'proximo' },
   graficos: { etapa: null, canal: null },
+  // Recorte do painel INTEIRO. Diferente dos filtros acima (que só valem para a
+  // tabela) e dos de gráfico (que só valem para os dois temporais).
+  produto: null,
   pagina: { limit: 25, offset: 0, total: 0 },
 };
 
@@ -257,10 +263,18 @@ function renderLegenda() {
 
 function renderHeroi(s) {
   $('heroi-valor').textContent = n(s.totais.na_regua);
+  // Com um produto escolhido, o número-herói deixa de ser o da operação e passa
+  // a ser o daquele produto. O rótulo precisa dizer isso, senão o mesmo lugar
+  // da tela mostra duas grandezas diferentes sem aviso.
+  $('heroi-rotulo').textContent = estado.produto
+    ? `Na régua agora · ${truncar(estado.produto, 28)}`
+    : 'Pedidos na régua agora';
+
   const partes = [];
   if (s.totais.prestes) partes.push(`${n(s.totais.prestes)} disparam na próxima hora`);
   if (s.totais.novos_24h) partes.push(`${n(s.totais.novos_24h)} entraram em 24 h`);
   if (s.totais.finalizado) partes.push(`${n(s.totais.finalizado)} já finalizados`);
+  if (s.totais.cancelado) partes.push(`${n(s.totais.cancelado)} cancelados`);
   $('heroi-nota').textContent = partes.length ? partes.join(' · ') : 'nenhum pedido na fila ainda';
 }
 
@@ -270,7 +284,8 @@ function renderKpis(s) {
     { id: 'atrasado',    nota: 'horário já passou' },
     { id: 'processando', nota: 'nas mãos do worker' },
     { id: 'travado',     nota: `presos > ${s.lockTimeoutMin ?? 10} min` },
-    { id: 'finalizado',  nota: 'saíram da régua' },
+    { id: 'finalizado',  nota: 'chegaram ao fim' },
+    { id: 'cancelado',   nota: 'saíram cancelados' },
   ];
 
   $('kpis').replaceChildren(...defs.map((d) => {
@@ -325,7 +340,8 @@ function renderRodapeCanvas(s) {
   if (auto) partes.push(`${auto} etapa${auto > 1 ? 's' : ''} na fila sem cadastro em etapas_regua`);
   $('rodape-etapas').textContent = partes.join(' · ');
 
-  $('canvas-vazio').hidden = s.totais.na_regua > 0 || s.totais.finalizado > 0;
+  $('canvas-vazio').hidden = s.totais.na_regua > 0 || s.totais.finalizado > 0
+    || s.totais.cancelado > 0;
 
   // A régua não existe ainda: o painel funciona, mas sem nomes nem canais.
   const faixa = $('faixa-regua');
@@ -668,6 +684,49 @@ function renderStatusBruto(s) {
   }));
 }
 
+/**
+ * O seletor de produto do topo.
+ *
+ * A lista vem do snapshot e é SEMPRE completa (o servidor não a filtra por
+ * produto): se ela obedecesse ao recorte, escolher um produto deixaria só ele
+ * na lista e não haveria como voltar nem trocar.
+ *
+ * O produto escolhido continua na lista mesmo quando some da fila — um recorte
+ * ativo que desaparece do controle é um filtro invisível pesando sobre todos os
+ * números da tela.
+ */
+let assinaturaProdutos = null;
+
+function renderFiltroProduto(s) {
+  const sel = $('sel-produto');
+  const lista = s.produtos ?? [];
+  const escolhido = estado.produto;
+
+  const rotulos = [['', 'Todos os produtos']];
+  for (const p of lista) {
+    rotulos.push([p.produto, `${p.produto}${p.total ? ` · ${n(p.total)}` : ''}`]);
+  }
+  if (escolhido && !lista.some((p) => p.produto === escolhido)) {
+    rotulos.push([escolhido, `${escolhido} · 0`]);
+  }
+
+  sel.value = escolhido ?? '';
+  sel.dataset.ativo = escolhido ? 'sim' : 'nao';
+
+  /*
+   * Só refaz a lista quando ela REALMENTE mudou — e nunca com o seletor em
+   * foco. O painel se recarrega a cada 10 s e as contagens andam junto: trocar
+   * as opções no meio de uma escolha fecharia o dropdown na mão do usuário.
+   */
+  const assinatura = rotulos.map((r) => r.join(' ')).join('\n');
+  if (assinatura === assinaturaProdutos || document.activeElement === sel) return;
+  assinaturaProdutos = assinatura;
+
+  sel.replaceChildren(...rotulos.map(([value, textContent]) =>
+    Object.assign(document.createElement('option'), { value, textContent })));
+  sel.value = escolhido ?? '';
+}
+
 /* Os dois seletores de etapa (tabela e gráficos) saem da mesma lista do
    snapshot — a régua é auto-detectada, então nada aqui é fixo no código. */
 function renderFiltrosEtapa(s) {
@@ -707,9 +766,14 @@ function renderTabela({ pedidos, total }) {
     td.colSpan = 8;
     td.className = 'vazio-suave';
     const f = estado.filtros;
-    td.textContent = f.busca || f.etapa !== null || f.estado || f.canal || f.problema
-      ? 'Nenhum pedido corresponde a estes filtros.'
-      : 'A tabela `disparos_pos_venda` está vazia.';
+    const temFiltro = f.busca || f.etapa !== null || f.estado || f.canal || f.problema;
+    // O recorte por produto vive no topo da página: sem citá-lo aqui, a tabela
+    // pareceria vazia "sem motivo" para quem esqueceu que escolheu um produto.
+    td.textContent = estado.produto
+      ? `Nenhum pedido de “${estado.produto}”${temFiltro ? ' com estes filtros' : ''}.`
+      : temFiltro
+        ? 'Nenhum pedido corresponde a estes filtros.'
+        : 'A tabela `disparos_pos_venda` está vazia.';
     tr.append(td);
     corpo.replaceChildren(tr);
     atualizarPaginacao();
@@ -804,6 +868,7 @@ async function carregarSnapshot({ silencioso = false } = {}) {
       const qs = new URLSearchParams();
       if (g.etapa !== null) qs.set('etapa', String(g.etapa));
       if (g.canal) qs.set('canal', g.canal);
+      if (estado.produto) qs.set('produto', estado.produto);
       if (estado.linhaExibindo) qs.set('linha', estado.linhaExibindo);
       const resp = await fetch(`/api/snapshot${qs.toString() ? `?${qs}` : ''}`);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -825,6 +890,7 @@ async function carregarSnapshot({ silencioso = false } = {}) {
     renderStatusBruto(s);
     renderAlertas(s);
     renderFiltrosEtapa(s);
+    renderFiltroProduto(s);
     fluxo.atualizar(s.etapas, s.totais);
     trilha.atualizar(s.etapas, s.canais ?? CANAIS_META, s.destinos, s.linha, s.piorCasoSms);
     renderLinha(s);
@@ -873,6 +939,9 @@ async function carregarPedidos() {
     if (f.canal) qs.set('canal', f.canal);
     if (f.problema) qs.set('problema', f.problema);
     if (f.busca) qs.set('q', f.busca);
+    // O recorte do topo vale para a tabela também — senão o painel inteiro
+    // falaria de um produto e a lista, de todos.
+    if (estado.produto) qs.set('produto', estado.produto);
     // O filtro por canal depende de qual linha tem mensagem cadastrada: sem
     // isto a tabela contaria por uma linha e a tela mostraria outra.
     if (estado.linhaExibindo) qs.set('linha', estado.linhaExibindo);
@@ -919,7 +988,30 @@ $('btn-demo').addEventListener('click', (e) => {
   e.currentTarget.setAttribute('aria-pressed', String(estado.demo));
   $('faixa-demo').hidden = !estado.demo;
   estado.pagina.offset = 0;
+  // Os números da demonstração são gerados no navegador em bloco, sem recorte
+  // por produto. Deixar o seletor ativo ali faria a tabela filtrar e os KPIs
+  // não — dois recortes diferentes na mesma tela.
+  if (estado.demo) estado.produto = null;
+  const sel = $('sel-produto');
+  sel.disabled = estado.demo;
+  sel.title = estado.demo
+    ? 'Indisponível na demonstração — os números são gerados no navegador'
+    : 'Recorta o painel inteiro por produto — as ofertas do mesmo produto contam juntas';
   carregarSnapshot();
+  carregarPedidos();
+});
+
+/**
+ * Troca o produto do painel INTEIRO.
+ *
+ * Recarrega snapshot e tabela juntos: são as duas metades da mesma leitura, e
+ * atualizar só uma deixaria a tela afirmando duas coisas ao mesmo tempo.
+ */
+$('sel-produto').addEventListener('change', (e) => {
+  estado.produto = e.target.value || null;
+  e.target.dataset.ativo = estado.produto ? 'sim' : 'nao';
+  estado.pagina.offset = 0;
+  carregarSnapshot({ silencioso: true });
   carregarPedidos();
 });
 
@@ -1015,7 +1107,7 @@ $('pag-prox').addEventListener('click', () => {
 // controle ficaria em branco mostrando um filtro que está valendo.
 $('f-estado').replaceChildren(
   Object.assign(document.createElement('option'), { value: '', textContent: 'Todos' }),
-  Object.assign(document.createElement('option'), { value: 'na_regua', textContent: 'Na régua (não finalizados)' }),
+  Object.assign(document.createElement('option'), { value: 'na_regua', textContent: 'Na régua (ainda em circulação)' }),
   ...ESTADOS.map((e) => Object.assign(document.createElement('option'), {
     value: e.id, textContent: e.label,
   })),

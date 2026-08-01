@@ -16,6 +16,7 @@ export const CORES_ESTADO = {
   processando: 'var(--st-processando)',
   travado: 'var(--st-travado)',
   finalizado: 'var(--st-finalizado)',
+  cancelado: 'var(--st-cancelado)',
 };
 
 const SEGMENTOS_ANEL = ['em_dia', 'atrasado', 'processando', 'travado'];
@@ -306,8 +307,13 @@ export function criarFluxo(container, { aoClicarEtapa, tooltip }) {
 
   function htmlTooltip(d) {
     if (d.terminal) {
-      return `<strong>Finalizados</strong><span class="tt-sub">Pedidos que saíram da régua</span>`
+      return `<strong>Finalizados</strong><span class="tt-sub">Pedidos que chegaram ao fim da régua</span>`
         + `<span class="tt-linha"><span class="tt-chave">total</span><b>${n(d.total)}</b></span>`
+        // Cancelado NÃO entra no total acima: quem cancelou não concluiu a
+        // régua. Aparece aqui para que o número não some sem explicação.
+        + (d.cancelado > 0
+          ? `<span class="tt-linha"><span class="tt-chave"><i class="tt-ponto" style="background:${CORES_ESTADO.cancelado}"></i>Cancelados (à parte)</span><b>${n(d.cancelado)}</b></span>`
+          : '')
         + (d.porEtapa?.length
           ? `<span class="tt-sep"></span>` + d.porEtapa
             .map((e) => `<span class="tt-linha"><span class="tt-chave">etapa ${e.etapa}</span><b>${n(e.finalizado)}</b></span>`)
@@ -488,6 +494,7 @@ export function criarFluxo(container, { aoClicarEtapa, tooltip }) {
         terminal: true,
         nome: 'Finalizados',
         total: totais.finalizado,
+        cancelado: totais.cancelado ?? 0,
         onda48h: new Array(12).fill(0),
         porEtapa: etapas.filter((e) => e.finalizado > 0).map((e) => ({ etapa: e.etapa, finalizado: e.finalizado })),
       };

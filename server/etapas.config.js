@@ -38,8 +38,11 @@ export const DESTINOS = {
 
 /**
  * Rótulos amigáveis para a coluna `status` de disparos_pos_venda.
- * Qualquer status que NÃO seja 'ativo' nem 'processando' é tratado pelo painel
- * como terminal (o pedido saiu da régua) e cai no nó "Finalizados".
+ *
+ * 'ativo' e 'processando' são os estados vivos. Entre os terminais, CANCELADO é
+ * contado à parte: quem cancelou não concluiu a régua, e somá-lo aos
+ * finalizados afirmaria que a comunicação deu certo justamente com quem
+ * desistiu. Qualquer outro status terminal cai em "Finalizados".
  */
 export const STATUS_LABELS = {
   ativo: 'Ativo',
@@ -53,7 +56,7 @@ export const STATUS_LABELS = {
 };
 
 /**
- * Os cinco estados que o painel calcula. São MUTUAMENTE EXCLUSIVOS e somam
+ * Os seis estados que o painel calcula. São MUTUAMENTE EXCLUSIVOS e somam
  * exatamente o total de pedidos — é isso que permite desenhar o anel de cada
  * nó como uma parte-do-todo honesta.
  */
@@ -62,7 +65,8 @@ export const ESTADOS = [
   { id: 'atrasado',    label: 'Atrasado',    icone: '▲', descricao: 'Ativo, mas o horário do disparo já passou' },
   { id: 'processando', label: 'Processando', icone: '◐', descricao: 'Worker pegou o item agora há pouco' },
   { id: 'travado',     label: 'Travado',     icone: '■', descricao: 'Preso em processando além do tempo limite' },
-  { id: 'finalizado',  label: 'Finalizado',  icone: '✓', descricao: 'Saiu da régua (status terminal)' },
+  { id: 'finalizado',  label: 'Finalizado',  icone: '✓', descricao: 'Concluiu a régua (status terminal)' },
+  { id: 'cancelado',   label: 'Cancelado',   icone: '✕', descricao: 'Cancelado — saiu da régua sem concluir' },
 ];
 
 /**

@@ -9,6 +9,7 @@ import {
   etapasRollup, ondaPorEtapa, ondaHoraria, entradasPorDia,
   statusBruto, alertas, listarPedidos,
   reguaDefinicao, cadenciaObservada, porCanal, semMensagem, resumoLinhas, piorCasoSms, errosSemCanal, mensagem, salvarMensagem, criarLinha, apagarLinha, editarLinha, etapasDaRegua,
+  produtosDaFila,
 } from './queries.js';
 
 import {
@@ -147,6 +148,18 @@ const CANAL_IDS = new Set(Object.keys(CANAIS));
 /* Situações que o card de alcance expõe e que a tabela sabe filtrar. */
 const PROBLEMA_IDS = new Set(['com_erro', 'sem_contato', 'com_contato']);
 
+/**
+ * Nome de produto vindo da query string, ou null.
+ *
+ * Só normaliza e limita o tamanho: a comparação no banco é por igualdade e
+ * parametrizada, então um nome desconhecido devolve lista vazia — que é a
+ * resposta correta para "os pedidos de um produto que não existe".
+ */
+function produtoOuNulo(raw) {
+  const v = (raw ?? '').trim();
+  return v === '' ? null : v.slice(0, 200);
+}
+
 /** Inteiro de query string, ou null. Devolve `false` quando veio lixo. */
 function inteiroOuNulo(raw) {
   if (raw === null || raw === '') return null;
@@ -198,7 +211,7 @@ function montarEtapas(regua, rollup) {
 
   const vazio = {
     total: 0, em_dia: 0, atrasado: 0, processando: 0, travado: 0, finalizado: 0,
-    com_erro: 0, com_retry: 0, novos_24h: 0, prestes: 0,
+    cancelado: 0, com_erro: 0, com_retry: 0, novos_24h: 0, prestes: 0,
     proximo_em: null, max_tentativas: 0,
   };
   const porEtapa = new Map(rollup.map((r) => [r.etapa, r]));
@@ -241,12 +254,20 @@ async function snapshot(filtros = {}) {
   const ativa = (await linhaAtual())?.linha ?? validas[0] ?? '1';
   const linha = validas.includes(String(filtros.linha)) ? String(filtros.linha) : ativa;
   const doFiltro = { ...filtros, linha };
+  /*
+   * O produto recorta o painel INTEIRO, ao contrário de etapa/canal (que só
+   * recortam os dois gráficos temporais). É outra pergunta: "como está a régua
+   * deste produto" — e responder com os nós e os KPIs de todos os produtos
+   * juntos daria um número que não é do produto nenhum.
+   */
+  const produto = filtros.produto ?? null;
 
   const [regua, rollup, onda, horaria, entradas, statuses, problemas, cadencia,
-    canais, orfaos, linhas, piorSms, errosOrfaos] = await Promise.all([
-    reguaDefinicao(linha), etapasRollup(), ondaPorEtapa(), ondaHoraria(doFiltro),
-    entradasPorDia(doFiltro), statusBruto(), alertas(), cadenciaObservada(),
-    porCanal(linha), semMensagem(linha), resumoLinhas(), piorCasoSms(), errosSemCanal(),
+    canais, orfaos, linhas, piorSms, errosOrfaos, produtos] = await Promise.all([
+    reguaDefinicao(linha), etapasRollup(produto), ondaPorEtapa(produto), ondaHoraria(doFiltro),
+    entradasPorDia(doFiltro), statusBruto(produto), alertas(produto), cadenciaObservada(produto),
+    porCanal(linha, produto), semMensagem(linha, produto), resumoLinhas(),
+    piorCasoSms(produto), errosSemCanal(produto), produtosDaFila(),
   ]);
 
   const reguaOk = regua !== null;
@@ -286,6 +307,7 @@ async function snapshot(filtros = {}) {
     processando: soma('processando'),
     travado: soma('travado'),
     finalizado: soma('finalizado'),
+    cancelado: soma('cancelado'),
     com_erro: soma('com_erro'),
     com_retry: soma('com_retry'),
     novos_24h: soma('novos_24h'),
@@ -305,7 +327,11 @@ async function snapshot(filtros = {}) {
     geradoEm: new Date().toISOString(),
     lockTimeoutMin: LOCK_TIMEOUT_MIN,
     reguaOk,
-    filtros: { etapa: filtros.etapa ?? null, canal: filtros.canal ?? null },
+    filtros: {
+      etapa: filtros.etapa ?? null, canal: filtros.canal ?? null, produto,
+    },
+    // O catálogo do seletor do topo, sempre completo — é dele que se escolhe.
+    produtos,
     // `exibindo` é a linha desenhada na tela; `ativa` é a que está valendo nos
     // envios. Quando divergem, a interface avisa — é o caso de quem está
     // espiando outra linha antes de trocar.
@@ -775,7 +801,10 @@ const servidor = http.createServer(async (req, res) => {
       const linhaRaw = q.get('linha');
       const linha = /^\d{1,4}$/.test(linhaRaw ?? '') ? linhaRaw : null;
 
-      return json(res, 200, await snapshot({ etapa, canal, linha }));
+      // O produto é a exceção: recorta o painel inteiro, não só os gráficos.
+      const produto = produtoOuNulo(q.get('produto'));
+
+      return json(res, 200, await snapshot({ etapa, canal, linha, produto }));
     }
 
     if (url.pathname === '/api/pedidos') {
@@ -808,6 +837,7 @@ const servidor = http.createServer(async (req, res) => {
 
       return json(res, 200, await listarPedidos({
         etapa, estado, canal, problema, busca, limit, offset, ordem: q.get('ordem'), linha,
+        produto: produtoOuNulo(q.get('produto')),
       }));
     }
 

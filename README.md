@@ -457,10 +457,10 @@ UPDATE disparos_pos_venda d
 completo do e-mail, se um dia você quiser tirar os `TEMPLATES` do nó de Code. O
 painel não renderiza esse campo — ele existe para o n8n.
 
-## Os cinco estados
+## Os seis estados
 
 O painel não usa a coluna `status` crua — ela não distingue um pedido saudável
-de um preso no worker. Cada linha é classificada em **um** de cinco estados
+de um preso no worker. Cada linha é classificada em **um** de seis estados
 mutuamente exclusivos, que por isso somam exatamente o total:
 
 | estado | regra |
@@ -469,14 +469,58 @@ mutuamente exclusivos, que por isso somam exatamente o total:
 | **Atrasado** | `status='ativo'` mas o horário já passou |
 | **Processando** | `status='processando'` com lock recente |
 | **Travado** | `status='processando'` há mais de `LOCK_TIMEOUT_MIN`, **ou** com `claimed_at` nulo (anomalia: o worker marcou sem registrar o lock) |
-| **Finalizado** | qualquer outro `status` — o pedido saiu da régua |
+| **Cancelado** | `status` em `cancelado`/`cancelada`/`cancelled`/`canceled` (sem diferenciar maiúsculas) |
+| **Finalizado** | qualquer outro `status` — o pedido chegou ao fim da régua |
+
+**Cancelado é contado à parte, nunca como finalizado.** Os dois saíram da régua,
+mas por motivos opostos: um concluiu a comunicação, o outro desistiu no meio.
+Somados, o painel diria que a régua deu certo justamente com quem cancelou — e o
+número de finalizados nunca poderia ser lido como resultado.
 
 O número grande de cada nó é **quem ainda está circulando** naquela etapa (os
-quatro primeiros). Uma linha finalizada continua carregando o `etapa_atual` em
-que parou, então somá-la ao nó contaria como "nesta etapa" alguém que já saiu —
-por isso os finalizados vão para o nó de saída. Clicar num nó filtra a tabela
-por *Na régua*, e não só pela etapa, justamente para o número da tabela bater
-com o número que você acabou de clicar.
+quatro primeiros). Uma linha finalizada ou cancelada continua carregando o
+`etapa_atual` em que parou, então somá-la ao nó contaria como "nesta etapa"
+alguém que já saiu — por isso os finalizados vão para o nó de saída e os
+cancelados aparecem no indicador próprio. Clicar num nó filtra a tabela por *Na
+régua*, e não só pela etapa, justamente para o número da tabela bater com o
+número que você acabou de clicar.
+
+## Filtro por produto
+
+O seletor no topo recorta o painel **inteiro** por produto: número-herói,
+indicadores, nós do canvas, alcance por canal, os dois gráficos, a fila de
+alertas e a tabela. É diferente dos filtros de gráfico (que só recortam a onda e
+as entradas) e dos filtros da tabela (que só recortam a lista).
+
+A lista sai da própria `disparos_pos_venda` — não há cadastro de produtos em
+lugar nenhum — e é sempre completa, mesmo com um recorte ativo: filtrá-la
+deixaria só o produto já escolhido e não haveria como trocar.
+
+O agrupamento é pelo **nome do produto**, não pelo texto cru da oferta. A fila
+guarda `UP2 - NightCalm (6 Bottles)`, `M3 - NeuroMind Pro (6 Bottles)`,
+`M1 - NeuroMind Pro (2 Bottles)` — o mesmo produto sob vários códigos e
+tamanhos. O painel corta o código da frente, os parênteses da embalagem e o
+preço do fim, e soma as ofertas do mesmo produto:
+
+| na fila | no seletor |
+|---|---|
+| `M1/M2/M3/UP1 - NeuroMind Pro (…)` | **NeuroMind Pro** · 96 |
+| `UP2a Lumicept Gummies (6 Bottles) $174` | **Lumicept Gummies** · 1 |
+
+Sem isso o painel só responderia "como está a oferta M3", com os outros 42
+pedidos do mesmo produto fora da conta. A comparação do nome já cortado é por
+igualdade exata, para "NeuroMind Pro" não arrastar um futuro "NeuroMind Sleep".
+A coluna **Produto** da tabela continua mostrando a oferta inteira — é lá que o
+SKU e o tamanho importam.
+
+Produtos novos entram sozinhos: a lista é lida do banco a cada atualização
+(10 s por padrão), sem deploy e sem cadastro. O código só é cortado quando vem
+**com traço** (`M1 -`, `BF2024 -`) ou quando são **duas maiúsculas + dígito**
+sem traço (`UP2a`). É por isso que `B12 Complex`, `D3 Drops`, `CoQ10 Ultra` e
+`Omega3 Gold` sobrevivem inteiros: são nomes de produto, não códigos, e cortá-los
+somaria `B12 Complex` com `D3 Complex` num `Complex` só. Formatos que a regra não
+reconhece (`PROMO - X`, `X 6 Bottles` sem parêntese) viram opção própria no
+seletor — o erro aparece na tela em vez de fundir produtos em silêncio.
 
 ## A qual canal um erro pertence
 

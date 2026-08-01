@@ -27,6 +27,18 @@
   </div>
 
   <div class="topo-acoes">
+    <!-- Recorta o painel INTEIRO por produto: números, nós, gráficos e tabela.
+         Fica no topo, e não junto dos filtros da tabela, porque o alcance dele é
+         a página toda — um controle escondido numa seção sugeriria que só aquela
+         seção mudou. -->
+    <label class="campo-sel campo-produto" id="campo-produto">
+      <span class="sr">Filtrar o painel por produto</span>
+      <select id="sel-produto"
+              title="Recorta o painel inteiro por produto — as ofertas do mesmo produto contam juntas">
+        <option value="">Todos os produtos</option>
+      </select>
+    </label>
+
     <div class="pilula-live" id="pilula-live" data-estado="carregando">
       <span class="pulso" aria-hidden="true"></span>
       <span id="live-txt">conectando…</span>

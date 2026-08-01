@@ -33,6 +33,10 @@
   --st-processando: #1baf7a;
   --st-travado:     #d03b3b;
   --st-finalizado:  #0ca30c;
+  /* Cancelado é cinza de propósito: não é problema (vermelho) nem conclusão
+     (verde) — é um pedido que saiu por vontade do cliente. O ícone ✕ e o
+     rótulo carregam o significado; a cor só separa do verde ao lado. */
+  --st-cancelado:   #6f6e78;
 
   --sombra-1: 0 1px 2px rgba(11, 11, 11, 0.05), 0 4px 14px rgba(11, 11, 11, 0.05);
   --sombra-no: 0 1px 2px rgba(11, 11, 11, 0.06), 0 6px 18px rgba(11, 11, 11, 0.07);
@@ -65,6 +69,7 @@
     --st-processando: #199e70;
     --st-travado:     #d03b3b;
     --st-finalizado:  #0ca30c;
+    --st-cancelado:   #9a99a5;
 
     --sombra-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 26px rgba(0, 0, 0, 0.34);
     --sombra-no: 0 1px 2px rgba(0, 0, 0, 0.55), 0 8px 22px rgba(0, 0, 0, 0.42);
@@ -96,6 +101,7 @@
   --st-processando: #199e70;
   --st-travado:     #d03b3b;
   --st-finalizado:  #0ca30c;
+  --st-cancelado:   #9a99a5;
 
   --sombra-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 26px rgba(0, 0, 0, 0.34);
   --sombra-no: 0 1px 2px rgba(0, 0, 0, 0.55), 0 8px 22px rgba(0, 0, 0, 0.42);
@@ -229,6 +235,19 @@ code {
   background-image: none; cursor: text; padding-right: 10px; width: 100%;
 }
 
+/*
+ * Seletor de produto do topo. Com um produto escolhido ele fica MARCADO: o
+ * recorte vale para a página inteira, e um controle discreto faria alguém ler
+ * "1.240 na régua" como o total da operação quando é o total de um produto só.
+ */
+.campo-produto select { max-width: 210px; text-overflow: ellipsis; }
+.campo-produto select[data-ativo="sim"] {
+  color: var(--tinta);
+  border-color: color-mix(in srgb, var(--st-em-dia) 55%, var(--borda));
+  background-color: color-mix(in srgb, var(--st-em-dia) 10%, var(--superficie));
+}
+.campo-produto select:disabled { opacity: .45; cursor: default; }
+
 /* ────────────────────────────  faixas  ──────────────────────────── */
 
 .faixa {
@@ -317,6 +336,7 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
 .kpi[data-tom="processando"] .kpi-ico { color: var(--st-processando); }
 .kpi[data-tom="travado"]     .kpi-ico { color: var(--st-travado); }
 .kpi[data-tom="finalizado"]  .kpi-ico { color: var(--st-finalizado); }
+.kpi[data-tom="cancelado"]   .kpi-ico { color: var(--st-cancelado); }
 
 /* ────────────────────────────  legenda  ─────────────────────────── */
 
@@ -568,6 +588,7 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
 .selo-estado[data-e="processando"] i { color: var(--st-processando); }
 .selo-estado[data-e="travado"] i     { color: var(--st-travado); }
 .selo-estado[data-e="finalizado"] i  { color: var(--st-finalizado); }
+.selo-estado[data-e="cancelado"] i   { color: var(--st-cancelado); }
 
 .paginacao {
   display: flex; align-items: center; justify-content: space-between; gap: 14px;

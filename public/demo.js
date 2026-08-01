@@ -126,7 +126,8 @@ const ESTADOS_DEMO = [
   { id: 'atrasado', label: 'Atrasado', icone: '▲', descricao: 'O horário de disparo já passou e nada saiu.' },
   { id: 'processando', label: 'Processando', icone: '◐', descricao: 'Um worker pegou o registro e está enviando.' },
   { id: 'travado', label: 'Travado', icone: '■', descricao: 'Preso em processamento além do timeout do lock.' },
-  { id: 'finalizado', label: 'Finalizado', icone: '✓', descricao: 'Concluiu a régua ou foi encerrado.' },
+  { id: 'finalizado', label: 'Finalizado', icone: '✓', descricao: 'Concluiu a régua.' },
+  { id: 'cancelado', label: 'Cancelado', icone: '✕', descricao: 'Cancelado — saiu da régua sem concluir.' },
 ];
 
 const CANAIS_DEMO = {
@@ -181,6 +182,9 @@ export function snapshotDemo() {
     // estreito de propósito: largo demais, uma etapa posterior ultrapassaria a
     // anterior e o funil deixaria de ser um funil.
     const finalizado = Math.round(e.base * (1.5 + r() * 0.4));
+    // Cancelados são poucos e não entram em `finalizado`: são o grupo que saiu
+    // da régua SEM concluir, e o painel os conta à parte.
+    const cancelado = Math.round(finalizado * (0.04 + r() * 0.05));
 
     // "Prestes" é só quem dispara na PRÓXIMA HORA e ainda não venceu — logo sai
     // do bolo de em_dia, nunca dos atrasados.
@@ -206,12 +210,13 @@ export function snapshotDemo() {
       espera_h: e.espera_h,
       offset_h: e.offset_h,
       mensagens: mensagensDa(e),
-      total: vivos + finalizado,
+      total: vivos + finalizado + cancelado,
       em_dia,
       atrasado,
       processando,
       travado,
       finalizado,
+      cancelado,
       com_erro: Math.round(vivos * (0.004 + r() * 0.012)),
       com_retry: Math.round(vivos * (0.01 + r() * 0.03)),
       novos_24h: Math.round(vivos * (0.06 + r() * 0.12)),
@@ -234,6 +239,7 @@ export function snapshotDemo() {
     processando: soma('processando'),
     travado: soma('travado'),
     finalizado: soma('finalizado'),
+    cancelado: soma('cancelado'),
     com_erro: soma('com_erro'),
     com_retry: soma('com_retry'),
     novos_24h: soma('novos_24h'),
@@ -273,6 +279,7 @@ export function snapshotDemo() {
     { status: 'ativo', label: 'Ativo', total: totais.em_dia + totais.atrasado },
     { status: 'processando', label: 'Processando', total: totais.processando + totais.travado },
     { status: 'concluido', label: 'Concluído', total: totais.finalizado },
+    { status: 'cancelado', label: 'Cancelado', total: totais.cancelado },
   ];
 
   /* Próximas 48 h a partir da hora cheia atual. Curva diurna mais uma crista
@@ -335,7 +342,8 @@ export function snapshotDemo() {
 /* Distribuição dos pedidos do universo entre os estados: a maioria em dia, uma
    cauda de problemas e um bloco já finalizado. */
 const SORTEIO_ESTADO = ['em_dia', 'em_dia', 'em_dia', 'em_dia', 'em_dia', 'em_dia',
-  'atrasado', 'atrasado', 'processando', 'travado', 'finalizado', 'finalizado'];
+  'atrasado', 'atrasado', 'processando', 'travado', 'finalizado', 'finalizado',
+  'cancelado'];
 
 /* Peso de cada etapa no funil — mesma ordem de grandeza da régua. */
 const PESO_ETAPA = [1200, 900, 640, 420, 260, 150];
@@ -376,11 +384,12 @@ function universoDemo(agora) {
       produto: PRODUTOS[Math.floor(r() * PRODUTOS.length)],
       etapa,
       status: estado === 'finalizado' ? 'concluido'
-        : estado === 'processando' || estado === 'travado' ? 'processando' : 'ativo',
+        : estado === 'cancelado' ? 'cancelado'
+          : estado === 'processando' || estado === 'travado' ? 'processando' : 'ativo',
       estado,
       tentativas: estado === 'travado' ? 1 + Math.floor(r() * 4) : Math.floor(r() * 1.4),
       ultimo_erro: r() > 0.85 ? ERROS[Math.floor(r() * ERROS.length)] : null,
-      proximo_disparo: estado === 'finalizado'
+      proximo_disparo: estado === 'finalizado' || estado === 'cancelado'
         ? null
         : new Date(agora + (vencido ? -1 : 1) * (5 + r() * 4000) * 60000).toISOString(),
       claimed_at: estado === 'travado' || estado === 'processando'
@@ -398,7 +407,8 @@ function universoDemo(agora) {
  */
 function casaEstado(pedido, estado) {
   if (!estado) return true;
-  if (estado === 'na_regua') return pedido.estado !== 'finalizado';
+  // Cancelado sai da régua junto com o finalizado — os dois pararam de circular.
+  if (estado === 'na_regua') return pedido.estado !== 'finalizado' && pedido.estado !== 'cancelado';
   return pedido.estado === estado;
 }
 

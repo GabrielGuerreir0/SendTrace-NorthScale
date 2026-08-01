@@ -3,7 +3,20 @@
 import { pool, query, LOCK_TIMEOUT_MIN } from './db.js';
 
 /**
- * Expressão que classifica cada linha em UM dos cinco estados mutuamente
+ * Os status que significam CANCELAMENTO.
+ *
+ * Precisam ser reconhecidos por nome: sem esta lista eles caíam no `ELSE` do
+ * ESTADO_SQL e viravam "finalizado" — quem cancelou era contado junto de quem
+ * chegou ao fim da régua, e o painel afirmava que a comunicação terminou bem
+ * para exatamente as pessoas em que ela não terminou.
+ *
+ * Comparado em minúsculas e sem espaços, porque a fila é escrita pelo n8n e
+ * um 'Cancelado' com maiúscula não pode virar outro estado.
+ */
+const STATUS_CANCELADO = `('cancelado','cancelada','cancelled','canceled')`;
+
+/**
+ * Expressão que classifica cada linha em UM dos seis estados mutuamente
  * exclusivos. `$1` é o LOCK_TIMEOUT_MIN (minutos). Como os estados não se
  * sobrepõem, a soma deles é sempre igual ao total de pedidos — condição
  * necessária para o anel de cada nó representar parte-do-todo corretamente.
@@ -20,8 +33,66 @@ const ESTADO_SQL = `
          AND (claimed_at IS NULL OR claimed_at < now() - make_interval(mins => $1::int))
                                                              THEN 'travado'
     WHEN status = 'processando'                              THEN 'processando'
+    WHEN lower(btrim(status)) IN ${STATUS_CANCELADO}         THEN 'cancelado'
     ELSE 'finalizado'
   END`;
+
+/**
+ * O NOME do produto, sem o código da oferta e sem a embalagem.
+ *
+ * A fila guarda a oferta inteira — "UP2 - NightCalm (6 Bottles)", "M3 -
+ * NeuroMind Pro (6 Bottles)", "M1 - NeuroMind Pro (2 Bottles)" — e o MESMO
+ * produto aparece sob meia dúzia de códigos e tamanhos. Filtrar pelo texto cru
+ * obrigaria a escolher uma oferta por vez, e o painel nunca responderia "como
+ * está o NeuroMind Pro": só "como está a oferta M3 dele", com os outros 42
+ * pedidos do mesmo produto fora da conta.
+ *
+ * Três tesouras, nesta ordem: o código na frente, qualquer parêntese
+ * (`(6 Bottles)`, `(3 + 3 Bottles)`) e o preço no fim (`$174`). Se não sobrar
+ * nada, fica o texto original — um nome feio é melhor que um produto sem nome.
+ *
+ * O CÓDIGO SÓ CAI EM DOIS CASOS, e a restrição é o ponto:
+ *
+ *   com traço   `M1 - NeuroMind`, `BF2024 - NightCalm` — o traço já diz que o
+ *               que vem antes é código. Ainda assim exige dígito no código:
+ *               sem isso "Flex-ImmuneGuard" viraria "ImmuneGuard".
+ *   sem traço   `UP2a Lumicept` — aqui exige DUAS letras MAIÚSCULAS antes dos
+ *               dígitos. É o que salva "B12 Complex", "D3 Drops", "CoQ10 Ultra"
+ *               e "Omega3 Gold": num negócio de suplemento esses são nomes de
+ *               produto, não códigos de oferta, e cortá-los somaria "B12
+ *               Complex" com "D3 Complex" num "Complex" só — dois produtos
+ *               diferentes escondidos atrás de um número que não é de nenhum.
+ *
+ * O que a regra não reconhece (`PROMO - X`, `X 6 Bottles` sem parêntese) fica
+ * inteiro e aparece como opção própria no seletor: erra visível e para cima,
+ * nunca fundindo produtos em silêncio.
+ *
+ * Sem contrabarra em regex nenhuma: dentro de template string do JS, `\s`
+ * viraria a letra `s` e o padrão casaria errado em silêncio. As classes POSIX
+ * dizem o mesmo sem escape — é o que o resto do arquivo já usa.
+ */
+const NOME_PRODUTO = (alias = '') => `coalesce(nullif(btrim(
+      regexp_replace(
+        regexp_replace(
+          regexp_replace(
+            regexp_replace(${alias}produto,
+              '^[[:space:]]*([A-Za-z]{1,4}[0-9]+[A-Za-z]?[[:space:]]*[-:][[:space:]]*'
+              || '|[A-Z]{2,4}[0-9]+[a-z]?[[:space:]]+)', ''),
+            '[[:space:]]*[(][^()]*[)][[:space:]]*', ' ', 'g'),
+          '[[:space:]]*[$][0-9.,]+[[:space:]]*$', ''),
+        '[[:space:]]+', ' ', 'g')
+    ), ''), btrim(${alias}produto))`;
+
+/**
+ * Recorte por produto, aplicado ao painel INTEIRO quando alguém escolhe um na
+ * barra do topo. Nulo = todos os produtos.
+ *
+ * Compara o NOME (acima), não o texto cru: é assim que as ofertas do mesmo
+ * produto entram no mesmo número. Igualdade exata e não ILIKE — parcial faria
+ * "NeuroMind" arrastar junto qualquer "NeuroMind Sleep" que apareça amanhã.
+ */
+const DO_PRODUTO = (n, alias = '') =>
+  `($${n}::text IS NULL OR ${NOME_PRODUTO(alias)} = $${n}::text)`;
 
 /**
  * Predicado "esta linha recebe mensagem no canal X".
@@ -342,7 +413,7 @@ export async function salvarMensagem({
  * régua que está escrita e a régua que está rodando. Só linhas 'ativo' entram:
  * nas demais o `proximo_disparo` é resíduo do último agendamento.
  */
-export async function cadenciaObservada() {
+export async function cadenciaObservada(produto = null) {
   const { rows } = await query(
     `
     SELECT etapa_atual::int AS etapa,
@@ -352,9 +423,38 @@ export async function cadenciaObservada() {
            ) AS mediana_h
     FROM disparos_pos_venda
     WHERE status = 'ativo'
+      AND ${DO_PRODUTO(1)}
     GROUP BY 1
     ORDER BY 1
     `,
+    [produto],
+  );
+  return rows;
+}
+
+/**
+ * O catálogo de produtos que existe na fila, com quantos pedidos cada um tem.
+ *
+ * Agrupa pelo NOME: as quatro ofertas de NeuroMind Pro viram uma opção só, com
+ * os pedidos das quatro somados. O seletor lista produtos, não SKUs — quem olha
+ * o painel quer saber do produto.
+ *
+ * Sai da própria `disparos_pos_venda`: não existe cadastro de produtos em lugar
+ * nenhum, e uma lista fixa no código envelheceria no primeiro lançamento.
+ * Deliberadamente NÃO respeita o filtro de produto — é a lista de onde se
+ * escolhe, e filtrá-la deixaria só a opção já escolhida.
+ */
+export async function produtosDaFila() {
+  const { rows } = await query(
+    `SELECT nome AS produto, count(*)::int AS total
+     FROM (
+       SELECT ${NOME_PRODUTO()} AS nome
+       FROM disparos_pos_venda
+       WHERE produto IS NOT NULL AND btrim(produto) <> ''
+     ) t
+     GROUP BY nome
+     ORDER BY count(*) DESC, nome
+     LIMIT 300`,
   );
   return rows;
 }
@@ -372,7 +472,7 @@ export async function cadenciaObservada() {
  * O JOIN multiplica cada pedido por canal, e isso é o certo aqui: um pedido na
  * etapa 2 gera uma linha de e-mail e uma de SMS. Cada canal fecha sozinho.
  */
-export async function porCanal(linha = '1') {
+export async function porCanal(linha = '1', produto = null) {
   const existe = await query(`SELECT to_regclass('public.mensagens_regua') IS NOT NULL AS ok`);
   if (!existe.rows[0].ok) return [];
 
@@ -401,6 +501,7 @@ export async function porCanal(linha = '1') {
     FROM disparos_pos_venda d
     CROSS JOIN (VALUES ('email'), ('sms')) AS c(canal)
     WHERE d.status IN ('ativo', 'processando')
+      AND ${DO_PRODUTO(3, 'd.')}
       AND EXISTS (
         SELECT 1 FROM mensagens_regua m
          WHERE m.etapa = d.etapa_atual AND m.canal = c.canal
@@ -408,7 +509,7 @@ export async function porCanal(linha = '1') {
     GROUP BY c.canal
     ORDER BY total DESC, c.canal
     `,
-    [LOCK_TIMEOUT_MIN, String(linha)],
+    [LOCK_TIMEOUT_MIN, String(linha), produto],
   );
   return rows;
 }
@@ -426,18 +527,20 @@ export async function porCanal(linha = '1') {
  * a soma dos dois canais fica menor que o total de erros e ninguém entende por
  * quê. Se este número crescer, vale pedir ao worker que prefixe o canal.
  */
-export async function errosSemCanal() {
+export async function errosSemCanal(produto = null) {
   const { rows } = await query(
     `SELECT count(*)::int AS n
      FROM disparos_pos_venda d
      WHERE d.status IN ('ativo', 'processando')
        AND d.ultimo_erro IS NOT NULL
+       AND ${DO_PRODUTO(1, 'd.')}
        AND ${CANAL_DO_ERRO('d')} IS NULL`,
+    [produto],
   );
   return rows[0].n;
 }
 
-export async function semMensagem(linha = '1') {
+export async function semMensagem(linha = '1', produto = null) {
   const existe = await query(`SELECT to_regclass('public.mensagens_regua') IS NOT NULL AS ok`);
   if (!existe.rows[0].ok) return 0;
 
@@ -445,16 +548,17 @@ export async function semMensagem(linha = '1') {
     `SELECT count(*)::int AS n
      FROM disparos_pos_venda d
      WHERE d.status IN ('ativo', 'processando')
+       AND ${DO_PRODUTO(2, 'd.')}
        AND NOT EXISTS (
          SELECT 1 FROM mensagens_regua m
           WHERE m.etapa = d.etapa_atual AND m.ativo AND m.linha = $1::text)`,
-    [String(linha)],
+    [String(linha), produto],
   );
   return rows[0].n;
 }
 
 /** Consolidado por etapa — é o que alimenta os nós do canvas. */
-export async function etapasRollup() {
+export async function etapasRollup(produto = null) {
   const { rows } = await query(
     `
     SELECT
@@ -465,6 +569,7 @@ export async function etapasRollup() {
       count(*) FILTER (WHERE ${ESTADO_SQL} = 'processando')::int    AS processando,
       count(*) FILTER (WHERE ${ESTADO_SQL} = 'travado')::int        AS travado,
       count(*) FILTER (WHERE ${ESTADO_SQL} = 'finalizado')::int     AS finalizado,
+      count(*) FILTER (WHERE ${ESTADO_SQL} = 'cancelado')::int      AS cancelado,
       count(*) FILTER (WHERE ultimo_erro IS NOT NULL)::int          AS com_erro,
       count(*) FILTER (WHERE tentativas > 0)::int                   AS com_retry,
       count(*) FILTER (WHERE criado_em >= now() - interval '24 hours')::int AS novos_24h,
@@ -482,10 +587,11 @@ export async function etapasRollup() {
       min(proximo_disparo) FILTER (WHERE status = 'ativo')          AS proximo_em,
       coalesce(max(tentativas), 0)::int                             AS max_tentativas
     FROM disparos_pos_venda
+    WHERE ${DO_PRODUTO(2)}
     GROUP BY etapa_atual
     ORDER BY etapa_atual
     `,
-    [LOCK_TIMEOUT_MIN],
+    [LOCK_TIMEOUT_MIN, produto],
   );
   return rows;
 }
@@ -498,7 +604,7 @@ export async function etapasRollup() {
  * entrou na fila (etapa 0), não quando entrou na etapa atual — a tabela não
  * guarda histórico de transições, então um "entradas por etapa" seria mentira.
  */
-export async function ondaPorEtapa() {
+export async function ondaPorEtapa(produto = null) {
   const { rows } = await query(
     `
     SELECT
@@ -511,9 +617,11 @@ export async function ondaPorEtapa() {
     WHERE status = 'ativo'
       AND proximo_disparo >  now()
       AND proximo_disparo <= now() + interval '48 hours'
+      AND ${DO_PRODUTO(1)}
     GROUP BY 1, 2
     ORDER BY 1, 2
     `,
+    [produto],
   );
   return rows;
 }
@@ -525,7 +633,9 @@ export async function ondaPorEtapa() {
  * sai SMS": não basta a etapa mandar enviar, o pedido precisa ter telefone —
  * é o mesmo predicado do card de alcance, então os dois números batem.
  */
-export async function ondaHoraria({ etapa = null, canal = null, linha = '1' } = {}) {
+export async function ondaHoraria({
+  etapa = null, canal = null, linha = '1', produto = null,
+} = {}) {
   const { rows } = await query(
     `
     SELECT date_trunc('hour', d.proximo_disparo) AS hora, count(*)::int AS total
@@ -535,10 +645,11 @@ export async function ondaHoraria({ etapa = null, canal = null, linha = '1' } = 
       AND d.proximo_disparo <  now() + interval '48 hours'
       AND ($1::int  IS NULL OR d.etapa_atual = $1::int)
       AND ($2::text IS NULL OR ${RECEBE_NO_CANAL(2, 3)})
+      AND ${DO_PRODUTO(4, 'd.')}
     GROUP BY 1
     ORDER BY 1
     `,
-    [etapa, canal, String(linha)],
+    [etapa, canal, String(linha), produto],
   );
   return rows;
 }
@@ -551,7 +662,9 @@ export async function ondaHoraria({ etapa = null, canal = null, linha = '1' } = 
  * seria contado no dia seguinte. Devolvemos 'YYYY-MM-DD' como texto para o
  * navegador não reinterpretar a data e deslocá-la de novo.
  */
-export async function entradasPorDia({ etapa = null, canal = null, linha = '1' } = {}) {
+export async function entradasPorDia({
+  etapa = null, canal = null, linha = '1', produto = null,
+} = {}) {
   const tz = process.env.TZ_PAINEL || 'America/Sao_Paulo';
   const { rows } = await query(
     `
@@ -561,10 +674,11 @@ export async function entradasPorDia({ etapa = null, canal = null, linha = '1' }
     WHERE d.criado_em >= date_trunc('day', (now() AT TIME ZONE $1) - interval '13 days') AT TIME ZONE $1
       AND ($2::int  IS NULL OR d.etapa_atual = $2::int)
       AND ($3::text IS NULL OR ${RECEBE_NO_CANAL(3, 4)})
+      AND ${DO_PRODUTO(5, 'd.')}
     GROUP BY 1
     ORDER BY 1
     `,
-    [tz, etapa, canal, String(linha)],
+    [tz, etapa, canal, String(linha), produto],
   );
   return rows;
 }
@@ -580,15 +694,18 @@ export async function entradasPorDia({ etapa = null, canal = null, linha = '1' }
  * Um nome curto e um produto curto fariam o painel dizer "1 segmento" para
  * uma mensagem que, no cliente real, sai em dois.
  */
-export async function piorCasoSms() {
+export async function piorCasoSms(produto = null) {
   const { rows } = await query(
     `SELECT
        (SELECT split_part(trim(nome), ' ', 1) FROM disparos_pos_venda
          WHERE nome IS NOT NULL AND trim(nome) <> ''
+           AND ${DO_PRODUTO(1)}
          ORDER BY length(split_part(trim(nome), ' ', 1)) DESC LIMIT 1) AS nome,
        (SELECT produto FROM disparos_pos_venda
          WHERE produto IS NOT NULL AND trim(produto) <> ''
+           AND ${DO_PRODUTO(1)}
          ORDER BY length(produto) DESC LIMIT 1) AS produto`,
+    [produto],
   );
   return {
     nome: rows[0]?.nome ?? null,
@@ -597,16 +714,19 @@ export async function piorCasoSms() {
 }
 
 /** Distribuição bruta de status — descobre valores que não conhecemos de antemão. */
-export async function statusBruto() {
+export async function statusBruto(produto = null) {
   const { rows } = await query(
     `SELECT status, count(*)::int AS total
-     FROM disparos_pos_venda GROUP BY status ORDER BY total DESC, status`,
+     FROM disparos_pos_venda
+     WHERE ${DO_PRODUTO(1)}
+     GROUP BY status ORDER BY total DESC, status`,
+    [produto],
   );
   return rows;
 }
 
 /** Fila de problemas: erros registrados e itens presos no worker. */
-export async function alertas() {
+export async function alertas(produto = null) {
   const { rows } = await query(
     `
     SELECT id, transacao_id, nome, produto, etapa_atual::int AS etapa, status,
@@ -614,14 +734,15 @@ export async function alertas() {
            ${ESTADO_SQL} AS estado,
            ${CANAL_DO_ERRO('disparos_pos_venda')} AS canal_erro
     FROM disparos_pos_venda
-    WHERE ultimo_erro IS NOT NULL
-       OR (status = 'processando'
-           AND (claimed_at IS NULL OR claimed_at < now() - make_interval(mins => $1::int)))
-       OR (status = 'ativo' AND proximo_disparo <= now() - interval '1 hour')
+    WHERE ${DO_PRODUTO(2)}
+      AND (ultimo_erro IS NOT NULL
+        OR (status = 'processando'
+            AND (claimed_at IS NULL OR claimed_at < now() - make_interval(mins => $1::int)))
+        OR (status = 'ativo' AND proximo_disparo <= now() - interval '1 hour'))
     ORDER BY tentativas DESC, proximo_disparo ASC
     LIMIT 25
     `,
-    [LOCK_TIMEOUT_MIN],
+    [LOCK_TIMEOUT_MIN, produto],
   );
   return rows;
 }
@@ -629,13 +750,14 @@ export async function alertas() {
 /**
  * Drill-down paginado com filtros.
  *
- * `estado` aceita os cinco estados e mais o pseudo-estado 'na_regua' = tudo que
- * NÃO é finalizado. Ele existe porque o número que o nó exibe é `na_etapa`
- * (quem ainda circula); filtrar só por etapa traria junto os finalizados que
- * pararam ali, e a tabela contradiria o número que acabou de ser clicado.
+ * `estado` aceita os seis estados e mais o pseudo-estado 'na_regua' = tudo que
+ * ainda circula. Ele existe porque o número que o nó exibe é `na_etapa`; filtrar
+ * só por etapa traria junto os finalizados e os cancelados que pararam ali, e a
+ * tabela contradiria o número que acabou de ser clicado.
  */
 export async function listarPedidos({
   etapa, estado, canal, problema, busca, limit, offset, ordem, linha = '1',
+  produto = null,
 }) {
   const ORDENS = {
     proximo: 'proximo_disparo ASC NULLS LAST',
@@ -645,9 +767,9 @@ export async function listarPedidos({
   const orderBy = ORDENS[ordem] ?? ORDENS.proximo;
 
   // $1 lock · $2 etapa · $3 estado · $4 busca · $5 canal · $6 linha
-  // · $7 problema · $8 limit · $9 offset
+  // · $7 problema · $8 produto · $9 limit · $10 offset
   const params = [LOCK_TIMEOUT_MIN, etapa, estado, busca, canal, String(linha),
-    problema, limit, offset];
+    problema, produto, limit, offset];
 
   const base = `
     FROM (
@@ -655,9 +777,12 @@ export async function listarPedidos({
       FROM disparos_pos_venda
     ) t
     WHERE ($2::int  IS NULL OR t.etapa_atual = $2::int)
+      -- 'na_regua' = ainda em circulação. Cancelado sai daqui junto com o
+      -- finalizado: os dois saíram da régua, só que por motivos opostos.
       AND ($3::text IS NULL
-           OR ($3::text = 'na_regua' AND t.estado <> 'finalizado')
+           OR ($3::text = 'na_regua' AND t.estado NOT IN ('finalizado', 'cancelado'))
            OR t.estado = $3::text)
+      AND ${DO_PRODUTO(8, 't.')}
       AND ($4::text IS NULL OR (
               t.transacao_id ILIKE '%' || $4 || '%'
            OR t.nome         ILIKE '%' || $4 || '%'
@@ -689,10 +814,12 @@ export async function listarPedidos({
               t.ultimo_erro, t.proximo_disparo, t.claimed_at, t.criado_em
        ${base}
        ORDER BY ${orderBy}
-       LIMIT $8::int OFFSET $9::int`,
+       LIMIT $9::int OFFSET $10::int`,
       params,
     ),
-    query(`SELECT count(*)::int AS n ${base}`, params.slice(0, 7)),
+    // A contagem não usa limit/offset: passa só até o último `$` que o `base`
+    // referencia ($8 = produto), senão o Postgres recusa parâmetro sobrando.
+    query(`SELECT count(*)::int AS n ${base}`, params.slice(0, 8)),
   ]);
 
   return { pedidos: dados.rows, total: cont.rows[0].n };
