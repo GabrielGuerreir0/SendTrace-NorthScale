@@ -63,6 +63,23 @@ export const DisparoEntrada = {
   required: ['transacao_id'],
 };
 
+/* ─────────────────────  conhecimento da IA de suporte  ─────────────────── */
+
+export const ProdutoReadme = {
+  $id: 'ProdutoReadme',
+  type: 'object',
+  description: 'O que a IA de suporte sabe sobre um produto. Escrito no painel; '
+    + 'o chatbot lê pela API e injeta no próprio prompt.',
+  properties: {
+    produto: { type: 'string', maxLength: 300, description: 'Nome do produto como o painel mostra (sem código de oferta).' },
+    readme: { type: 'string', maxLength: 100_000, description: 'O texto que a IA recebe: o que é, como usar, prazos, FAQ, política.' },
+    ativo: { type: 'boolean', default: true, description: 'false = a IA deixa de receber este readme, sem apagar o texto.' },
+    atualizado_em: { ...dataHora, readOnly: true },
+    atualizado_por: texto(200),
+  },
+  required: ['produto', 'readme'],
+};
+
 /* ────────────────────────────  a régua  ───────────────────────────── */
 
 export const EtapaRegua = {
@@ -294,7 +311,7 @@ export const ContagemStatus = {
 
 /** Todos, na ordem em que o Swagger vai listá-los. */
 export const TODOS = [
-  DisparoPosVenda, DisparoEntrada, EtapaRegua, MensagemRegua, PainelLinhaCopy,
+  DisparoPosVenda, DisparoEntrada, ProdutoReadme, EtapaRegua, MensagemRegua, PainelLinhaCopy,
   PainelLinhaMensagens, PainelLinhaHistorico, ConfigDisparo, PainelUsuario,
   Credenciais, ParTokens, PedidoRefresh, Erro,
   ContagemPorEstado, ResumoEtapa, Produto, Balde, EntradaDia, ContagemStatus,

@@ -1185,6 +1185,7 @@ function renderUsuario(u) {
   $('usuario-selo').hidden = !u.admin;
   $('usuario-chip').hidden = false;
   $('btn-usuarios').hidden = !u.admin;
+  $('btn-produtos').hidden = !u.admin;
 }
 
 $('btn-sair').addEventListener('click', async () => {
@@ -1379,6 +1380,112 @@ $('form-novo').addEventListener('submit', async (ev) => {
 
     const lista = await api('/api/usuarios');
     if (lista.ok) renderUsuarios(lista.dados);
+  } catch { /* 401 já redirecionou */ }
+});
+
+/* ═══════════════  readmes de produto (conhecimento da IA)  ══════════ */
+
+/**
+ * O que o chatbot de suporte sabe sobre cada produto mora no banco, editado
+ * por aqui. A lista de produtos vem do seletor do topo (a fila real) somada
+ * aos readmes já gravados — assim um produto que saiu da fila não some da
+ * edição, e um produto novo pode ser digitado antes de vender a 1ª unidade.
+ */
+const janelaProdutos = $('janela-produtos');
+let readmesIa = [];
+
+function msgProdutos(texto) {
+  const el = $('produtos-msg');
+  el.textContent = texto;
+  el.hidden = false;
+}
+
+function produtoEscolhidoIa() {
+  return $('pr-novo').value.trim() || $('pr-produto').value;
+}
+
+function preencherReadme() {
+  const r = readmesIa.find((x) => x.produto === produtoEscolhidoIa());
+  $('pr-texto').value = r?.readme ?? '';
+  $('pr-ativo').checked = r ? r.ativo !== false : true;
+  $('pr-apagar').hidden = !r;
+  $('pr-meta').textContent = r
+    ? `Atualizado em ${new Date(r.atualizado_em).toLocaleString('pt-BR')}`
+      + `${r.atualizado_por ? ` por ${r.atualizado_por}` : ''}${r.ativo === false ? ' · DESLIGADO' : ''}.`
+    : 'Este produto ainda não tem readme — a IA não sabe nada sobre ele.';
+}
+
+function renderSelectProdutosIa() {
+  const nomes = new Set(readmesIa.map((r) => r.produto));
+  for (const opt of $('sel-produto').options) {
+    if (opt.value) nomes.add(opt.value);
+  }
+  const escolhido = $('pr-produto').value;
+  $('pr-produto').replaceChildren(...[...nomes].sort().map((nome) => {
+    const tem = readmesIa.some((r) => r.produto === nome);
+    return Object.assign(document.createElement('option'), {
+      value: nome,
+      textContent: tem ? `${nome} · com readme` : `${nome} · sem readme`,
+    });
+  }));
+  if (escolhido && nomes.has(escolhido)) $('pr-produto').value = escolhido;
+}
+
+async function abrirProdutos() {
+  $('produtos-msg').hidden = true;
+  $('pr-novo').value = '';
+  try {
+    const r = await api('/api/produtos-ia');
+    if (!r.ok) return msgProdutos(r.dados.erro ?? 'Não foi possível carregar os readmes.');
+    readmesIa = r.dados.readmes ?? [];
+    renderSelectProdutosIa();
+    preencherReadme();
+    janelaProdutos.showModal();
+  } catch { /* 401 já redirecionou */ }
+}
+
+$('btn-produtos').addEventListener('click', abrirProdutos);
+$('fechar-produtos').addEventListener('click', () => janelaProdutos.close());
+$('pr-produto').addEventListener('change', () => { $('pr-novo').value = ''; preencherReadme(); });
+$('pr-novo').addEventListener('input', preencherReadme);
+
+$('form-readme').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const produto = produtoEscolhidoIa();
+  if (!produto) return msgProdutos('Escolha ou digite um produto.');
+  const readme = $('pr-texto').value.trim();
+  if (!readme) return msgProdutos('Escreva o readme antes de salvar.');
+
+  try {
+    const r = await api(`/api/produtos-ia/${encodeURIComponent(produto)}`, {
+      metodo: 'PUT',
+      corpo: { readme, ativo: $('pr-ativo').checked },
+    });
+    if (!r.ok) return msgProdutos(r.dados.erro ?? 'Não foi possível salvar.');
+
+    const salvo = r.dados.readme;
+    const idx = readmesIa.findIndex((x) => x.produto === salvo.produto);
+    if (idx === -1) readmesIa.push(salvo); else readmesIa[idx] = salvo;
+    renderSelectProdutosIa();
+    $('pr-produto').value = salvo.produto;
+    $('pr-novo').value = '';
+    preencherReadme();
+    msgProdutos(`Salvo. A IA já usa este texto na próxima conversa sobre ${salvo.produto}.`);
+  } catch { /* 401 já redirecionou */ }
+});
+
+$('pr-apagar').addEventListener('click', async () => {
+  const produto = produtoEscolhidoIa();
+  if (!produto) return;
+  // Apagar tira o conhecimento da IA na hora — merece a pergunta.
+  if (!window.confirm(`Apagar o readme de "${produto}"? A IA deixa de saber sobre ele.`)) return;
+  try {
+    const r = await api(`/api/produtos-ia/${encodeURIComponent(produto)}`, { metodo: 'DELETE' });
+    if (!r.ok) return msgProdutos(r.dados.erro ?? 'Não foi possível apagar.');
+    readmesIa = readmesIa.filter((x) => x.produto !== produto);
+    renderSelectProdutosIa();
+    preencherReadme();
+    msgProdutos(`Readme de ${produto} apagado.`);
   } catch { /* 401 já redirecionou */ }
 });
 

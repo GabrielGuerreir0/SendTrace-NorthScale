@@ -18,6 +18,7 @@ import {
 import {
   apiConfigurada, enderecoApi, saude as saudeApi, ErroApi,
   autenticarUsuario, dadosDoToken, comCredencial, obter as obterApi, listarTudo,
+  criar as criarApi, substituir as substituirApi, apagar as apagarApi,
 } from './api.js';
 import {
   abrirSessao, lerSessao, fecharSessao, contarSessoesDe, limparVencidas,
@@ -620,6 +621,62 @@ async function atender(req, res, url, sessao) {
 
   const respostaUsuarios = await rotasUsuarios(req, res, url, sessao);
   if (respostaUsuarios !== null) return respostaUsuarios;
+
+  /* ── readmes de produto: o conhecimento da IA de suporte ──
+     O texto mora no banco (produto_readmes, via API). Quem escreve aqui está
+     literalmente ensinando o chatbot sobre o produto: ele baixa os readmes
+     ativos e os injeta no próprio prompt a cada conversa. */
+  if (url.pathname === '/api/produtos-ia' && req.method === 'GET') {
+    const r = await obterApi('/api/produto-readmes/', { page_size: 200 });
+    return json(res, 200, { readmes: r.results ?? [] });
+  }
+
+  const rotaReadme = /^\/api\/produtos-ia\/(.+)$/.exec(url.pathname);
+  if (rotaReadme && (req.method === 'PUT' || req.method === 'DELETE')) {
+    if (!usuario.admin) {
+      return json(res, 403, { erro: 'Só administradores editam os readmes de produto.' });
+    }
+    const produto = decodeURIComponent(rotaReadme[1]).trim().slice(0, 300);
+    if (!produto) return json(res, 400, { erro: 'Produto sem nome.' });
+    const rotaApi = `/api/produto-readmes/${encodeURIComponent(produto)}/`;
+
+    if (req.method === 'DELETE') {
+      try {
+        await apagarApi(rotaApi);
+      } catch (err) {
+        // Apagar o que não existe já é o estado desejado — não é erro.
+        if (!(err instanceof ErroApi && err.status === 404)) throw err;
+      }
+      return json(res, 200, { ok: true });
+    }
+
+    const corpo = await lerJson(req, 256 * 1024);
+    const readme = String(corpo.readme ?? '').trim();
+    if (!readme) return json(res, 400, { erro: 'Escreva o readme antes de salvar.' });
+
+    const dados = {
+      produto,
+      readme,
+      ativo: corpo.ativo !== false,
+      // Fica registrado quem ensinou a IA por último — sai da sessão, não do
+      // corpo, para o navegador não assinar como outra pessoa.
+      atualizado_por: usuario.email ?? null,
+    };
+    let salvo;
+    try {
+      salvo = await substituirApi(rotaApi, dados);
+    } catch (err) {
+      // PUT em produto novo dá 404 na API: é a primeira vez — cria.
+      if (err instanceof ErroApi && err.status === 404) {
+        salvo = await criarApi('/api/produto-readmes/', dados);
+      } else if (err instanceof ErroApi && err.status === 400) {
+        return json(res, 400, { erro: 'A API recusou o readme — confira o tamanho do texto.' });
+      } else {
+        throw err;
+      }
+    }
+    return json(res, 200, { readme: salvo });
+  }
 
   /* ── linhas de copy: criar e apagar ── */
   if (url.pathname === '/api/linhas' && req.method === 'POST') {

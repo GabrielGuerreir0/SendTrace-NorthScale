@@ -71,6 +71,7 @@
       <span class="usuario-selo" id="usuario-selo" hidden>admin</span>
     </div>
     <button class="btn" id="btn-usuarios" hidden>Usuários</button>
+    <button class="btn" id="btn-produtos" hidden>Produtos IA</button>
     <button class="btn btn-fantasma" id="btn-sair">Sair</button>
   </div>
 </header>
@@ -263,6 +264,50 @@
     </form>
 
     <ul class="lista-usuarios" id="lista-usuarios"></ul>
+  </div>
+</dialog>
+
+<!-- ── readmes de produto: o que a IA de suporte sabe (só administradores) ── -->
+<dialog class="janela" id="janela-produtos" aria-labelledby="janela-produtos-tit">
+  <header class="janela-cabeca">
+    <div>
+      <h2 id="janela-produtos-tit">Produtos · conhecimento da IA</h2>
+      <p class="cartao-sub">O que você escrever aqui é o que o chatbot de suporte sabe sobre
+      cada produto: o que é, como usar, prazos, garantia, perguntas frequentes. Fica no
+      banco e vale já na próxima conversa — sem deploy.</p>
+    </div>
+    <button class="btn btn-icone" id="fechar-produtos" title="Fechar">
+      <span aria-hidden="true">✕</span><span class="sr">Fechar</span>
+    </button>
+  </header>
+
+  <div class="janela-corpo">
+    <p class="janela-msg" id="produtos-msg" hidden></p>
+
+    <form id="form-readme">
+      <label class="campo campo--bloco">
+        <span>Produto</span>
+        <select id="pr-produto"></select>
+      </label>
+      <label class="campo campo--bloco">
+        <span>Ou um produto novo</span>
+        <input id="pr-novo" type="text" autocomplete="off"
+               placeholder="Nome exato, como aparece no painel — deixe vazio para usar o de cima">
+      </label>
+      <label class="campo campo--bloco">
+        <span>Readme — o que a IA precisa saber</span>
+        <textarea id="pr-texto" rows="12" spellcheck="true"
+          placeholder="O que é o produto, como usar, prazo de entrega, garantia, perguntas frequentes, quando encaminhar para um humano…"></textarea>
+      </label>
+      <label class="novo-usuario-admin">
+        <input id="pr-ativo" type="checkbox" checked> a IA recebe este readme
+      </label>
+      <p class="cartao-sub" id="pr-meta"></p>
+      <div class="usuario-acoes">
+        <button class="btn btn-fantasma" id="pr-apagar" type="button" hidden>Apagar</button>
+        <button class="btn btn-forte" id="pr-salvar" type="submit">Salvar</button>
+      </div>
+    </form>
   </div>
 </dialog>
 
