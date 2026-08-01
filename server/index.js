@@ -1,24 +1,27 @@
+
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { pool, LOCK_TIMEOUT_MIN } from './db.js';
+import { LOCK_TIMEOUT_MIN, SESSAO_HORAS } from './config.js';
 import { CANAIS, DESTINOS, STATUS_LABELS, ESTADOS, REGUA_FALLBACK } from './etapas.config.js';
+// A régua e a fila vêm da API (Django REST). O Postgres continua aqui só para
+// o login e a gestão de usuários do painel — a API expõe /api/usuarios/ apenas
+// para leitura, sem criar, promover nem emitir senha provisória.
 import {
   etapasRollup, ondaPorEtapa, ondaHoraria, entradasPorDia,
   statusBruto, alertas, listarPedidos,
   reguaDefinicao, cadenciaObservada, porCanal, semMensagem, resumoLinhas, piorCasoSms, errosSemCanal, mensagem, salvarMensagem, criarLinha, apagarLinha, editarLinha, etapasDaRegua,
-  produtosDaFila,
-} from './queries.js';
-
+  produtosDaFila, fonteDados,
+} from './dados.js';
 import {
-  autenticar, criarSessao, usuarioDaSessao, encerrarSessao, encerrarSessoesDe,
-  limparSessoesVencidas, listarUsuarios, criarUsuario, trocarSenha, definirAdmin,
-  definirAtivo, contarAdmins, validarSenha, normalizarEmail, emailValido,
-  conferirSenha, emitirSenhaProvisoria, SESSAO_HORAS, CONVITE_DIAS,
-} from './auth.js';
-import { enviarConvite, emailConfigurado } from './email.js';
+  apiConfigurada, enderecoApi, saude as saudeApi, ErroApi,
+  autenticarUsuario, dadosDoToken, comCredencial, obter as obterApi, listarTudo,
+} from './api.js';
+import {
+  abrirSessao, lerSessao, fecharSessao, contarSessoesDe, limparVencidas,
+} from './sessoes.js';
 import {
   trocarLinha, linhaAtual, historicoLinha, linhaConfigurada, linhasValidas,
 } from './linha.js';
@@ -26,7 +29,6 @@ import {
 // importado aqui. Validar só no front seria conselho, não garantia.
 import { validarMensagem } from '../public/copy.js';
 import { versao } from './versao.js';
-import { query } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -167,6 +169,25 @@ function inteiroOuNulo(raw) {
   return Number.isInteger(v) ? v : false;
 }
 
+/**
+ * Traduz o corpo de erro do Django para uma frase.
+ *
+ * O DRF devolve `{"linha": ["Já existe ..."], "texto": ["Obrigatório."]}`. Jogar
+ * esse JSON na tela transfere ao usuário o trabalho de decifrar o formato do
+ * framework; `padrao` cobre o caso de vir algo que não sabemos ler.
+ */
+function detalharErroApi(err, padrao) {
+  const corpo = err?.corpo;
+  if (!corpo || typeof corpo !== 'object') return padrao;
+  const partes = [];
+  for (const [campo, valor] of Object.entries(corpo)) {
+    const txt = Array.isArray(valor) ? valor.join(' ') : String(valor);
+    if (!txt) continue;
+    partes.push(campo === 'detail' || campo === 'non_field_errors' ? txt : `${campo}: ${txt}`);
+  }
+  return partes.length ? partes.join(' · ').slice(0, 300) : padrao;
+}
+
 /* Devolve ATENDIDO para o roteador distinguir "esta rota respondeu" de "esta
    rota não é minha" (null). Sem isso a distinção ficaria por conta de
    `undefined !== null`, que quebra em silêncio se alguém puser um `return`. */
@@ -263,11 +284,11 @@ async function snapshot(filtros = {}) {
   const produto = filtros.produto ?? null;
 
   const [regua, rollup, onda, horaria, entradas, statuses, problemas, cadencia,
-    canais, orfaos, linhas, piorSms, errosOrfaos, produtos] = await Promise.all([
+    canais, orfaos, linhas, piorSms, errosOrfaos, produtos, fonte] = await Promise.all([
     reguaDefinicao(linha), etapasRollup(produto), ondaPorEtapa(produto), ondaHoraria(doFiltro),
     entradasPorDia(doFiltro), statusBruto(produto), alertas(produto), cadenciaObservada(produto),
     porCanal(linha, produto), semMensagem(linha, produto), resumoLinhas(),
-    piorCasoSms(produto), errosSemCanal(produto), produtosDaFila(),
+    piorCasoSms(produto), errosSemCanal(produto), produtosDaFila(), fonteDados(),
   ]);
 
   const reguaOk = regua !== null;
@@ -332,6 +353,14 @@ async function snapshot(filtros = {}) {
     },
     // O catálogo do seletor do topo, sempre completo — é dele que se escolhe.
     produtos,
+    /*
+     * De onde vieram estes números.
+     *
+     * Sem rota de agregação na API, medir a fila é baixá-la. `truncado` diz que
+     * ela passou do teto e o painel está falando de uma PARTE — a tela precisa
+     * avisar, porque um total que não é total mente com aparência de dado.
+     */
+    fonte: { ...fonte, api: enderecoApi },
     // `exibindo` é a linha desenhada na tela; `ativa` é a que está valendo nos
     // envios. Quando divergem, a interface avisa — é o caso de quem está
     // espiando outra linha antes de trocar.
@@ -407,176 +436,417 @@ async function servirEstatico(req, res, urlPath) {
 
 /* ─────────────────────────  rotas de acesso  ───────────────────────── */
 
-async function rotasAuth(req, res, url, usuario) {
+/**
+ * Quem é a pessoa por trás deste token.
+ *
+ * O `user_id` vem do payload do JWT; o resto (nome, se é admin) vem de
+ * `/api/usuarios/{id}/`, já com o token dela. Se essa leitura falhar, a sessão
+ * ainda vale — só entra sem os poderes de administrador. Recusar o login
+ * inteiro porque um detalhe do perfil não carregou trocaria "entrou sem o botão
+ * Usuários" por "não entrou", que é pior.
+ */
+async function perfilDoToken(credencial) {
+  const carga = dadosDoToken(credencial.access);
+  const id = carga.user_id ?? carga.id ?? null;
+  const base = { id, email: carga.email ?? null, nome: null, admin: false, ativo: true };
+  if (id === null) return base;
+
+  try {
+    const u = await comCredencial(credencial, () => obterApi(`/api/usuarios/${id}/`));
+    return {
+      id: u.id ?? id,
+      email: u.email ?? base.email,
+      nome: u.nome ?? null,
+      admin: Boolean(u.admin),
+      ativo: u.ativo !== false,
+      trocar_senha: Boolean(u.trocar_senha),
+    };
+  } catch (err) {
+    console.error('[auth] token válido, perfil não carregou:', err.message);
+    return base;
+  }
+}
+
+async function rotasAuth(req, res, url, sessao) {
   const p = url.pathname;
 
+  /*
+   * Login. Quem confere a senha é a API, não o painel.
+   *
+   * O painel não guarda senha nem hash: manda o que foi digitado para
+   * /api/auth/token/ e fica com o par access/refresh que voltar. Uma conta
+   * desativada lá para de entrar aqui no mesmo instante, sem sincronização.
+   */
   if (p === '/api/auth/login' && req.method === 'POST') {
     const ip = ipDe(req);
     if (ipBloqueado(ip)) {
       return json(res, 429, { erro: 'Muitas tentativas deste endereço. Aguarde alguns minutos.' });
     }
     const corpo = await lerJson(req);
-    const r = await autenticar(corpo.email, corpo.senha ?? '');
-    if (!r.ok) {
-      marcarFalhaIp(ip);
-      // Atraso fixo: o tempo de resposta não deve distinguir os motivos.
-      await new Promise((ok) => setTimeout(ok, 260));
-      return json(res, 401, { erro: r.erro });
+    const email = String(corpo.email ?? '').trim().toLowerCase();
+    const senha = corpo.senha ?? '';
+    if (!email || !senha) return json(res, 400, { erro: 'Preencha e-mail e senha.' });
+
+    let credencial;
+    try {
+      credencial = await autenticarUsuario(email, senha);
+    } catch (err) {
+      if (err instanceof ErroApi && (err.status === 400 || err.status === 401)) {
+        marcarFalhaIp(ip);
+        // Atraso fixo: o tempo de resposta não deve distinguir os motivos.
+        await new Promise((ok) => setTimeout(ok, 260));
+        return json(res, 401, { erro: 'E-mail ou senha incorretos.' });
+      }
+      throw err;
     }
-    const token = await criarSessao(r.usuario.id, { ip, agente: req.headers['user-agent'] });
+
+    const usuario = await perfilDoToken(credencial);
+    if (!usuario.ativo) return json(res, 403, { erro: 'Esta conta está desativada.' });
+
+    const token = abrirSessao({ usuario, credencial });
     porCookieSessao(req, res, token, SESSAO_HORAS * 3600);
-    return json(res, 200, { usuario: r.usuario });
+    return json(res, 200, { usuario });
   }
 
   if (p === '/api/auth/logout' && req.method === 'POST') {
-    await encerrarSessao(lerCookie(req, COOKIE));
+    fecharSessao(lerCookie(req, COOKIE));
     limparCookieSessao(req, res);
     return json(res, 200, { ok: true });
   }
 
   if (p === '/api/auth/eu') {
-    if (!usuario) return json(res, 401, { erro: 'sem sessão' });
-    return json(res, 200, { usuario });
+    if (!sessao) return json(res, 401, { erro: 'sem sessão' });
+    return json(res, 200, { usuario: sessao.usuario });
   }
 
-  // Trocar a própria senha. Exige a senha atual mesmo já estando logado: sem
-  // isso, um computador deixado aberto vira sequestro de conta permanente.
+  /*
+   * Trocar a própria senha: NÃO EXISTE MAIS por aqui.
+   *
+   * A senha agora mora na API, e o schema dela não expõe rota de troca — só
+   * `GET /api/usuarios/`. Um 501 explicando é melhor que um formulário que
+   * aceita o que a pessoa digita e não muda nada em lugar nenhum.
+   */
   if (p === '/api/auth/senha' && req.method === 'POST') {
-    if (!usuario) return json(res, 401, { erro: 'sem sessão' });
-    const corpo = await lerJson(req);
-
-    const { rows } = await query(
-      'SELECT senha_hash, senha_salt, senha_params FROM painel_usuarios WHERE id = $1',
-      [usuario.id],
-    );
-    if (!rows[0] || !(await conferirSenha(corpo.atual ?? '', rows[0]))) {
-      await new Promise((ok) => setTimeout(ok, 260));
-      return json(res, 400, { erro: 'Senha atual incorreta.' });
-    }
-
-    const problema = validarSenha(corpo.nova, { email: usuario.email });
-    if (problema) return json(res, 400, { erro: problema });
-    if (corpo.nova === corpo.atual) {
-      return json(res, 400, { erro: 'A nova senha precisa ser diferente da atual.' });
-    }
-
-    await trocarSenha(usuario.id, corpo.nova);
-    // Derruba as outras sessões e reabre esta: trocar a senha tem que expulsar
-    // quem estivesse usando a conta com a senha antiga.
-    await encerrarSessoesDe(usuario.id);
-    const token = await criarSessao(usuario.id, { ip: ipDe(req), agente: req.headers['user-agent'] });
-    porCookieSessao(req, res, token, SESSAO_HORAS * 3600);
-    return json(res, 200, { ok: true });
+    return json(res, 501, {
+      erro: 'A senha é gerenciada pela API do SendTrace — o painel não tem como trocá-la. '
+        + 'Peça a troca a quem administra a API.',
+    });
   }
 
   return null;   // não é rota de acesso
 }
 
-async function rotasUsuarios(req, res, url, usuario) {
+/**
+ * Usuários — somente leitura.
+ *
+ * A API expõe `GET /api/usuarios/` e nada mais: não há como criar conta,
+ * promover a administrador, desativar nem emitir senha provisória. O painel
+ * mostra a lista e diz, na própria tela, onde essas ações passaram a morar.
+ * Oferecer botões que devolveriam erro seria pior que não oferecê-los.
+ */
+async function rotasUsuarios(req, res, url, sessao) {
   if (!url.pathname.startsWith('/api/usuarios')) return null;
-  if (!usuario.admin) return json(res, 403, { erro: 'Só administradores gerenciam usuários.' });
+  if (!sessao.usuario.admin) {
+    return json(res, 403, { erro: 'Só administradores veem a lista de usuários.' });
+  }
+  if (url.pathname !== '/api/usuarios') return json(res, 404, { erro: 'rota não encontrada' });
 
-  if (url.pathname === '/api/usuarios' && req.method === 'GET') {
-    return json(res, 200, {
-      usuarios: await listarUsuarios(),
-      eu: usuario.id,
-      // A interface esconde a opção de enviar e-mail quando não há SMTP —
-      // oferecer um botão que nunca funciona é pior que não oferecer.
-      emailConfigurado,
-      conviteDias: CONVITE_DIAS,
+  if (req.method !== 'GET') {
+    return json(res, 501, {
+      erro: 'A API do SendTrace só permite LER usuários. Criar, promover, desativar '
+        + 'ou emitir senha provisória tem que ser feito na API.',
     });
   }
 
-  if (url.pathname === '/api/usuarios' && req.method === 'POST') {
-    const corpo = await lerJson(req);
-    const email = normalizarEmail(corpo.email);
-    if (!emailValido(email)) return json(res, 400, { erro: 'E-mail inválido.' });
+  const { itens } = await listarTudo('/api/usuarios/');
+  return json(res, 200, {
+    usuarios: itens.map((u) => ({
+      ...u,
+      // A contagem é das sessões DESTE painel, que é o que ele sabe de fato.
+      sessoes: contarSessoesDe(u.email),
+    })),
+    eu: sessao.usuario.id,
+    somenteLeitura: true,
+  });
+}
 
-    const problema = validarSenha(corpo.senha, { email });
-    if (problema) return json(res, 400, { erro: problema });
+/**
+ * O miolo de toda requisição autenticada.
+ *
+ * Roda SEMPRE dentro de `comCredencial`, então qualquer chamada à API daqui
+ * para baixo já sai com o token de quem está logado — sem precisar carregar a
+ * credencial de parâmetro em parâmetro até o fundo de dados.js.
+ */
+async function atender(req, res, url, sessao) {
+  const usuario = sessao?.usuario ?? null;
+  res.setHeader('Vary', 'Cookie');
+
+  if (req.method !== 'GET' && !temCabecalhoDoPainel(req)) {
+    return json(res, 403, { erro: 'requisição não reconhecida' });
+  }
+
+  const respostaAuth = await rotasAuth(req, res, url, sessao);
+  if (respostaAuth !== null) return respostaAuth;
+
+  if (!usuario) {
+    if (url.pathname.startsWith('/api/')) return json(res, 401, { erro: 'sem sessão' });
+    if (PUBLICOS.has(url.pathname)) {
+      await servirEstatico(req, res, url.pathname === '/login' ? '/login.html' : url.pathname);
+      return ATENDIDO;
+    }
+    // Guarda para onde a pessoa queria ir, para voltar depois do login.
+    const destino = url.pathname + url.search;
+    res.writeHead(302, {
+      Location: `/login?ir=${encodeURIComponent(destino === '/' ? '/' : destino)}`,
+    }).end();
+    return ATENDIDO;
+  }
+
+  // Já logado não tem o que fazer na tela de login.
+  if (url.pathname === '/login' || url.pathname === '/login.html') {
+    res.writeHead(302, { Location: '/' }).end();
+    return ATENDIDO;
+  }
+
+  /*
+   * A senha provisória NÃO fecha mais o painel.
+   *
+   * Antes, `trocar_senha` bloqueava tudo até a pessoa definir a própria senha.
+   * Com a senha morando na API, que não expõe rota de troca, esse bloqueio
+   * viraria porta trancada sem chave: a conta entraria e não conseguiria fazer
+   * nada, para sempre. O sinalizador continua vindo no perfil e a tela de
+   * usuários o mostra.
+   */
+
+  const respostaUsuarios = await rotasUsuarios(req, res, url, sessao);
+  if (respostaUsuarios !== null) return respostaUsuarios;
+
+  /* ── linhas de copy: criar e apagar ── */
+  if (url.pathname === '/api/linhas' && req.method === 'POST') {
+    if (!usuario.admin) {
+      return json(res, 403, { erro: 'Só administradores criam linhas de copy.' });
+    }
+    const corpo = await lerJson(req);
+    const nova = String(corpo.linha ?? '').trim();
+
+    // Mesmo formato que o CHECK do banco aceita — recusar aqui dá uma
+    // mensagem legível em vez do erro cru da constraint.
+    if (!/^\d{1,4}$/.test(nova)) {
+      return json(res, 400, { erro: 'O número da linha deve ter de 1 a 4 dígitos.' });
+    }
+    const nome = String(corpo.nome ?? '').trim().slice(0, 60);
+    if (!nome) return json(res, 400, { erro: 'A linha precisa de um nome.' });
+
+    const existentes = await linhasValidas();
+    if (existentes.includes(nova)) {
+      return json(res, 409, { erro: `A linha ${nova} já existe.` });
+    }
+    const copiarDe = corpo.copiarDe ? String(corpo.copiarDe) : null;
+    if (copiarDe && !existentes.includes(copiarDe)) {
+      return json(res, 400, { erro: `Não existe linha ${copiarDe} para copiar.` });
+    }
+
+    const ordem = Number.isInteger(corpo.ordem)
+      ? corpo.ordem
+      : (Number.parseInt(nova, 10) || existentes.length + 1);
 
     try {
-      const novo = await criarUsuario({
-        email, nome: String(corpo.nome ?? '').trim().slice(0, 120),
-        senha: corpo.senha, admin: !!corpo.admin, criadoPor: usuario.id,
+      const r = await criarLinha({
+        linha: nova, nome, intuito: String(corpo.intuito ?? '').trim().slice(0, 600),
+        ordem, copiarDe,
       });
-
-      // O e-mail é acessório: a conta já existe e a senha aparece na tela de
-      // quem criou. Uma falha de SMTP informa, mas não desfaz nada.
-      let email_ = { enviado: false, motivo: 'não solicitado' };
-      if (corpo.enviarEmail !== false) {
-        email_ = await enviarConvite({
-          para: email, senha: corpo.senha, admin: !!corpo.admin,
-          quemConvidou: usuario.email, dias: CONVITE_DIAS, req,
-        });
-      }
-      return json(res, 201, { usuario: novo, email: email_, conviteDias: CONVITE_DIAS });
+      return json(res, 201, { ...r, linhas: await resumoLinhas() });
     } catch (err) {
-      if (err.code === '23505') return json(res, 409, { erro: 'Já existe um usuário com esse e-mail.' });
+      // A API recusa duplicata com 400/409 e um corpo por campo. Sem
+      // traduzir, a tela mostraria o JSON cru do Django.
+      if (err instanceof ErroApi && (err.status === 400 || err.status === 409)) {
+        return json(res, 409, { erro: detalharErroApi(err, `A linha ${nova} já existe.`) });
+      }
       throw err;
     }
   }
 
-  const m = /^\/api\/usuarios\/(\d+)$/.exec(url.pathname);
-  if (m && req.method === 'PATCH') {
-    const alvo = Number(m[1]);
+  const rotaLinha = /^\/api\/linhas\/(\d{1,4})$/.exec(url.pathname);
+  if (rotaLinha && req.method === 'PATCH') {
+    if (!usuario.admin) {
+      return json(res, 403, { erro: 'Só administradores editam linhas de copy.' });
+    }
     const corpo = await lerJson(req);
-
-    if ('admin' in corpo) {
-      // Rebaixar a si mesmo tiraria o acesso à própria tela que você está
-      // usando, sem confirmação e sem volta se não houver outro admin.
-      if (alvo === usuario.id && corpo.admin === false) {
-        return json(res, 400, { erro: 'Você não pode remover o seu próprio acesso de administrador.' });
-      }
-      if (corpo.admin === false && (await contarAdmins()) <= 1) {
-        return json(res, 400, { erro: 'Precisa sobrar pelo menos um administrador ativo.' });
-      }
-      const r = await definirAdmin(alvo, corpo.admin);
-      if (!r) return json(res, 404, { erro: 'Usuário não encontrado.' });
+    const nome = corpo.nome === undefined ? undefined : String(corpo.nome).trim().slice(0, 60);
+    if (nome !== undefined && !nome) {
+      return json(res, 400, { erro: 'A linha precisa de um nome.' });
     }
-
-    if ('ativo' in corpo) {
-      if (alvo === usuario.id && corpo.ativo === false) {
-        return json(res, 400, { erro: 'Você não pode desativar a própria conta.' });
-      }
-      if (corpo.ativo === false) {
-        const { rows } = await query('SELECT admin FROM painel_usuarios WHERE id = $1', [alvo]);
-        if (rows[0]?.admin && (await contarAdmins()) <= 1) {
-          return json(res, 400, { erro: 'Precisa sobrar pelo menos um administrador ativo.' });
-        }
-      }
-      const r = await definirAtivo(alvo, corpo.ativo);
-      if (!r) return json(res, 404, { erro: 'Usuário não encontrado.' });
-    }
-
-    // Senha provisória nova, definida por um admin. Sempre com prazo e sempre
-    // exigindo troca — ninguém deve seguir sabendo a senha de outro.
-    let email_ = null;
-    if (corpo.senha) {
-      const { rows } = await query(
-        'SELECT email, admin FROM painel_usuarios WHERE id = $1', [alvo],
-      );
-      if (!rows[0]) return json(res, 404, { erro: 'Usuário não encontrado.' });
-      const problema = validarSenha(corpo.senha, { email: rows[0].email });
-      if (problema) return json(res, 400, { erro: problema });
-
-      await emitirSenhaProvisoria(alvo, corpo.senha);
-
-      if (corpo.enviarEmail !== false) {
-        email_ = await enviarConvite({
-          para: rows[0].email, senha: corpo.senha, admin: rows[0].admin,
-          quemConvidou: usuario.email, dias: CONVITE_DIAS, req,
-        });
-      }
-    }
-
-    return json(res, 200, {
-      usuarios: await listarUsuarios(), eu: usuario.id,
-      ...(email_ ? { email: email_, conviteDias: CONVITE_DIAS } : {}),
+    const r = await editarLinha(rotaLinha[1], {
+      nome,
+      intuito: corpo.intuito === undefined ? undefined : String(corpo.intuito).trim().slice(0, 600),
+      ordem: Number.isInteger(corpo.ordem) ? corpo.ordem : undefined,
     });
+    if (!r) return json(res, 404, { erro: 'Linha não encontrada.' });
+    return json(res, 200, { linha: r, linhas: await resumoLinhas() });
   }
 
-  return json(res, 404, { erro: 'rota não encontrada' });
+  if (rotaLinha && req.method === 'DELETE') {
+    if (!usuario.admin) {
+      return json(res, 403, { erro: 'Só administradores apagam linhas de copy.' });
+    }
+    const r = await apagarLinha(rotaLinha[1]);
+    if (!r.ok) return json(res, 400, { erro: r.erro });
+    return json(res, 200, { ok: true, linhas: await resumoLinhas() });
+  }
+
+  /* ── edição de copy ── */
+  // /api/mensagem/:linha/:etapa/:canal
+  const rotaMsg = /^\/api\/mensagem\/(\d{1,4})\/(\d{1,2})\/(email|sms)$/.exec(url.pathname);
+  if (rotaMsg) {
+    const [, linhaM, etapaM, canalM] = rotaMsg;
+    const etapaNum = Number(etapaM);
+
+    if (req.method === 'GET') {
+      const m = await mensagem(linhaM, etapaNum, canalM);
+      if (!m) return json(res, 404, { erro: 'Mensagem não encontrada.' });
+      return json(res, 200, { mensagem: m, ...validarMensagem(m) });
+    }
+
+    if (req.method === 'PUT') {
+      // Editar a copy muda o que sai para os clientes no próximo disparo.
+      if (!usuario.admin) {
+        return json(res, 403, { erro: 'Só administradores editam a copy.' });
+      }
+      const corpo = await lerJson(req, 128 * 1024);
+      const proposta = {
+        linha: linhaM, etapa: etapaNum, canal: canalM,
+        assunto: corpo.assunto, corpo_html: corpo.corpo_html,
+        botao: corpo.botao, destino: corpo.destino || null,
+        texto: corpo.texto, ativo: corpo.ativo,
+      };
+
+      const { erros, avisos } = validarMensagem(proposta);
+      if (erros.length) return json(res, 400, { erro: erros[0], erros, avisos });
+
+      try {
+        const salva = await salvarMensagem(proposta);
+        return json(res, 200, { mensagem: salva, avisos });
+      } catch (err) {
+        // A causa comum é a linha não estar registrada — a ordem que o
+        // contrato exige. A API devolve 400 com o erro por campo.
+        if (err instanceof ErroApi && err.status === 400) {
+          return json(res, 400, {
+            erro: detalharErroApi(
+              err,
+              `A linha ${linhaM} não está registrada. Cadastre-a antes de salvar mensagens nela.`,
+            ),
+          });
+        }
+        throw err;
+      }
+    }
+    return json(res, 405, { erro: 'método não permitido' });
+  }
+
+  /* ── linha de copy ativa ── */
+  if (url.pathname === '/api/linha') {
+    if (req.method === 'GET') {
+      return json(res, 200, {
+        configurado: linhaConfigurada,
+        atual: await linhaAtual(),
+        historico: usuario.admin ? await historicoLinha() : [],
+        podeTrocar: usuario.admin,
+      });
+    }
+    if (req.method === 'POST') {
+      // Trocar a linha muda a copy de TODA a operação. Não é leitura, é
+      // disparo — fica com quem administra.
+      if (!usuario.admin) {
+        return json(res, 403, { erro: 'Só administradores trocam a linha de mensagens.' });
+      }
+      const corpo = await lerJson(req);
+      const r = await trocarLinha(String(corpo.linha ?? ''), usuario.id);
+      if (!r.ok) return json(res, 400, { erro: r.erro });
+      return json(res, 200, {
+        atual: await linhaAtual(), historico: await historicoLinha(), configurado: true,
+      });
+    }
+    return json(res, 405, { erro: 'método não permitido' });
+  }
+
+  if (url.pathname === '/api/snapshot') {
+    const q = url.searchParams;
+
+    // Os filtros só recortam os DOIS gráficos temporais. Os nós, os KPIs e o
+    // alcance por canal continuam mostrando a régua inteira: filtrar o painel
+    // todo esconderia justamente o contexto que dá sentido ao recorte.
+    const etapa = inteiroOuNulo(q.get('etapa'));
+    if (etapa === false) return json(res, 400, { erro: 'etapa inválida' });
+
+    const canalRaw = q.get('canal');
+    const canal = canalRaw && CANAL_IDS.has(canalRaw) ? canalRaw : null;
+
+    // Qual linha de copy desenhar. Vazio (ou desconhecida) = a que está ativa;
+    // quem resolve isso é o snapshot, que já consulta as linhas do banco.
+    const linhaRaw = q.get('linha');
+    const linha = /^\d{1,4}$/.test(linhaRaw ?? '') ? linhaRaw : null;
+
+    // O produto é a exceção: recorta o painel inteiro, não só os gráficos.
+    const produto = produtoOuNulo(q.get('produto'));
+
+    return json(res, 200, await snapshot({ etapa, canal, linha, produto }));
+  }
+
+  if (url.pathname === '/api/pedidos') {
+    const q = url.searchParams;
+
+    const etapa = inteiroOuNulo(q.get('etapa'));
+    if (etapa === false) return json(res, 400, { erro: 'etapa inválida' });
+
+    const estadoRaw = q.get('estado');
+    const estado = estadoRaw && ESTADO_IDS.has(estadoRaw) ? estadoRaw : null;
+
+    const canalRaw = q.get('canal');
+    const canal = canalRaw && CANAL_IDS.has(canalRaw) ? canalRaw : null;
+
+    const problemaRaw = q.get('problema');
+    const problema = problemaRaw && PROBLEMA_IDS.has(problemaRaw) ? problemaRaw : null;
+
+    const buscaRaw = (q.get('q') ?? '').trim();
+    const busca = buscaRaw === '' ? null : buscaRaw.slice(0, 120);
+
+    const limit = Math.min(Math.max(Number.parseInt(q.get('limit') ?? '25', 10) || 25, 1), 200);
+    const offset = Math.max(Number.parseInt(q.get('offset') ?? '0', 10) || 0, 0);
+
+    // O filtro por canal depende de qual linha tem mensagem cadastrada, então
+    // a tabela precisa saber a mesma linha que a tela está mostrando.
+    const linhaRaw = q.get('linha');
+    const linha = (await linhasValidas()).includes(linhaRaw)
+      ? linhaRaw
+      : ((await linhaAtual())?.linha ?? '1');
+
+    return json(res, 200, await listarPedidos({
+      etapa, estado, canal, problema, busca, limit, offset, ordem: q.get('ordem'), linha,
+      produto: produtoOuNulo(q.get('produto')),
+    }));
+  }
+
+  // A API é a única dependência do painel agora. `/api/health/` dela é rota
+  // pública, então este teste não depende de o token de ninguém estar válido.
+  if (url.pathname === '/api/health') {
+    const inicio = Date.now();
+    try {
+      const api = await saudeApi();
+      return json(res, 200, { ok: true, latenciaMs: Date.now() - inicio, api: { ok: true, endereco: enderecoApi, ...api } });
+    } catch (err) {
+      return json(res, 503, {
+        ok: false,
+        latenciaMs: Date.now() - inicio,
+        api: { ok: false, endereco: enderecoApi, erro: err.message },
+      });
+    }
+  }
+
+  if (req.method !== 'GET') {
+    return json(res, 405, { erro: 'método não permitido' });
+  }
+
+  return await servirEstatico(req, res, url.pathname);
 }
 
 const servidor = http.createServer(async (req, res) => {
@@ -599,285 +869,67 @@ const servidor = http.createServer(async (req, res) => {
       });
     }
 
-    const token = lerCookie(req, COOKIE);
-    const usuario = await usuarioDaSessao(token);
+    const sessao = lerSessao(lerCookie(req, COOKIE));
 
-    // Nada além do login pode ser cacheado por proxy: o painel é por usuário.
-    res.setHeader('Vary', 'Cookie');
-
-    if (req.method !== 'GET' && !temCabecalhoDoPainel(req)) {
-      return json(res, 403, { erro: 'requisição não reconhecida' });
-    }
-
-    const respostaAuth = await rotasAuth(req, res, url, usuario);
-    if (respostaAuth !== null) return respostaAuth;
-
-    if (!usuario) {
-      if (url.pathname.startsWith('/api/')) return json(res, 401, { erro: 'sem sessão' });
-      if (PUBLICOS.has(url.pathname)) {
-        await servirEstatico(req, res, url.pathname === '/login' ? '/login.html' : url.pathname);
-        return ATENDIDO;
-      }
-      // Guarda para onde a pessoa queria ir, para voltar depois do login.
-      const destino = url.pathname + url.search;
-      res.writeHead(302, {
-        Location: `/login?ir=${encodeURIComponent(destino === '/' ? '/' : destino)}`,
-      }).end();
-      return ATENDIDO;
-    }
-
-    // Já logado não tem o que fazer na tela de login.
-    if (url.pathname === '/login' || url.pathname === '/login.html') {
-      res.writeHead(302, { Location: '/' }).end();
-      return ATENDIDO;
-    }
-
-    // Senha provisória: o painel fica fechado até ela ser trocada. Só as rotas
-    // de acesso respondem — é o que a tela de troca precisa.
-    if (usuario.trocar_senha && url.pathname.startsWith('/api/')
-        && !url.pathname.startsWith('/api/auth/')) {
-      return json(res, 403, { erro: 'troca de senha pendente', trocarSenha: true });
-    }
-
-    const respostaUsuarios = await rotasUsuarios(req, res, url, usuario);
-    if (respostaUsuarios !== null) return respostaUsuarios;
-
-    /* ── linhas de copy: criar e apagar ── */
-    if (url.pathname === '/api/linhas' && req.method === 'POST') {
-      if (!usuario.admin) {
-        return json(res, 403, { erro: 'Só administradores criam linhas de copy.' });
-      }
-      const corpo = await lerJson(req);
-      const nova = String(corpo.linha ?? '').trim();
-
-      // Mesmo formato que o CHECK do banco aceita — recusar aqui dá uma
-      // mensagem legível em vez do erro cru da constraint.
-      if (!/^\d{1,4}$/.test(nova)) {
-        return json(res, 400, { erro: 'O número da linha deve ter de 1 a 4 dígitos.' });
-      }
-      const nome = String(corpo.nome ?? '').trim().slice(0, 60);
-      if (!nome) return json(res, 400, { erro: 'A linha precisa de um nome.' });
-
-      const existentes = await linhasValidas();
-      if (existentes.includes(nova)) {
-        return json(res, 409, { erro: `A linha ${nova} já existe.` });
-      }
-      const copiarDe = corpo.copiarDe ? String(corpo.copiarDe) : null;
-      if (copiarDe && !existentes.includes(copiarDe)) {
-        return json(res, 400, { erro: `Não existe linha ${copiarDe} para copiar.` });
-      }
-
-      const ordem = Number.isInteger(corpo.ordem)
-        ? corpo.ordem
-        : (Number.parseInt(nova, 10) || existentes.length + 1);
-
-      try {
-        const r = await criarLinha({
-          linha: nova, nome, intuito: String(corpo.intuito ?? '').trim().slice(0, 600),
-          ordem, copiarDe,
-        });
-        return json(res, 201, { ...r, linhas: await resumoLinhas() });
-      } catch (err) {
-        if (err.code === '23505') return json(res, 409, { erro: `A linha ${nova} já existe.` });
-        throw err;
-      }
-    }
-
-    const rotaLinha = /^\/api\/linhas\/(\d{1,4})$/.exec(url.pathname);
-    if (rotaLinha && req.method === 'PATCH') {
-      if (!usuario.admin) {
-        return json(res, 403, { erro: 'Só administradores editam linhas de copy.' });
-      }
-      const corpo = await lerJson(req);
-      const nome = corpo.nome === undefined ? undefined : String(corpo.nome).trim().slice(0, 60);
-      if (nome !== undefined && !nome) {
-        return json(res, 400, { erro: 'A linha precisa de um nome.' });
-      }
-      const r = await editarLinha(rotaLinha[1], {
-        nome,
-        intuito: corpo.intuito === undefined ? undefined : String(corpo.intuito).trim().slice(0, 600),
-        ordem: Number.isInteger(corpo.ordem) ? corpo.ordem : undefined,
-      });
-      if (!r) return json(res, 404, { erro: 'Linha não encontrada.' });
-      return json(res, 200, { linha: r, linhas: await resumoLinhas() });
-    }
-
-    if (rotaLinha && req.method === 'DELETE') {
-      if (!usuario.admin) {
-        return json(res, 403, { erro: 'Só administradores apagam linhas de copy.' });
-      }
-      const r = await apagarLinha(rotaLinha[1]);
-      if (!r.ok) return json(res, 400, { erro: r.erro });
-      return json(res, 200, { ok: true, linhas: await resumoLinhas() });
-    }
-
-    /* ── edição de copy ── */
-    // /api/mensagem/:linha/:etapa/:canal
-    const rotaMsg = /^\/api\/mensagem\/(\d{1,4})\/(\d{1,2})\/(email|sms)$/.exec(url.pathname);
-    if (rotaMsg) {
-      const [, linhaM, etapaM, canalM] = rotaMsg;
-      const etapaNum = Number(etapaM);
-
-      if (req.method === 'GET') {
-        const m = await mensagem(linhaM, etapaNum, canalM);
-        if (!m) return json(res, 404, { erro: 'Mensagem não encontrada.' });
-        return json(res, 200, { mensagem: m, ...validarMensagem(m) });
-      }
-
-      if (req.method === 'PUT') {
-        // Editar a copy muda o que sai para os clientes no próximo disparo.
-        if (!usuario.admin) {
-          return json(res, 403, { erro: 'Só administradores editam a copy.' });
-        }
-        const corpo = await lerJson(req, 128 * 1024);
-        const proposta = {
-          linha: linhaM, etapa: etapaNum, canal: canalM,
-          assunto: corpo.assunto, corpo_html: corpo.corpo_html,
-          botao: corpo.botao, destino: corpo.destino || null,
-          texto: corpo.texto, ativo: corpo.ativo,
-        };
-
-        const { erros, avisos } = validarMensagem(proposta);
-        if (erros.length) return json(res, 400, { erro: erros[0], erros, avisos });
-
-        try {
-          const salva = await salvarMensagem(proposta);
-          return json(res, 200, { mensagem: salva, avisos });
-        } catch (err) {
-          // 23503 = violação de chave estrangeira. Acontece quando a linha não
-          // foi registrada em painel_linhas_copy — a ordem que o contrato exige.
-          if (err.code === '23503') {
-            return json(res, 400, {
-              erro: `A linha ${linhaM} não está registrada em painel_linhas_copy. `
-                + 'Cadastre a linha antes de salvar mensagens nela.',
-            });
-          }
-          throw err;
-        }
-      }
-      return json(res, 405, { erro: 'método não permitido' });
-    }
-
-    /* ── linha de copy ativa ── */
-    if (url.pathname === '/api/linha') {
-      if (req.method === 'GET') {
-        return json(res, 200, {
-          configurado: linhaConfigurada,
-          atual: await linhaAtual(),
-          historico: usuario.admin ? await historicoLinha() : [],
-          podeTrocar: usuario.admin,
-        });
-      }
-      if (req.method === 'POST') {
-        // Trocar a linha muda a copy de TODA a operação. Não é leitura, é
-        // disparo — fica com quem administra.
-        if (!usuario.admin) {
-          return json(res, 403, { erro: 'Só administradores trocam a linha de mensagens.' });
-        }
-        const corpo = await lerJson(req);
-        const r = await trocarLinha(String(corpo.linha ?? ''), usuario.id);
-        if (!r.ok) return json(res, 400, { erro: r.erro });
-        return json(res, 200, {
-          atual: await linhaAtual(), historico: await historicoLinha(), configurado: true,
-        });
-      }
-      return json(res, 405, { erro: 'método não permitido' });
-    }
-
-    if (url.pathname === '/api/snapshot') {
-      const q = url.searchParams;
-
-      // Os filtros só recortam os DOIS gráficos temporais. Os nós, os KPIs e o
-      // alcance por canal continuam mostrando a régua inteira: filtrar o painel
-      // todo esconderia justamente o contexto que dá sentido ao recorte.
-      const etapa = inteiroOuNulo(q.get('etapa'));
-      if (etapa === false) return json(res, 400, { erro: 'etapa inválida' });
-
-      const canalRaw = q.get('canal');
-      const canal = canalRaw && CANAL_IDS.has(canalRaw) ? canalRaw : null;
-
-      // Qual linha de copy desenhar. Vazio (ou desconhecida) = a que está ativa;
-      // quem resolve isso é o snapshot, que já consulta as linhas do banco.
-      const linhaRaw = q.get('linha');
-      const linha = /^\d{1,4}$/.test(linhaRaw ?? '') ? linhaRaw : null;
-
-      // O produto é a exceção: recorta o painel inteiro, não só os gráficos.
-      const produto = produtoOuNulo(q.get('produto'));
-
-      return json(res, 200, await snapshot({ etapa, canal, linha, produto }));
-    }
-
-    if (url.pathname === '/api/pedidos') {
-      const q = url.searchParams;
-
-      const etapa = inteiroOuNulo(q.get('etapa'));
-      if (etapa === false) return json(res, 400, { erro: 'etapa inválida' });
-
-      const estadoRaw = q.get('estado');
-      const estado = estadoRaw && ESTADO_IDS.has(estadoRaw) ? estadoRaw : null;
-
-      const canalRaw = q.get('canal');
-      const canal = canalRaw && CANAL_IDS.has(canalRaw) ? canalRaw : null;
-
-      const problemaRaw = q.get('problema');
-      const problema = problemaRaw && PROBLEMA_IDS.has(problemaRaw) ? problemaRaw : null;
-
-      const buscaRaw = (q.get('q') ?? '').trim();
-      const busca = buscaRaw === '' ? null : buscaRaw.slice(0, 120);
-
-      const limit = Math.min(Math.max(Number.parseInt(q.get('limit') ?? '25', 10) || 25, 1), 200);
-      const offset = Math.max(Number.parseInt(q.get('offset') ?? '0', 10) || 0, 0);
-
-      // O filtro por canal depende de qual linha tem mensagem cadastrada, então
-      // a tabela precisa saber a mesma linha que a tela está mostrando.
-      const linhaRaw = q.get('linha');
-      const linha = (await linhasValidas()).includes(linhaRaw)
-        ? linhaRaw
-        : ((await linhaAtual())?.linha ?? '1');
-
-      return json(res, 200, await listarPedidos({
-        etapa, estado, canal, problema, busca, limit, offset, ordem: q.get('ordem'), linha,
-        produto: produtoOuNulo(q.get('produto')),
-      }));
-    }
-
-    if (url.pathname === '/api/health') {
-      const inicio = Date.now();
-      await pool.query('SELECT 1');
-      return json(res, 200, { ok: true, latenciaMs: Date.now() - inicio });
-    }
-
-    if (req.method !== 'GET') {
-      return json(res, 405, { erro: 'método não permitido' });
-    }
-
-    return await servirEstatico(req, res, url.pathname);
+    // Tudo daqui em diante fala com a API usando o token DESTA pessoa. Sem
+    // sessão a credencial é nula: as rotas públicas (login e os arquivos da
+    // tela de entrada) não precisam de token.
+    return await comCredencial(sessao?.credencial ?? null, () => atender(req, res, url, sessao));
   } catch (err) {
     console.error(`[api] ${url.pathname}:`, err.message);
-    // A mensagem crua do Postgres pode carregar nome de coluna e trecho de
+    // A mensagem crua pode carregar nome de coluna, rota interna e trecho de
     // consulta. Isso ajuda no diagnóstico local e ajuda um atacante em
     // produção, então só sai quando você pedir.
     const detalhe = process.env.ERROS_DETALHADOS === 'true' ? err.message : undefined;
+
+    if (err instanceof ErroApi) {
+      if (!apiConfigurada) {
+        return json(res, 502, {
+          erro: 'a API não está configurada — defina API_URL no .env e reinicie o painel',
+          detalhe,
+        });
+      }
+      /*
+       * 401 da API = a credencial DESTA pessoa morreu (access vencido com
+       * refresh também vencido, conta desativada, token revogado). Isso é
+       * sessão perdida, não API fora do ar: devolver 502 deixaria a tela
+       * piscando "sem conexão" para sempre, quando o conserto é entrar de
+       * novo. O cookie some junto, senão o navegador insistiria com ele.
+       */
+      if (err.status === 401 || err.status === 403) {
+        limparCookieSessao(req, res);
+        fecharSessao(lerCookie(req, COOKIE));
+        return json(res, 401, { erro: 'Sua sessão expirou. Entre de novo.' });
+      }
+      // A API fora do ar não é defeito do painel: 502 diz de quem é o problema.
+      return json(res, 502, {
+        erro: `não consegui falar com a API em ${enderecoApi}`, detalhe,
+      });
+    }
     return json(res, 500, { erro: 'falha ao processar a requisição', detalhe });
   }
 });
 
-/* Sessões vencidas não são apagadas na hora — a linha só deixa de casar no
-   SELECT. Sem uma varrida periódica a tabela cresce para sempre. */
-limparSessoesVencidas().catch(() => {});
-const faxina = setInterval(() => limparSessoesVencidas().catch(() => {}), 60 * 60 * 1000);
+/* Uma sessão vencida deixa de casar no `lerSessao`, mas continua ocupando
+   memória. Sem esta varrida o mapa só cresce. */
+limparVencidas();
+const faxina = setInterval(limparVencidas, 60 * 60 * 1000);
 faxina.unref();
 
 servidor.listen(PORT, HOST, () => {
   console.log(`\n  ◗ SendTrace · régua de pós-venda`);
   console.log(`    http://${HOST}:${PORT}`);
+  // Sem isto, um .env pela metade só apareceria como "sem conexão" na tela —
+  // erro de rede aparente para um problema de configuração.
+  console.log(apiConfigurada
+    ? `    dados e acesso: API ${enderecoApi}`
+    : '    dados: API NÃO CONFIGURADA — defina API_URL no .env');
   console.log(`    travado = 'processando' há mais de ${LOCK_TIMEOUT_MIN} min`);
-  console.log(`    acesso protegido · sessão de ${SESSAO_HORAS} h`);
-  console.log(`    convite por e-mail: ${emailConfigurado ? 'ligado' : 'desligado (sem SMTP no .env)'}\n`);
+  console.log(`    cada pessoa entra com a própria conta da API · sessão de ${SESSAO_HORAS} h\n`);
 });
 
 for (const sinal of ['SIGINT', 'SIGTERM']) {
   process.on(sinal, () => {
-    servidor.close(() => pool.end().then(() => process.exit(0)));
+    servidor.close(() => process.exit(0));
   });
 }

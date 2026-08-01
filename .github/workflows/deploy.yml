@@ -34,7 +34,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          # A MESMA versão fixada no Dockerfile e usada em desenvolvimento.
+          # Verificar com um Node e rodar com outro deixaria passar sintaxe
+          # que só quebra no ar.
+          node-version: '24.18.0'
           cache: npm
 
       - run: npm ci
@@ -44,7 +47,7 @@ jobs:
       - name: Sintaxe de todos os módulos
         run: |
           erros=0
-          for f in server/*.js public/*.js; do
+          for f in server/*.js api/*.js api/rotas/*.js public/*.js; do
             node --check "$f" || { echo "FALHOU: $f"; erros=1; }
           done
           exit $erros
@@ -201,6 +204,31 @@ jobs:
               exit 1
             fi
 
+            # A API sobe junto com o painel e precisa do segredo que assina
+            # os tokens. Sem ele o compose para com "variable is not set" —
+            # verdadeiro, mas longe da causa. Conferir aqui explica o que
+            # falta e onde. (API_URL deixou de ser obrigatória: o padrão é a
+            # API deste mesmo compose.)
+            faltando=""
+            for chave in API_JWT_SEGREDO; do
+              grep -qE "^${chave}=." .env || faltando="$faltando $chave"
+            done
+            if [ -n "$faltando" ]; then
+              echo ""
+              echo "════════════════════════════════════════════════════════"
+              echo " O .env do servidor não tem:$faltando"
+              echo ""
+              echo " A API agora sobe junto com o painel e assina os tokens"
+              echo " de login com esse segredo. Gere um e grave no servidor:"
+              echo ""
+              echo "   node -e \"console.log(require('crypto').randomBytes(48).toString('base64url'))\""
+              echo "   cd <VPS_CAMINHO> && nano .env"
+              echo ""
+              echo " O modelo está na seção 1.5 do DEPLOY.md."
+              echo "════════════════════════════════════════════════════════"
+              exit 1
+            fi
+
             # Sem `docker login`: o pacote é público, então o VPS baixa sem
             # credencial nenhuma. Um segredo a menos para guardar e renovar.
             echo "→ baixando ${{ needs.construir.outputs.tag }}"
@@ -249,5 +277,7 @@ jobs:
             done
 
             echo "::error::o painel não respondeu em 60s"
-            docker compose -f docker-compose.prod.yml logs --tail=50 painel
+            # Os dois serviços: o painel só sobe depois da API ficar saudável,
+            # então a causa pode estar no log dela.
+            docker compose -f docker-compose.prod.yml logs --tail=50
             exit 1

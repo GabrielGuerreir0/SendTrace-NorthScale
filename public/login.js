@@ -1,10 +1,12 @@
 /**
  * Tela de entrada.
  *
- * Faz duas coisas na mesma página: o login e, quando a senha é provisória, a
- * definição da senha própria. Mandar a pessoa para o painel só para ele
- * recusar tudo com "troca pendente" seria um desvio inútil — a troca acontece
- * aqui, antes de qualquer coisa carregar.
+ * O e-mail e a senha vão para o painel, que os troca por um par access/refresh
+ * na API do SendTrace. O painel não guarda senha nem hash: a conta é a MESMA da
+ * API, então desativar alguém lá tira o acesso aqui na mesma hora.
+ *
+ * A definição de senha própria saiu daqui junto com o banco: a API não tem rota
+ * de troca de senha. O formulário segue no HTML, sem uso, até existir uma.
  */
 const $ = (id) => document.getElementById(id);
 
@@ -70,15 +72,12 @@ formEntrar.addEventListener('submit', async (ev) => {
     const r = await postar('/api/auth/login', { email, senha });
     if (!r.ok) return mostrarErro($('e-erro'), r.dados.erro ?? 'Não foi possível entrar.');
 
-    if (r.dados.usuario?.trocar_senha) {
-      // Já está autenticado; só falta a senha própria. Reaproveita o que foi
-      // digitado para a pessoa não redigitar a provisória.
-      formEntrar.hidden = true;
-      formSenha.hidden = false;
-      $('s-atual').value = senha;
-      $('s-nova').focus();
-      return;
-    }
+    /*
+     * Quem confere a senha agora é a API do SendTrace, e ela não expõe rota de
+     * troca. O formulário de "definir senha própria" continua no HTML mas
+     * nunca é aberto: mandar a pessoa preencher algo que o servidor recusaria
+     * com 501 seria pedir trabalho para entregar erro.
+     */
     location.replace(destino());
   } catch {
     mostrarErro($('e-erro'), 'Sem conexão com o servidor.');

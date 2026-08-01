@@ -7,6 +7,57 @@ O canvas é no estilo n8n mas **travado**: os nós não se arrastam, não há zo
 nem pan. O layout se calcula sozinho e sempre cabe na tela — quando a régua não
 cabe numa linha, dobra em serpentina, com setas indicando a direção do fluxo.
 
+## De onde vêm os números
+
+Da **API do SendTrace** (Django REST), não mais de SQL direto:
+
+```
+navegador → painel (Node) → API REST → banco
+```
+
+**A autenticação é por pessoa, não por conta de serviço.** Quem digita e-mail e
+senha no `/login` tem essas credenciais trocadas por um par `access`/`refresh`
+em `/api/auth/token/`, e **toda chamada seguinte vai com o token dela**. A API
+enxerga quem está pedindo o quê, e desativar alguém lá tira o acesso aqui na
+mesma hora, sem sincronizar nada.
+
+Os tokens ficam **só no servidor**, presos à sessão do navegador — um JWT
+entregue à página seria legível por quem abrisse o DevTools. Quando o `access`
+vence, o painel renova sozinho pelo `refresh`; quando o `refresh` também morre,
+a sessão cai e a pessoa entra de novo.
+
+O painel se atualiza **de minuto em minuto**. Como cada ciclo baixa a fila
+inteira (a API não agrega), 10 s multiplicariam por seis a carga sobre ela sem
+que a régua mudasse tão rápido assim.
+
+A API é **CRUD puro**: não existe rota que agrupe, conte ou tire mediana. Então
+tudo que o painel mostra — contagem por etapa e estado, onda de 48 h, entradas
+por dia, alcance por canal, catálogo de produtos — é calculado em
+[`server/dados.js`](server/dados.js), em JavaScript, sobre a fila baixada. As
+regras vieram traduzidas do SQL uma a uma; os números não mudaram de significado
+ao mudar de lugar.
+
+O custo dessa escolha é explícito: **medir a fila exige baixá-la**. Enquanto ela
+couber em `API_FILA_MAX` (padrão 20 000), tudo bem. Passando disso, o painel
+mostra uma faixa dizendo quantos leu de quantos — um total que não é total
+mente com cara de dado. Se a fila crescer, o caminho é a API expor agregação;
+os números que valeria pedir são exatamente as funções desse arquivo.
+
+O Postgres **saiu inteiro do caminho** — nenhum arquivo do servidor importa mais
+`db.js`. Em troca, três coisas que a API não oferece deixaram de existir no
+painel:
+
+| o que era | por que saiu |
+|---|---|
+| criar conta, promover a admin, desativar | a API só tem `GET /api/usuarios/`. A tela virou somente leitura, com o aviso na própria janela. |
+| trocar a própria senha | não há rota de troca. `/api/auth/senha` responde 501 explicando, e o bloqueio de "senha provisória pendente" foi removido — com senha na API e sem rota, ele seria porta trancada sem chave. |
+| sessão sobreviver a reinício | os tokens vivem em memória, não em disco. Reiniciar o painel faz todo mundo entrar de novo; nenhum dado se perde. |
+
+> Uma perda a registrar: `/api/linha-historico/` é somente leitura, então as
+> tentativas de troca de linha não são mais gravadas — nem as que falham. Fica
+> registrada só a última troca bem-sucedida, em `/api/linha-ativa/`. Para o
+> histórico voltar, a API precisa aceitar POST nessa rota.
+
 ## Deploy em produção
 
 Painel + Postgres em containers no seu VPS, com o GitHub Actions construindo a
@@ -414,8 +465,9 @@ As regras de conteúdo valem no **servidor**, não só na tela — validação d
 | citar rastreio ou status de logística | botão com rótulo e sem destino |
 | destino diferente de `EBOOK`/`ASSISTENTE` | |
 
-A linha precisa existir em `painel_linhas_copy` antes (há chave estrangeira). O
-painel traduz o erro do banco para essa frase em vez de mostrar `23503`.
+A linha precisa estar cadastrada antes. Quando não está, a API recusa a
+gravação e o painel traduz o erro por campo do Django para uma frase em
+português, em vez de jogar o JSON cru na tela.
 
 ### Tamanho do SMS
 
@@ -596,6 +648,11 @@ painel todo esconderia justamente o contexto que dá sentido ao recorte.
 
 | variável (`.env`) | para quê |
 |---|---|
+| `API_URL` | onde está a API do SendTrace. Sem ela o painel sobe, avisa no console e mostra "sem conexão". |
+| — | Não há conta de serviço: cada pessoa entra com o próprio e-mail e senha da API, e o painel guarda os tokens dela só na memória do servidor. |
+| `API_FILA_MAX` | teto de registros baixados de `/api/disparos/`. Passando disso o painel avisa na tela que os números são parciais. |
+| `API_CACHE_MS` | por quanto tempo a fila baixada vale. Um snapshot faz ~8 perguntas sobre a mesma fila; a janela evita baixá-la oito vezes. |
+| `API_TIMEOUT_MS` | corte de paciência com a API (padrão 20 s). |
 | `PORT` / `HOST` | `127.0.0.1` deixa o painel só nesta máquina. Use `0.0.0.0` para expor na rede local. |
 | `LOCK_TIMEOUT_MIN` | acima de quantos minutos em `processando` um pedido conta como **travado**. Ajuste ao tempo real do seu worker. |
 | `TZ_PAINEL` | fuso do corte diário em "Entradas na régua" (padrão `America/Sao_Paulo`). |
@@ -640,8 +697,9 @@ server/
   auth.js                         senhas (scrypt), sessões, freio de força bruta
   email.js                        convite por e-mail (SMTP, opcional)
   linha.js                        troca da linha de copy ativa no n8n
-  queries.js                      todo o SQL da régua
-  db.js                           pool do Postgres
+  api.js                          cliente da API (JWT, paginação, retentativa)
+  dados.js                        régua e fila pela API + todas as agregações
+  db.js                           pool do Postgres (só login e usuários)
   etapas.config.js                vocabulário fixo (canais, estados, status)
   setup.js                        migrações + administrador inicial
   senha.js                        redefinição de senha pelo terminal

@@ -1,10 +1,15 @@
 # ═══════════════════════════════════════════════════════════════════════════
-#  SendTrace — o PAINEL em produção. O banco NÃO está aqui.
+#  SendTrace — o FRONT (painel) e o BACK (API) em produção. O banco NÃO
+#  está aqui.
 #
 #  O Postgres já roda no VPS, no container `sendtrace-postgres`, subido pelo
 #  compose de /opt/sendtrace. Este arquivo só sobe a aplicação e se pluga
 #  naquela rede — declarar um segundo Postgres criaria um banco vazio paralelo
 #  ao verdadeiro, e o painel abriria bonito mostrando zero pedidos.
+#
+#  As duas pontas saem da MESMA imagem — só muda o comando. O painel fala com
+#  a API pelo nome do container (http://sendtrace-api:4400), pela rede do
+#  banco, sem passar pela internet.
 #
 #  Fica numa SUBPASTA (/opt/sendtrace/painel) de propósito: o compose do banco
 #  tem o próprio .env em /opt/sendtrace, e dois .env no mesmo diretório se
@@ -15,12 +20,73 @@
 # ═══════════════════════════════════════════════════════════════════════════
 
 services:
+  # ── o back: a API, direto sobre o Postgres ────────────────────────────────
+  api:
+    image: ${IMAGEM:-ghcr.io/OWNER/sendtrace:latest}
+    container_name: sendtrace-api
+    command: npm run api
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    environment:
+      # Dentro do container a API precisa escutar em todas as interfaces —
+      # em 127.0.0.1 ela responderia só ao loopback do próprio container.
+      API_HOST: 0.0.0.0
+      API_PORT: 4400
+      NODE_ENV: production
+
+      # Sem o segredo a API se recusa a subir — melhor o compose parar aqui,
+      # apontando o lugar, do que um crash-loop silencioso. Gere um com:
+      #   node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+      API_JWT_SEGREDO: ${API_JWT_SEGREDO:?defina API_JWT_SEGREDO no .env}
+
+      # O host é o NOME DO CONTAINER do banco, não 127.0.0.1 — ver o
+      # comentário no serviço do painel.
+      DATABASE_URL: postgresql://${DB_USUARIO:-sendtrace}:${DB_SENHA:?defina DB_SENHA no .env}@${DB_HOST:-sendtrace-postgres}:${DB_PORTA:-5432}/${DB_NOME:-sendtrace}?sslmode=disable
+      DB_SSL_INSECURE: "false"
+
+    networks:
+      - banco
+
+    ports:
+      # Só no loopback: se um dia a API for pública, quem publica é o proxy
+      # reverso com HTTPS — em HTTP o token viaja em claro.
+      - "127.0.0.1:4400:4400"
+
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+    healthcheck:
+      # /api/schema/ é pública e NÃO consulta o banco. Um healthcheck que
+      # dependesse do Postgres derrubaria o `depends_on` do painel toda vez
+      # que o banco piscasse — e reiniciar não conserta banco nenhum.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4400/api/schema/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # ── o front: o painel ─────────────────────────────────────────────────────
   painel:
     # A tag do commit é gravada no .env pelo deploy. `latest` é o padrão para
     # quem subir à mão.
     image: ${IMAGEM:-ghcr.io/OWNER/sendtrace:latest}
     container_name: sendtrace-painel
     restart: unless-stopped
+
+    depends_on:
+      api:
+        condition: service_healthy
 
     env_file:
       - .env
@@ -29,6 +95,15 @@ services:
       HOST: 0.0.0.0
       PORT: 4300
       NODE_ENV: production
+
+      # De onde vêm a régua, a fila E o login. Não há conta de serviço: cada
+      # pessoa entra com a própria conta da API. O padrão é a API DESTE
+      # compose, pelo nome do container e pela rede interna; preencha API_URL
+      # no .env só se quiser apontar para uma instância externa.
+      API_URL: ${API_URL:-http://sendtrace-api:4400}
+      API_FILA_MAX: ${API_FILA_MAX:-20000}
+      API_CACHE_MS: ${API_CACHE_MS:-4000}
+      API_TIMEOUT_MS: ${API_TIMEOUT_MS:-20000}
 
       # O host é o NOME DO CONTAINER do banco, não 127.0.0.1.
       #

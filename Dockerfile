@@ -8,10 +8,14 @@
 #  final sem levar junto o cache do npm nem as ferramentas de build.
 # ═══════════════════════════════════════════════════════════════════════════
 
+# A MESMA versão que roda em desenvolvimento (node -v), fixada até o patch.
+# Uma tag flutuante como `node:24` muda por baixo a cada rebuild, e aí o
+# container roda um Node que ninguém testou na máquina de ninguém. Quando
+# atualizar o Node local, atualize aqui — é o único lugar.
+ARG NODE_VERSAO=24.18.0
+
 # ── etapa 1: dependências ──────────────────────────────────────────────────
-# node:24 = a mesma linha do `npm start` local. Rodar versões diferentes de
-# Node nos dois lugares é mais um eixo em que o comportamento pode divergir.
-FROM node:24-alpine AS deps
+FROM node:${NODE_VERSAO}-alpine AS deps
 
 WORKDIR /app
 
@@ -24,7 +28,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 # ── etapa 2: imagem final ──────────────────────────────────────────────────
-FROM node:24-alpine
+FROM node:${NODE_VERSAO}-alpine
 
 # curl é usado pelo HEALTHCHECK. Sem ele o healthcheck falharia sempre e o
 # container seria marcado como não saudável mesmo funcionando.
@@ -42,6 +46,7 @@ ENV NODE_ENV=production \
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY server ./server
+COPY api ./api
 COPY public ./public
 
 # Roda como usuário sem privilégio. A imagem do Node já traz o usuário `node`;
@@ -56,6 +61,10 @@ EXPOSE 4300
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -fsS "http://127.0.0.1:${PORT}/api/vivo" || exit 1
 
+# A MESMA imagem serve as duas pontas: o padrão sobe o painel (front), e o
+# serviço `api` do compose sobrepõe o comando com `npm run api`. Uma imagem
+# por processo dobraria o build e o registro para separar o que muda junto.
+#
 # O processo trata SIGINT/SIGTERM e fecha o pool antes de sair; com `init: true`
 # no compose, ele ainda ganha um PID 1 que recolhe processos órfãos.
 CMD ["npm", "start"]

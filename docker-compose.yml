@@ -1,19 +1,84 @@
 # ═══════════════════════════════════════════════════════════════════════════
-#  SendTrace — o painel em container, com o BANCO EXTERNO (Neon).
+#  SendTrace — o FRONT (painel) e o BACK (API) em container, com o BANCO
+#  EXTERNO (Neon).
 #
 #  Não há serviço de Postgres aqui de propósito: seus dados já vivem no Neon,
 #  e subir um banco local só criaria um segundo lugar para a verdade morar.
 #
+#  As duas pontas saem da MESMA imagem — só muda o comando. O painel fala com
+#  a API pelo nome do serviço (http://api:4400), na rede que o compose cria.
+#
 #    docker compose run --rm painel npm run setup   # cria tabelas e o admin
-#    docker compose up -d                           # sobe o painel
-#    docker compose logs -f painel                  # acompanha
+#    docker compose up -d --build                   # API (4400) + painel (4300)
+#    docker compose logs -f                         # acompanha os dois
 # ═══════════════════════════════════════════════════════════════════════════
 
 services:
+  # ── o back: a API, direto sobre o Postgres ────────────────────────────────
+  api:
+    # O build aparece nos DOIS serviços de propósito: se só um declarasse, o
+    # outro tentaria baixar `sendtrace:local` de um registro que não existe.
+    # Construir duas vezes não custa nada — a segunda é 100% cache.
+    build: .
+    image: sendtrace:local
+    container_name: sendtrace-api
+    command: npm run api
+
+    env_file:
+      - .env
+
+    environment:
+      # Sobrepõem o que estiver no .env. Dentro do container a API precisa
+      # escutar em todas as interfaces — o API_HOST=127.0.0.1 do uso local
+      # responderia só ao loopback do próprio container.
+      API_HOST: 0.0.0.0
+      API_PORT: 4400
+      NODE_ENV: production
+
+      # Sem o segredo a API se recusa a subir — melhor parar aqui, com a
+      # mensagem apontando o lugar, do que num crash-loop do container.
+      # Gere um com:
+      #   node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+      API_JWT_SEGREDO: ${API_JWT_SEGREDO:?defina API_JWT_SEGREDO no .env (ver .env.example)}
+
+    ports:
+      # Só no loopback do host: quem consome a API de fora do compose é você,
+      # testando. O painel chega por dentro, pela rede do compose.
+      - "127.0.0.1:4400:4400"
+
+    restart: unless-stopped
+    init: true
+
+    healthcheck:
+      # /api/schema/ é pública e NÃO consulta o banco. Um healthcheck que
+      # dependesse do Postgres derrubaria o `depends_on` do painel toda vez
+      # que o Neon hibernasse — e reiniciar não acorda banco nenhum.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4400/api/schema/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── o front: o painel ─────────────────────────────────────────────────────
   painel:
     build: .
     image: sendtrace:local
     container_name: sendtrace
+    depends_on:
+      api:
+        condition: service_healthy
 
     # Lê o .env da máquina e injeta como VARIÁVEIS DE AMBIENTE. O arquivo não
     # entra na imagem (ver .dockerignore): fica só no host, e o segredo não
@@ -28,6 +93,11 @@ services:
       HOST: 0.0.0.0
       PORT: 4300
       NODE_ENV: production
+
+      # O painel fala com a API DESTE compose, pelo nome do serviço. O
+      # API_URL do .env (a instância externa) vale para o `npm start` fora
+      # do Docker; aqui dentro ele é sobreposto de propósito.
+      API_URL: http://api:4400
 
     ports:
       # Publica só no loopback do HOST. Para expor na rede, troque por

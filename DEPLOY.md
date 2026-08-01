@@ -175,7 +175,25 @@ Crie o `.env` — **só existe no servidor**, nunca no git:
 
 ```bash
 cat > .env <<'EOF'
-# ── banco que JÁ EXISTE no VPS ────────────────────────────────────
+# ── API do SendTrace: de onde vêm TODOS os números ────────────────
+# A API sobe JUNTO com o painel, neste mesmo compose, e o painel a
+# encontra sozinho pela rede interna (http://sendtrace-api:4400).
+# NÃO defina API_URL — ela só serve para apontar para uma instância
+# externa, fora deste compose.
+
+# Assina os tokens de login da API. Obrigatório, mínimo 32 caracteres;
+# sem ele o compose se recusa a subir. Gere um com:
+#   node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+API_JWT_SEGREDO=<segredo gerado>
+
+# Teto de registros baixados. A API não agrega, então medir a fila é
+# baixá-la; passando disto o painel avisa que os números são parciais.
+API_FILA_MAX=20000
+
+# ── banco: SÓ login e usuários do painel ──────────────────────────
+# A API expõe /api/usuarios/ apenas para leitura — não dá para criar,
+# promover nem emitir senha provisória por ela.
+#
 # O host é o NOME DO CONTAINER, não 127.0.0.1: dentro de um container
 # 127.0.0.1 é ele mesmo, e a conexão nem sai à procura do Postgres.
 DB_HOST=sendtrace-postgres

@@ -82,7 +82,9 @@ const estado = {
   linhaAtiva: null,
   snapshot: null,
   demo: false,
-  intervalo: 10000,
+  // De minuto em minuto. Precisa casar com o <option selected> do seletor: se
+  // divergirem, a tela diz um intervalo e o timer usa outro.
+  intervalo: 60000,
   timer: null,
   filtros: { etapa: null, estado: null, canal: null, problema: null, busca: '', ordem: 'proximo' },
   graficos: { etapa: null, canal: null },
@@ -346,6 +348,28 @@ function renderRodapeCanvas(s) {
   // A régua não existe ainda: o painel funciona, mas sem nomes nem canais.
   const faixa = $('faixa-regua');
   faixa.hidden = s.reguaOk !== false;
+
+  /*
+   * A fila veio pela metade.
+   *
+   * Como a API não tem rota de agregação, o painel baixa a fila para contá-la.
+   * Se ela passar do teto, TODOS os números acima descrevem só o pedaço que
+   * coube — e um total que não é total mente com cara de dado. Por isso a
+   * faixa fala em número absoluto, não em "alguns registros".
+   */
+  const parcial = $('faixa-parcial');
+  const f = s.fonte;
+  parcial.hidden = !f?.truncado;
+  if (f?.truncado) {
+    parcial.replaceChildren();
+    const forte = document.createElement('strong');
+    forte.textContent = 'Números parciais.';
+    parcial.append(forte, document.createTextNode(
+      ` O painel leu ${n(f.lidos)} dos ${n(f.total)} pedidos da fila (teto de `
+      + `${n(f.teto)}). Tudo acima descreve só essa parte. Suba API_FILA_MAX ou `
+      + 'peça rotas de agregação à API.',
+    ));
+  }
 }
 
 /* ── onda de disparos: 48 baldes horários a partir da hora cheia atual ── */
@@ -718,7 +742,7 @@ function renderFiltroProduto(s) {
    * foco. O painel se recarrega a cada 10 s e as contagens andam junto: trocar
    * as opções no meio de uma escolha fecharia o dropdown na mão do usuário.
    */
-  const assinatura = rotulos.map((r) => r.join(' ')).join('\n');
+  const assinatura = rotulos.map((r) => r.join('|')).join('\n');
   if (assinatura === assinaturaProdutos || document.activeElement === sel) return;
   assinaturaProdutos = assinatura;
 
@@ -871,7 +895,21 @@ async function carregarSnapshot({ silencioso = false } = {}) {
       if (estado.produto) qs.set('produto', estado.produto);
       if (estado.linhaExibindo) qs.set('linha', estado.linhaExibindo);
       const resp = await fetch(`/api/snapshot${qs.toString() ? `?${qs}` : ''}`);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      // Sessão perdida (o token desta pessoa na API venceu ou foi revogado):
+      // insistir traria erro a cada 10 s. O caminho é entrar de novo.
+      if (resp.status === 401) { location.replace('/login'); throw new Error('sem sessão'); }
+      if (!resp.ok) {
+        // O servidor explica o que houve no corpo ("a API recusou as
+        // credenciais", "não consegui falar com a API em …"). Jogar fora essa
+        // frase e mostrar só "HTTP 502" transforma um problema de configuração
+        // com conserto conhecido num defeito misterioso.
+        let motivo = `HTTP ${resp.status}`;
+        try {
+          const corpo = await resp.json();
+          if (corpo?.erro) motivo = corpo.detalhe ? `${corpo.erro} (${corpo.detalhe})` : corpo.erro;
+        } catch { /* resposta sem JSON: fica o código mesmo */ }
+        throw new Error(motivo);
+      }
       return resp.json();
     })();
 
@@ -905,15 +943,15 @@ async function carregarSnapshot({ silencioso = false } = {}) {
       : '';
     $('rodape-nota').textContent = estado.demo
       ? `Dados simulados no navegador. Nenhuma leitura ou escrita no banco.${carimbo}`
-      : 'Régua: etapas_regua + mensagens_regua · fila: disparos_pos_venda · '
-        + `“travado” = processando há mais de ${s.lockTimeoutMin} min · `
-        + `o painel só lê, nunca escreve.${carimbo}`;
+      : `Régua e fila lidas da API${s.fonte?.api ? ` ${s.fonte.api}` : ''} · `
+        + `${n(s.fonte?.lidos ?? 0)} pedidos medidos · `
+        + `“travado” = processando há mais de ${s.lockTimeoutMin} min.${carimbo}`;
   } catch (err) {
     if (meu !== geracaoSnapshot) return;
     sinalizar('erro', 'sem conexão');
     const faixa = $('faixa-erro');
     faixa.hidden = false;
-    faixa.textContent = `Não consegui ler o banco: ${err.message}. `
+    faixa.textContent = `Não consegui ler os dados: ${err.message}. `
       + 'O painel continua mostrando os últimos números que recebeu.';
   } finally {
     if (meu === geracaoSnapshot) document.body.dataset.recarregando = 'nao';
@@ -1197,12 +1235,26 @@ function relatarConvite({ email: envio, conviteDias }, senha, quem) {
   }
 }
 
-function renderUsuarios({ usuarios, eu, emailConfigurado, conviteDias }) {
+function renderUsuarios({ usuarios, eu, emailConfigurado, conviteDias, somenteLeitura }) {
   if (emailConfigurado !== undefined) {
     estado.emailConfigurado = emailConfigurado;
     $('n-email-envio-caixa').hidden = !emailConfigurado;
   }
   if (conviteDias) estado.conviteDias = conviteDias;
+
+  /*
+   * A API do SendTrace só LÊ usuários — não existe rota para criar, promover,
+   * desativar nem emitir senha provisória. Some o formulário e somem os botões:
+   * um controle que sempre devolve erro é pior que controle nenhum.
+   */
+  const soLeitura = somenteLeitura === true;
+  $('form-novo').hidden = soLeitura;
+  const aviso = $('usuarios-leitura');
+  aviso.hidden = !soLeitura;
+  if (soLeitura) {
+    aviso.textContent = 'Esta lista vem da API do SendTrace, que só permite lê-la. '
+      + 'Criar conta, promover a administrador, desativar ou trocar senha é feito na API.';
+  }
 
   $('lista-usuarios').replaceChildren(...usuarios.map((u) => {
     const li = document.createElement('li');
@@ -1247,7 +1299,7 @@ function renderUsuarios({ usuarios, eu, emailConfigurado, conviteDias }) {
     // O próprio usuário não se rebaixa nem se desativa: perderia o acesso à
     // tela que está usando, sem volta se não houver outro admin. O servidor
     // também recusa — isto aqui só evita o clique inútil.
-    if (u.id !== eu) {
+    if (u.id !== eu && !soLeitura) {
       acoes.append(botao(
         u.admin ? 'Remover admin' : 'Tornar admin',
         u.admin ? 'Deixa de administrar usuários' : 'Passa a poder criar e promover usuários',
@@ -1261,7 +1313,7 @@ function renderUsuarios({ usuarios, eu, emailConfigurado, conviteDias }) {
     }
 
     const comEmail = estado.emailConfigurado;
-    acoes.append(botao(
+    if (!soLeitura) acoes.append(botao(
       comEmail ? 'Reenviar convite' : 'Nova senha',
       comEmail
         ? 'Gera uma senha provisória, manda por e-mail e encerra as sessões dessa conta'

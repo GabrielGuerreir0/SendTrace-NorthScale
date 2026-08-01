@@ -1,0 +1,430 @@
+/**
+ * As perguntas AGREGADAS sobre a fila.
+ *
+ * Esta é a diferença entre um CRUD e um backend que serve um painel: sem estas
+ * rotas, contar 100 mil pedidos significa trafegar 100 mil pedidos para exibir
+ * seis números. O banco responde isso numa passada, e o que sai daqui são
+ * dezenas de bytes.
+ *
+ * Todas aceitam `?produto=` (pelo NOME, com as ofertas somadas) e, onde faz
+ * sentido, `?etapa=`.
+ */
+import { query } from '../../server/db.js';
+import { LOCK_TIMEOUT_MIN } from '../../server/config.js';
+import { ESTADO, NOME_PRODUTO, DO_PRODUTO, CANAL_DO_ERRO } from '../sql.js';
+
+/** $1 é sempre o lock; $2, sempre o produto. Manter a ordem evita confusão. */
+const base = (produto) => [LOCK_TIMEOUT_MIN, produto ?? null];
+
+const filtroProduto = {
+  produto: { type: 'string', description: 'Nome do produto (as ofertas contam juntas). Vazio = todos.' },
+};
+
+export default async function rotasMetricas(app) {
+  /* ────────────────────────  visão geral  ──────────────────────── */
+
+  app.get('/api/metricas/estados/', {
+    schema: {
+      tags: ['Métricas'],
+      summary: 'Quantos pedidos em cada estado',
+      description: 'Os seis estados são mutuamente exclusivos e somam o total. '
+        + '**Cancelado nunca é somado a finalizado**: os dois saíram da régua, mas '
+        + 'por motivos opostos.',
+      security: [{ bearerAuth: [] }],
+      querystring: { type: 'object', properties: { ...filtroProduto, etapa: { type: 'integer' } } },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            total: { type: 'integer' },
+            na_regua: { type: 'integer', description: 'Ainda circulando: os quatro estados vivos.' },
+            em_dia: { type: 'integer' },
+            atrasado: { type: 'integer' },
+            processando: { type: 'integer' },
+            travado: { type: 'integer' },
+            finalizado: { type: 'integer' },
+            cancelado: { type: 'integer' },
+            com_erro: { type: 'integer' },
+            com_retry: { type: 'integer' },
+            novos_24h: { type: 'integer' },
+            prestes: { type: 'integer', description: 'Dispara na próxima hora e ainda não venceu.' },
+          },
+        },
+      },
+    },
+    onRequest: [app.exigirSessao],
+  }, async (req) => {
+    const valores = base(req.query.produto);
+    let etapaSql = '';
+    if (req.query.etapa !== undefined) {
+      valores.push(Number(req.query.etapa));
+      etapaSql = ` AND etapa_atual = $${valores.length}::int`;
+    }
+
+    const { rows } = await query(
+      `SELECT
+         count(*)::int                                            AS total,
+         count(*) FILTER (WHERE ${ESTADO} = 'em_dia')::int         AS em_dia,
+         count(*) FILTER (WHERE ${ESTADO} = 'atrasado')::int       AS atrasado,
+         count(*) FILTER (WHERE ${ESTADO} = 'processando')::int    AS processando,
+         count(*) FILTER (WHERE ${ESTADO} = 'travado')::int        AS travado,
+         count(*) FILTER (WHERE ${ESTADO} = 'finalizado')::int     AS finalizado,
+         count(*) FILTER (WHERE ${ESTADO} = 'cancelado')::int      AS cancelado,
+         count(*) FILTER (WHERE ultimo_erro IS NOT NULL)::int      AS com_erro,
+         count(*) FILTER (WHERE tentativas > 0)::int               AS com_retry,
+         count(*) FILTER (WHERE criado_em >= now() - interval '24 hours')::int AS novos_24h,
+         count(*) FILTER (
+           WHERE status = 'ativo' AND proximo_disparo > now()
+             AND proximo_disparo <= now() + interval '1 hour')::int AS prestes
+       FROM disparos_pos_venda
+       WHERE ${DO_PRODUTO(2)}${etapaSql}`,
+      valores,
+    );
+    const t = rows[0];
+    return { ...t, na_regua: t.em_dia + t.atrasado + t.processando + t.travado };
+  });
+
+  app.get('/api/metricas/etapas/', {
+    schema: {
+      tags: ['Métricas'],
+      summary: 'Consolidado por etapa',
+      description: 'Uma linha por etapa, com os seis estados e os sinais de problema. '
+        + '`na_etapa` é quem AINDA circula ali — um pedido finalizado continua '
+        + 'carregando a etapa em que parou, e somá-lo contaria como "nesta etapa" '
+        + 'alguém que já saiu.',
+      security: [{ bearerAuth: [] }],
+      querystring: { type: 'object', properties: filtroProduto },
+      response: { 200: { type: 'array', items: { $ref: 'ResumoEtapa#' } } },
+    },
+    onRequest: [app.exigirSessao],
+  }, async (req) => {
+    const { rows } = await query(
+      `SELECT
+         etapa_atual::int                                          AS etapa,
+         count(*)::int                                             AS total,
+         count(*) FILTER (WHERE ${ESTADO} = 'em_dia')::int          AS em_dia,
+         count(*) FILTER (WHERE ${ESTADO} = 'atrasado')::int        AS atrasado,
+         count(*) FILTER (WHERE ${ESTADO} = 'processando')::int     AS processando,
+         count(*) FILTER (WHERE ${ESTADO} = 'travado')::int         AS travado,
+         count(*) FILTER (WHERE ${ESTADO} = 'finalizado')::int      AS finalizado,
+         count(*) FILTER (WHERE ${ESTADO} = 'cancelado')::int       AS cancelado,
+         count(*) FILTER (WHERE ${ESTADO} IN ('em_dia','atrasado','processando','travado'))::int AS na_etapa,
+         count(*) FILTER (WHERE ultimo_erro IS NOT NULL)::int       AS com_erro,
+         count(*) FILTER (WHERE tentativas > 0)::int                AS com_retry,
+         count(*) FILTER (WHERE criado_em >= now() - interval '24 hours')::int AS novos_24h,
+         count(*) FILTER (
+           WHERE status = 'ativo' AND proximo_disparo > now()
+             AND proximo_disparo <= now() + interval '1 hour')::int  AS prestes,
+         min(proximo_disparo) FILTER (WHERE status = 'ativo')       AS proximo_em,
+         coalesce(max(tentativas), 0)::int                          AS max_tentativas
+       FROM disparos_pos_venda
+       WHERE ${DO_PRODUTO(2)}
+       GROUP BY etapa_atual
+       ORDER BY etapa_atual`,
+      base(req.query.produto),
+    );
+    return rows;
+  });
+
+  /* ──────────────────────────  produtos  ────────────────────────── */
+
+  app.get('/api/metricas/produtos/', {
+    schema: {
+      tags: ['Métricas'],
+      summary: 'Catálogo de produtos da fila',
+      description: 'Agrupado pelo NOME: as quatro ofertas de NeuroMind Pro viram uma '
+        + 'linha só, com os pedidos somados. É a lista de onde se escolhe um filtro, '
+        + 'então NÃO respeita o filtro de produto.',
+      security: [{ bearerAuth: [] }],
+      querystring: { type: 'object', properties: { limite: { type: 'integer', default: 300, maximum: 1000 } } },
+      response: { 200: { type: 'array', items: { $ref: 'Produto#' } } },
+    },
+    onRequest: [app.exigirSessao],
+  }, async (req) => {
+    const { rows } = await query(
+      `SELECT nome AS produto, count(*)::int AS total
+       FROM (SELECT ${NOME_PRODUTO()} AS nome FROM disparos_pos_venda
+             WHERE produto IS NOT NULL AND btrim(produto) <> '') t
+       GROUP BY nome ORDER BY count(*) DESC, nome LIMIT $1`,
+      [Math.min(1000, Number(req.query.limite) || 300)],
+    );
+    return rows;
+  });
+
+  app.get('/api/metricas/status/', {
+    schema: {
+      tags: ['Métricas'],
+      summary: 'Distribuição crua da coluna status',
+      description: 'Sem interpretação nenhuma — serve para descobrir valores que o '
+        + 'painel ainda não conhece, como um status novo que o n8n passou a gravar.',
+      security: [{ bearerAuth: [] }],
+      querystring: { type: 'object', properties: filtroProduto },
+      response: { 200: { type: 'array', items: { $ref: 'ContagemStatus#' } } },
+    },
+    onRequest: [app.exigirSessao],
+  }, async (req) => {
+    const { rows } = await query(
+      `SELECT status, count(*)::int AS total FROM disparos_pos_venda
+       WHERE ${DO_PRODUTO(1)} GROUP BY status ORDER BY total DESC, status`,
+      [req.query.produto ?? null],
+    );
+    return rows;
+  });
+
+  /* ────────────────────────────  tempo  ─────────────────────────── */
+
+  app.get('/api/metricas/onda/', {
+    schema: {
+      tags: ['Métricas'],
+      summary: 'Disparos agendados hora a hora',
+      description: 'Quantos disparos caem em cada hora das próximas N horas. É a onda '
+        + 'que vem — serve para ver pico antes de ele acontecer.',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          ...filtroProduto,
+          horas: { type: 'integer', default: 48, minimum: 1, maximum: 336 },
+          etapa: { type: 'integer' },
+        },
+      },
+      response: { 200: { type: 'array', items: { $ref: 'Balde#' } } },
+    },
+    onRequest: [app.exigirSessao],
+  }, async (req) => {
+    /*
+     * Esta consulta não classifica estado, então NÃO recebe o parâmetro do
+     * lock. Passá-lo sem usar faz o Postgres recusar a consulta inteira com
+     * "could not determine data type of parameter $1" — um parâmetro sobrando
+     * é erro, não algo ignorado.
+     */
+    const valores = [req.query.produto ?? null, Number(req.query.horas) || 48];
+    let etapaSql = '';
+    if (req.query.etapa !== undefined) {
+      valores.push(Number(req.query.etapa));
+      etapaSql = ` AND etapa_atual = $${valores.length}::int`;
+    }
+    const { rows } = await query(
+      `SELECT date_trunc('hour', proximo_disparo) AS inicio, count(*)::int AS total
+       FROM disparos_pos_venda
+       WHERE status = 'ativo'
+         AND proximo_disparo >= date_trunc('hour', now())
+         AND proximo_disparo <  now() + make_interval(hours => $2::int)
+         AND ${DO_PRODUTO(1)}${etapaSql}
+       GROUP BY 1 ORDER BY 1`,
+      valores,
+    );
+    return rows;
+  });
+
+  app.get('/api/metricas/entradas/', {
+    schema: {
+      tags: ['Métricas'],
+      summary: 'Pedidos novos por dia',
+      description: 'O corte do dia usa o fuso do painel (`TZ_PAINEL`), não o do banco: '
+        + 'em UTC, tudo que entra entre 21h e meia-noite no Brasil cairia no dia seguinte.',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: { ...filtroProduto, dias: { type: 'integer', default: 14, minimum: 1, maximum: 365 } },
+      },
+      response: { 200: { type: 'array', items: { $ref: 'EntradaDia#' } } },
+    },
+    onRequest: [app.exigirSessao],
+  }, async (req) => {
+    const tz = process.env.TZ_PAINEL || 'America/Sao_Paulo';
+    const dias = Number(req.query.dias) || 14;
+    const { rows } = await query(
+      `SELECT to_char(date_trunc('day', criado_em AT TIME ZONE $1), 'YYYY-MM-DD') AS dia,
+              count(*)::int AS total
+       FROM disparos_pos_venda
+       WHERE criado_em >= date_trunc('day', (now() AT TIME ZONE $1) - make_interval(days => $3::int)) AT TIME ZONE $1
+         AND ${DO_PRODUTO(2)}
+       GROUP BY 1 ORDER BY 1`,
+      [tz, req.query.produto ?? null, dias - 1],
+    );
+    return rows;
+  });
+
+  /* ──────────────────────────  problemas  ───────────────────────── */
+
+  app.get('/api/metricas/canais/', {
+    schema: {
+      tags: ['Métricas'],
+      summary: 'Alcance por canal',
+      description: 'Toda etapa dispara e-mail E SMS ao mesmo tempo, então a pergunta '
+        + 'não é "qual o canal desta etapa" e sim quantos cada canal ALCANÇA. Duas '
+        + 'perdas contadas à parte: `sem_contato` é falta de dado do comprador; '
+        + '`sem_mensagem` é falta de copy cadastrada.',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          ...filtroProduto,
+          linha: { type: 'string', default: '1', description: 'Qual linha de copy considerar.' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            canais: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  canal: { type: 'string' },
+                  total: { type: 'integer' },
+                  alcancavel: { type: 'integer' },
+                  sem_contato: { type: 'integer' },
+                  com_erro: { type: 'integer' },
+                },
+              },
+            },
+            sem_mensagem: { type: 'integer' },
+            erro_sem_canal: { type: 'integer', description: 'Erros cujo texto não diz o canal.' },
+          },
+        },
+      },
+    },
+    onRequest: [app.exigirSessao],
+  }, async (req) => {
+    const linha = String(req.query.linha ?? '1');
+    const produto = req.query.produto ?? null;
+    const TEM_CONTATO = `CASE c.canal
+        WHEN 'email' THEN d.email    IS NOT NULL AND d.email    <> ''
+        ELSE              d.telefone IS NOT NULL AND d.telefone <> ''
+      END`;
+
+    // CROSS JOIN com a lista fixa de canais + EXISTS, em vez de JOIN direto na
+    // mensagens_regua: com três linhas por (etapa, canal), o JOIN multiplicaria
+    // cada pedido por três e TODAS as contagens sairiam infladas.
+    const canais = await query(
+      `SELECT c.canal,
+              count(*)::int                                   AS total,
+              count(*) FILTER (WHERE ${TEM_CONTATO})::int      AS alcancavel,
+              count(*) FILTER (WHERE NOT ${TEM_CONTATO})::int  AS sem_contato,
+              count(*) FILTER (WHERE ${CANAL_DO_ERRO('d')} = c.canal)::int AS com_erro
+       FROM disparos_pos_venda d
+       CROSS JOIN (VALUES ('email'), ('sms')) AS c(canal)
+       WHERE d.status IN ('ativo', 'processando')
+         AND ${DO_PRODUTO(1, 'd.')}
+         AND EXISTS (SELECT 1 FROM mensagens_regua m
+                      WHERE m.etapa = d.etapa_atual AND m.canal = c.canal
+                        AND m.ativo AND m.linha = $2::text)
+       GROUP BY c.canal ORDER BY total DESC, c.canal`,
+      [produto, linha],
+    );
+
+    const orfaos = await query(
+      `SELECT
+         count(*) FILTER (WHERE NOT EXISTS (
+           SELECT 1 FROM mensagens_regua m
+            WHERE m.etapa = d.etapa_atual AND m.ativo AND m.linha = $2::text))::int AS sem_mensagem,
+         count(*) FILTER (WHERE d.ultimo_erro IS NOT NULL
+                            AND ${CANAL_DO_ERRO('d')} IS NULL)::int AS erro_sem_canal
+       FROM disparos_pos_venda d
+       WHERE d.status IN ('ativo', 'processando') AND ${DO_PRODUTO(1, 'd.')}`,
+      [produto, linha],
+    );
+
+    return { canais: canais.rows, ...orfaos.rows[0] };
+  });
+
+  app.get('/api/metricas/alertas/', {
+    schema: {
+      tags: ['Métricas'],
+      summary: 'O que precisa de atenção',
+      description: 'Erros registrados, itens presos no worker e disparos vencidos há '
+        + 'mais de uma hora — os três casos em que alguém precisa olhar.',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: { ...filtroProduto, limite: { type: 'integer', default: 25, maximum: 200 } },
+      },
+      response: {
+        200: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'integer' },
+              transacao_id: { type: 'string' },
+              nome: { type: ['string', 'null'] },
+              produto: { type: ['string', 'null'] },
+              etapa: { type: 'integer' },
+              status: { type: 'string' },
+              estado: { type: 'string' },
+              tentativas: { type: 'integer' },
+              ultimo_erro: { type: ['string', 'null'] },
+              canal_erro: { type: ['string', 'null'] },
+              proximo_disparo: { type: ['string', 'null'], format: 'date-time' },
+              claimed_at: { type: ['string', 'null'], format: 'date-time' },
+              criado_em: { type: 'string', format: 'date-time' },
+            },
+          },
+        },
+      },
+    },
+    onRequest: [app.exigirSessao],
+  }, async (req) => {
+    const { rows } = await query(
+      `SELECT id, transacao_id, nome, produto, etapa_atual::int AS etapa, status,
+              tentativas, ultimo_erro, proximo_disparo, claimed_at, criado_em,
+              ${ESTADO} AS estado,
+              ${CANAL_DO_ERRO('disparos_pos_venda')} AS canal_erro
+       FROM disparos_pos_venda
+       WHERE ${DO_PRODUTO(2)}
+         AND (ultimo_erro IS NOT NULL
+           OR (status = 'processando'
+               AND (claimed_at IS NULL OR claimed_at < now() - make_interval(mins => $1::int)))
+           OR (status = 'ativo' AND proximo_disparo <= now() - interval '1 hour'))
+       ORDER BY tentativas DESC, proximo_disparo ASC
+       LIMIT $3`,
+      [...base(req.query.produto), Math.min(200, Number(req.query.limite) || 25)],
+    );
+    return rows;
+  });
+
+  app.get('/api/metricas/cadencia/', {
+    schema: {
+      tags: ['Métricas'],
+      summary: 'Cadência observada × configurada',
+      description: 'Mediana real de (próximo disparo − entrada) por etapa, em horas. '
+        + 'Comparada com o `offset_h` da régua, revela deriva entre o que está '
+        + 'escrito e o que está rodando.',
+      security: [{ bearerAuth: [] }],
+      querystring: { type: 'object', properties: filtroProduto },
+      response: {
+        200: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              etapa: { type: 'integer' },
+              amostra: { type: 'integer' },
+              mediana_h: { type: ['number', 'null'] },
+              configurado_h: { type: ['number', 'null'] },
+            },
+          },
+        },
+      },
+    },
+    onRequest: [app.exigirSessao],
+  }, async (req) => {
+    const { rows } = await query(
+      `SELECT d.etapa_atual::int AS etapa,
+              count(*)::int      AS amostra,
+              round(percentile_cont(0.5) WITHIN GROUP (
+                ORDER BY extract(epoch FROM (d.proximo_disparo - d.criado_em)) / 3600.0
+              )::numeric, 1)::float8 AS mediana_h,
+              max(e.offset_h)::float8 AS configurado_h
+       FROM disparos_pos_venda d
+       LEFT JOIN etapas_regua e ON e.etapa = d.etapa_atual
+       WHERE d.status = 'ativo' AND ${DO_PRODUTO(1, 'd.')}
+       GROUP BY 1 ORDER BY 1`,
+      [req.query.produto ?? null],
+    );
+    return rows;
+  });
+}

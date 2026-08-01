@@ -46,11 +46,13 @@
 
     <label class="campo-sel">
       <span class="sr">Intervalo de atualização</span>
+      <!-- 1 min é o padrão: cada atualização baixa a fila inteira da API (que
+           não agrega), então 10 s multiplicaria por seis a carga sobre ela sem
+           que a régua mude tão rápido assim. -->
       <select id="sel-intervalo">
-        <option value="5000">5 s</option>
-        <option value="10000" selected>10 s</option>
         <option value="30000">30 s</option>
-        <option value="60000">1 min</option>
+        <option value="60000" selected>1 min</option>
+        <option value="300000">5 min</option>
         <option value="0">pausado</option>
       </select>
     </label>
@@ -232,6 +234,11 @@
   <div class="janela-corpo">
     <p class="janela-msg" id="usuarios-msg" hidden></p>
 
+    <!-- A API do SendTrace expõe só GET /api/usuarios/. Sem rota de escrita, o
+         painel mostra a lista e diz onde as ações passaram a morar, em vez de
+         oferecer botões que devolveriam erro. -->
+    <p class="janela-msg" id="usuarios-leitura" data-tom="aviso" hidden></p>
+
     <form class="novo-usuario" id="form-novo">
       <label class="campo">
         <span>E-mail</span>
@@ -264,6 +271,9 @@
   interface — <em>nada é lido nem gravado no banco</em>. Desligue em “Demo” para voltar aos dados reais.
 </div>
 <div class="faixa faixa--erro" id="faixa-erro" hidden></div>
+<!-- A API não agrega: medir a fila é baixá-la. Passando do teto, os números
+     descrevem uma PARTE — e isso precisa estar escrito na tela, não só no log. -->
+<div class="faixa faixa--demo" id="faixa-parcial" hidden></div>
 <div class="faixa faixa--demo" id="faixa-regua" hidden>
   <strong>A régua ainda não existe no banco.</strong> Rode <code>npm run setup</code> para criar
   <code>etapas_regua</code> e <code>mensagens_regua</code> — sem elas o painel desenha as etapas
@@ -275,7 +285,7 @@
   <!-- ── linha 1: número-herói + indicadores ── -->
   <section class="linha-heroi">
     <div class="cartao heroi">
-      <p class="heroi-rotulo">Pedidos na régua agora</p>
+      <p class="heroi-rotulo" id="heroi-rotulo">Pedidos na régua agora</p>
       <p class="heroi-valor" id="heroi-valor">—</p>
       <p class="heroi-nota" id="heroi-nota">carregando…</p>
     </div>
