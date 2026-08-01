@@ -219,6 +219,19 @@ jobs:
               chmod 600 .env
             fi
 
+            # O token FIXO que integrações usam no lugar de login (o chatbot
+            # de suporte manda ele em Authorization: Bearer). Também nasce no
+            # servidor, uma vez: para conectar o chatbot, copie o valor desta
+            # linha do .env para o SENDTRACE_API_TOKEN dele.
+            if ! grep -qE '^API_TOKEN_SERVICO=.' .env; then
+              echo "→ gerando API_TOKEN_SERVICO (token de serviço para integrações)"
+              tokensrv=$(openssl rand -base64 48 | tr '+/' '-_' | tr -d '=\n')
+              grep -v '^API_TOKEN_SERVICO=' .env > .env.novo 2>/dev/null || true
+              echo "API_TOKEN_SERVICO=$tokensrv" >> .env.novo
+              mv .env.novo .env
+              chmod 600 .env
+            fi
+
             # Sem `docker login`: o pacote é público, então o VPS baixa sem
             # credencial nenhuma. Um segredo a menos para guardar e renovar.
             echo "→ baixando ${{ needs.construir.outputs.tag }}"

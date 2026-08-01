@@ -16,6 +16,8 @@
  * tempo de execução. Não existe "arquivo de documentação" para manter em dia;
  * se a rota mudar e a documentação não, é porque não mudou nada.
  */
+import crypto from 'node:crypto';
+
 import Fastify from 'fastify';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
@@ -50,6 +52,34 @@ if (!SEGREDO || SEGREDO.length < 32) {
 const ACCESS_MIN = Number(process.env.API_ACCESS_MIN) || 60;
 const REFRESH_H = Number(process.env.API_REFRESH_H) || 12;
 
+/*
+ * Token de SERVIÇO — a chave fixa que integrações (o chatbot de suporte)
+ * mandam em `Authorization: Bearer`, sem login e sem expiração.
+ *
+ * É opcional: vazio = desligado, e a API só aceita JWT. Quando definido,
+ * exige o mesmo mínimo do segredo JWT — um token de 8 letras seria
+ * adivinhável por força bruta, e este dá LEITURA da fila inteira.
+ *
+ * Quem entra por ele NÃO é administrador: lê tudo e grava o resumo de chat,
+ * mas não altera régua, mensagens, linhas nem readmes. Se a chave vazar, o
+ * estrago para em leitura — e trocar a chave é trocar uma linha do .env.
+ */
+const TOKEN_SERVICO = process.env.API_TOKEN_SERVICO || '';
+if (TOKEN_SERVICO && TOKEN_SERVICO.length < 32) {
+  console.error('\n  ✖ API_TOKEN_SERVICO curto demais (mínimo 32 caracteres).');
+  console.error('    Gere um com:  node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'base64url\'))"');
+  console.error('    Ou deixe vazio para desligar o acesso por token de serviço.\n');
+  process.exit(1);
+}
+
+/** Comparação em tempo constante: o tempo de resposta não pode soletrar a chave. */
+function tokenServicoValido(bruto) {
+  if (!TOKEN_SERVICO || !bruto) return false;
+  const a = Buffer.from(bruto);
+  const b = Buffer.from(TOKEN_SERVICO);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 const app = Fastify({
   logger: {
     level: process.env.API_LOG || 'info',
@@ -80,8 +110,30 @@ app.decorate('emitirTokens', (u) => ({
   refresh: app.jwt.sign({ user_id: u.id, tipo: 'refresh' }, { expiresIn: `${REFRESH_H}h` }),
 }));
 
-/** Exige um access válido e deixa quem é em `req.usuario`. */
+/**
+ * Exige credencial válida e deixa quem é em `req.usuario`.
+ *
+ * Dois caminhos pelo MESMO cabeçalho `Authorization: Bearer`:
+ *   · o token de SERVIÇO fixo (integrações como o chatbot) — sem expiração,
+ *     sem login, nunca admin;
+ *   · o JWT de access de uma pessoa, emitido em /api/auth/token/.
+ * A chave de serviço é testada primeiro porque é uma comparação barata; o
+ * que não casar com ela cai na verificação normal de JWT.
+ */
 app.decorate('exigirSessao', async (req) => {
+  const bruto = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
+  if (tokenServicoValido(bruto)) {
+    req.usuario = {
+      user_id: null,
+      email: 'token-servico@api',
+      nome: 'Integração (token de serviço)',
+      admin: false,
+      tipo: 'access',
+      servico: true,
+    };
+    return;
+  }
+
   try {
     req.usuario = await req.jwtVerify();
   } catch {
@@ -119,6 +171,11 @@ await app.register(swagger, {
         '   MESMA do painel.',
         '2. Mande o `access` em `Authorization: Bearer <access>`.',
         '3. Quando ele vencer, `POST /api/auth/token/refresh/` com o `refresh`.',
+        '',
+        'INTEGRAÇÕES (ex.: o chatbot de suporte) podem usar o TOKEN DE SERVIÇO fixo',
+        '(`API_TOKEN_SERVICO` no .env do servidor) direto em `Authorization: Bearer`,',
+        'sem login e sem expiração. Esse token lê tudo e grava o resumo de chat,',
+        'mas nunca é administrador.',
         '',
         'No botão **Authorize** aqui em cima, cole só o access — o `Bearer` é posto para você.',
         '',
