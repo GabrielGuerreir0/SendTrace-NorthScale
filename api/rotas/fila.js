@@ -82,16 +82,18 @@ export default async function rotasFila(app) {
   app.put('/api/disparos/chat/', {
     schema: {
       tags: ['Fila'],
-      summary: 'Grava o resumo do chat de suporte de um cliente',
-      description: 'Para o chatbot de suporte: localiza os pedidos pelo e-mail do cliente '
-        + '(sem diferenciar maiúsculas) e grava o resumo do atendimento em todos eles, '
-        + 'com o horário. Mandar `resumo: null` apaga o resumo.',
+      summary: 'Grava o "último atendimento" (resumo de chat) de um pedido ou cliente',
+      description: 'Para o chatbot de suporte: com `transacao_id`, grava o resumo NAQUELE '
+        + 'pedido; com `email`, em todos os pedidos do cliente. É também o caminho dos '
+        + 'resumos PARCIAIS (checkpoints durante a conversa) — cada gravação sobrescreve '
+        + 'a anterior, sem criar registro no histórico. Mandar `resumo: null` apaga.',
       security: [{ bearerAuth: [] }],
       body: {
         type: 'object',
-        required: ['email', 'resumo'],
+        required: ['resumo'],
         properties: {
-          email: { type: 'string', maxLength: 200, description: 'E-mail do cliente, como está na fila.' },
+          transacao_id: { type: 'string', maxLength: 120, description: 'O pedido da conversa — a chave preferida.' },
+          email: { type: 'string', maxLength: 200, description: 'Alternativa: todos os pedidos deste e-mail.' },
           resumo: { type: ['string', 'null'], maxLength: 10_000, description: 'O resumo da conversa. Nulo apaga.' },
         },
       },
@@ -103,23 +105,34 @@ export default async function rotasFila(app) {
             ids: { type: 'array', items: { type: 'integer' } },
           },
         },
+        400: { $ref: 'Erro#' },
         404: { $ref: 'Erro#' },
       },
     },
     onRequest: [app.exigirSessao],
   }, async (req) => {
-    const { email, resumo } = req.body;
+    const transacao = String(req.body.transacao_id ?? '').trim() || null;
+    const email = String(req.body.email ?? '').trim() || null;
+    const { resumo } = req.body;
+    if (!transacao && !email) {
+      throw new ErroHttp(400, 'Informe transacao_id ou email.');
+    }
+
     // Apagar o resumo apaga o carimbo junto: um "quando" sem resumo mentiria
     // que houve chat.
     const { rows, rowCount } = await query(
       `UPDATE disparos_pos_venda
        SET chat_resumo = $2,
            chat_resumo_em = CASE WHEN $2::text IS NULL THEN NULL ELSE now() END
-       WHERE lower(email) = lower($1)
+       WHERE ${transacao ? 'transacao_id = $1' : 'lower(email) = lower($1)'}
        RETURNING id`,
-      [email, resumo],
+      [transacao ?? email, resumo],
     );
-    if (!rowCount) throw new ErroHttp(404, `Nenhum pedido com o e-mail ${email}.`);
+    if (!rowCount) {
+      throw new ErroHttp(404, transacao
+        ? `Nenhum pedido com a transação ${transacao}.`
+        : `Nenhum pedido com o e-mail ${email}.`);
+    }
     return { atualizados: rowCount, ids: rows.map((r) => r.id) };
   });
 
