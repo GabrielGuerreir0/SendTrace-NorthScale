@@ -861,6 +861,122 @@ export async function plataformasDaFila() {
     .slice(0, 50);
 }
 
+/* ═══════════════════════  dashboard do suporte IA  ══════════════════════ */
+
+/** Rótulos humanos do vocabulário de motivos que o bot grava. */
+export const MOTIVO_LABELS = {
+  rastreamento: 'Tracking / Onde está meu pedido',
+  reembolso: 'Pedido de reembolso',
+  cancelamento: 'Cancelamento',
+  pedido_duplicado: 'Pedido duplicado',
+  uso_do_produto: 'Como utilizar o produto',
+  cobranca: 'Cobrança / Pagamento',
+  endereco: 'Troca de endereço',
+  outro: 'Outros assuntos',
+};
+
+const rotuloMotivo = (m) => MOTIVO_LABELS[m] ?? m;
+
+/**
+ * As frases dos "Insights automáticos" — escritas AQUI, sobre os números
+ * crus que a API entrega (24h × 24h anteriores). São regras determinísticas,
+ * não um LLM: um insight que não se pode auditar contra a tabela é boato com
+ * cara de dado.
+ *
+ * Cada insight sai com `nivel` ('alerta' | 'atencao' | 'info') para o card
+ * ordenar e colorir — sempre com ícone e texto, nunca cor sozinha.
+ */
+function gerarInsights(t) {
+  const insights = [];
+  const variacao = (atual, anterior) => (anterior > 0
+    ? Math.round(((atual - anterior) / anterior) * 100)
+    : null);
+
+  // Motivos que mexeram ≥ 30% com volume que importa (≥ 5 conversas).
+  for (const m of t.motivos_24h ?? []) {
+    const v = variacao(m.atual, m.anterior);
+    if (v === null || Math.abs(v) < 30 || Math.max(m.atual, m.anterior) < 5) continue;
+    insights.push({
+      nivel: v > 0 ? 'atencao' : 'info',
+      texto: `As conversas sobre ${rotuloMotivo(m.motivo).toLowerCase()} `
+        + `${v > 0 ? 'aumentaram' : 'caíram'} ${Math.abs(v)}% nas últimas 24h `
+        + `(${m.anterior} → ${m.atual}).`,
+    });
+  }
+
+  // Padrão novo: motivo com ocorrência nas 24h e nenhuma nos 7 dias antes.
+  for (const m of t.motivos_novos_24h ?? []) {
+    insights.push({
+      nivel: 'atencao',
+      texto: `Surgiu um padrão novo de contato: ${rotuloMotivo(m.motivo).toLowerCase()} `
+        + `(${m.total} conversa${m.total === 1 ? '' : 's'} nas últimas 24h, nenhuma na semana anterior).`,
+    });
+  }
+
+  // Reembolsos e volume geral.
+  const g = t.gerais_24h ?? {};
+  const vReemb = variacao(g.reembolsos_atual ?? 0, g.reembolsos_anterior ?? 0);
+  if (vReemb !== null && Math.abs(vReemb) >= 25 && Math.max(g.reembolsos_atual, g.reembolsos_anterior) >= 3) {
+    insights.push({
+      nivel: vReemb > 0 ? 'alerta' : 'info',
+      texto: `Os pedidos de reembolso ${vReemb > 0 ? 'aumentaram' : 'caíram'} ${Math.abs(vReemb)}% `
+        + `nas últimas 24h (${g.reembolsos_anterior} → ${g.reembolsos_atual}).`,
+    });
+  }
+  const vConv = variacao(g.conversas_atual ?? 0, g.conversas_anterior ?? 0);
+  if (vConv !== null && Math.abs(vConv) >= 50 && Math.max(g.conversas_atual, g.conversas_anterior) >= 10) {
+    insights.push({
+      nivel: 'atencao',
+      texto: `O volume de conversas ${vConv > 0 ? 'subiu' : 'caiu'} ${Math.abs(vConv)}% nas últimas 24h `
+        + `(${g.conversas_anterior} → ${g.conversas_atual}).`,
+    });
+  }
+  if ((g.nao_resolvidas_atual ?? 0) >= 3) {
+    insights.push({
+      nivel: 'alerta',
+      texto: `${g.nao_resolvidas_atual} conversas não foram resolvidas pela IA nas últimas 24h — escaladas ou perdidas.`,
+    });
+  }
+
+  // Base de conhecimento.
+  const p = t.perguntas_24h ?? {};
+  if ((p.atual ?? 0) > 0) {
+    const vPerg = variacao(p.atual, p.anterior);
+    insights.push({
+      nivel: (p.atual >= 10 || (vPerg !== null && vPerg >= 50)) ? 'atencao' : 'info',
+      texto: `A IA não conseguiu responder ${p.atual} pergunta${p.atual === 1 ? '' : 's'} nas últimas 24h`
+        + (vPerg !== null && vPerg !== 0 ? ` (${vPerg > 0 ? '+' : ''}${vPerg}% sobre as 24h anteriores).` : '.'),
+    });
+  }
+
+  if (!insights.length) {
+    insights.push({ nivel: 'info', texto: 'Sem mudanças relevantes nas últimas 24h — a operação está estável.' });
+  }
+
+  const peso = { alerta: 0, atencao: 1, info: 2 };
+  return insights.sort((a, b) => peso[a.nivel] - peso[b.nivel]).slice(0, 6);
+}
+
+/**
+ * Tudo que a aba de suporte mostra: os números vêm da rota agregada da API
+ * (`/api/metricas/suporte/`), os rótulos e as frases de insight nascem aqui.
+ * As etapas da régua entram para dar NOME às etapas onde os contatos nascem.
+ */
+export async function suporteResumo(dias = 30) {
+  const [dados, etapas] = await Promise.all([
+    obter('/api/metricas/suporte/', { dias }),
+    etapasCache().catch(() => ({ itens: [] })),
+  ]);
+
+  const nomes = new Map(etapas.itens.map((e) => [Number(e.etapa), e.nome]));
+  return {
+    ...dados,
+    motivos: (dados.motivos ?? []).map((m) => ({ ...m, label: rotuloMotivo(m.motivo) })),
+    regua: (dados.regua ?? []).map((r) => ({ ...r, nome: nomes.get(Number(r.etapa)) ?? `Etapa ${r.etapa}` })),
+    insights: gerarInsights(dados.tendencias ?? {}),
+  };
+}
+
 /**
  * Drill-down paginado com filtros.
  *

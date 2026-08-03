@@ -86,6 +86,15 @@
   </div>
 </header>
 
+<!-- ── as duas abas do painel ──
+     Suporte IA é a PRINCIPAL: é onde um gestor responde em 30 segundos se a
+     IA está resolvendo, se reembolsos estão sendo evitados e o que ela ainda
+     não sabe. A régua continua inteira na segunda aba. -->
+<nav class="abas" aria-label="Abas do painel">
+  <button class="aba-btn" id="aba-btn-suporte" type="button" aria-selected="true">Suporte IA</button>
+  <button class="aba-btn" id="aba-btn-regua" type="button" aria-selected="false">Régua de pós-venda</button>
+</nav>
+
 <!-- ── criar uma linha de copy nova ── -->
 <dialog class="janela janela--linha" id="janela-linha" aria-labelledby="linha-nova-tit">
   <header class="janela-cabeca">
@@ -352,7 +361,78 @@
   sem nome, sem copy e sem espera.
 </div>
 
-<main class="conteudo">
+<!-- ═══════════════════════  aba SUPORTE IA (principal)  ═══════════════════ -->
+<main class="conteudo" id="aba-suporte">
+
+  <!-- ── o primeiro card: os insights ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Insights automáticos</h2>
+        <p class="cartao-sub">
+          Mudanças relevantes das últimas 24 h contra as 24 h anteriores — calculadas
+          sobre os atendimentos gravados, auditáveis contra a tabela.
+        </p>
+      </div>
+      <label class="campo">
+        <span>Janela dos números</span>
+        <select id="sup-dias">
+          <option value="7">7 dias</option>
+          <option value="30" selected>30 dias</option>
+          <option value="90">90 dias</option>
+        </select>
+      </label>
+    </header>
+    <ul class="sup-insights" id="sup-insights">
+      <li class="sup-insight" data-nivel="info">carregando…</li>
+    </ul>
+  </section>
+
+  <!-- ── KPIs essenciais ── -->
+  <section class="kpis kpis--suporte" id="sup-kpis"></section>
+
+  <!-- ── motivos + perguntas, lado a lado ── -->
+  <div class="sup-grade">
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Principais motivos de contato</h2>
+          <p class="cartao-sub">O que mais leva clientes ao chat — classificado pela IA ao encerrar cada conversa.</p>
+        </div>
+      </header>
+      <ol class="sup-ranking" id="sup-motivos"><li class="vazio-suave">carregando…</li></ol>
+    </section>
+
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Perguntas sem resposta</h2>
+          <p class="cartao-sub">O que a IA não soube responder — o backlog da base de conhecimento. Edite os readmes em <b>Produtos IA</b>.</p>
+        </div>
+      </header>
+      <ol class="sup-ranking sup-ranking--perguntas" id="sup-perguntas"><li class="vazio-suave">carregando…</li></ol>
+    </section>
+  </div>
+
+  <!-- ── performance da régua ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Onde a jornada gera contato</h2>
+        <p class="cartao-sub">
+          Em que etapa da régua o pedido estava quando o cliente chamou o suporte —
+          a parte hachurada são os contatos que pediram reembolso.
+        </p>
+      </div>
+    </header>
+    <div class="sup-regua" id="sup-regua"><p class="vazio-suave">carregando…</p></div>
+  </section>
+
+  <p class="sup-rodape" id="sup-rodape"></p>
+</main>
+
+<!-- ═══════════════════════  aba RÉGUA DE PÓS-VENDA  ═══════════════════════ -->
+<main class="conteudo" id="aba-regua" hidden>
 
   <!-- ── linha 1: número-herói + indicadores ── -->
   <section class="linha-heroi">

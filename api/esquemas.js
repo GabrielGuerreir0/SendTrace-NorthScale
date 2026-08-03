@@ -81,9 +81,31 @@ export const Atendimento = {
     resumo: { type: 'string', maxLength: 10_000, description: 'Motivo, humor, o que foi tentado e desfecho — escrito pela IA.' },
     desfecho: { ...texto(120), description: "Ex.: 'resolvido (cliente retido)', 'escalado para humano'." },
     risco_chargeback: { type: 'boolean', default: false, description: 'O detector de risco disparou nesta conversa.' },
+    motivo: { ...texto(60), description: "Motivo do contato: 'rastreamento', 'reembolso', 'cancelamento', 'pedido_duplicado', 'uso_do_produto', 'cobranca', 'endereco', 'outro'." },
+    resolvido: { type: ['boolean', 'null'], description: 'true = a IA fechou sozinha; false = escalada para humano.' },
+    reembolso_pedido: { type: 'boolean', default: false, description: 'O cliente pediu reembolso nesta conversa.' },
+    reembolso_evitado: { type: ['boolean', 'null'], description: 'Dos que pediram: a IA reverteu? Nulo quando não houve pedido.' },
+    csat: { type: ['integer', 'null'], minimum: 1, maximum: 5, description: 'Nota de satisfação (1–5 estrelas). Nulo = não avaliou.' },
+    duracao_s: { type: ['integer', 'null'], minimum: 0, description: 'Duração da conversa em segundos.' },
+    etapa_regua: { type: ['integer', 'null'], readOnly: true, description: 'Etapa da régua do pedido no momento do contato — resolvida pela API.' },
     criado_em: { ...dataHora, readOnly: true },
   },
   required: ['resumo'],
+};
+
+export const PerguntaSemResposta = {
+  $id: 'PerguntaSemResposta',
+  type: 'object',
+  description: 'Uma pergunta que a IA não soube responder — o backlog da base de conhecimento.',
+  properties: {
+    id: { type: 'integer', readOnly: true },
+    pergunta: { type: 'string', maxLength: 500, description: 'A pergunta como o cliente fez.' },
+    transacao_id: texto(120),
+    email: texto(200),
+    produto: texto(300),
+    criado_em: { ...dataHora, readOnly: true },
+  },
+  required: ['pergunta'],
 };
 
 /* ─────────────────────  conhecimento da IA de suporte  ─────────────────── */
@@ -334,7 +356,8 @@ export const ContagemStatus = {
 
 /** Todos, na ordem em que o Swagger vai listá-los. */
 export const TODOS = [
-  DisparoPosVenda, DisparoEntrada, ProdutoReadme, Atendimento, EtapaRegua, MensagemRegua, PainelLinhaCopy,
+  DisparoPosVenda, DisparoEntrada, ProdutoReadme, Atendimento, PerguntaSemResposta,
+  EtapaRegua, MensagemRegua, PainelLinhaCopy,
   PainelLinhaMensagens, PainelLinhaHistorico, ConfigDisparo, PainelUsuario,
   Credenciais, ParTokens, PedidoRefresh, Erro,
   ContagemPorEstado, ResumoEtapa, Produto, Balde, EntradaDia, ContagemStatus,

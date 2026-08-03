@@ -14,7 +14,7 @@ import {
   etapasRollup, ondaPorEtapa, ondaHoraria, entradasPorDia,
   statusBruto, alertas, listarPedidos,
   reguaDefinicao, cadenciaObservada, porCanal, semMensagem, resumoLinhas, piorCasoSms, errosSemCanal, mensagem, salvarMensagem, criarLinha, apagarLinha, editarLinha, etapasDaRegua,
-  produtosDaFila, plataformasDaFila, fonteDados,
+  produtosDaFila, plataformasDaFila, fonteDados, suporteResumo,
 } from './dados.js';
 import {
   apiConfigurada, enderecoApi, saude as saudeApi, ErroApi,
@@ -965,6 +965,15 @@ async function atender(req, res, url, sessao) {
     const plataforma = textoOuNulo(q.get('plataforma'));
 
     return json(res, 200, await snapshot({ etapa, canal, linha, produto, plataforma }));
+  }
+
+  /* ── dashboard do suporte IA — a aba principal ──
+     Os números saem da rota agregada da API; as frases de insight e os
+     rótulos nascem em dados.js. `dias` recorta a janela dos KPIs. */
+  if (url.pathname === '/api/suporte') {
+    const dias = inteiroOuNulo(url.searchParams.get('dias'));
+    if (dias === false) return json(res, 400, { erro: 'dias inválido' });
+    return json(res, 200, await suporteResumo(dias ?? 30));
   }
 
   if (url.pathname === '/api/pedidos') {

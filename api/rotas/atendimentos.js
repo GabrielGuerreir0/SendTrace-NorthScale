@@ -25,12 +25,14 @@ import { query } from '../../server/db.js';
 import { paginacaoParams, paginado } from '../esquemas.js';
 import { fatiar, ErroHttp } from '../comum.js';
 
-const COLUNAS = 'id, transacao_id, email, resumo, desfecho, risco_chargeback, criado_em';
+const COLUNAS = `id, transacao_id, email, resumo, desfecho, risco_chargeback,
+  motivo, resolvido, reembolso_pedido, reembolso_evitado, csat, duracao_s,
+  etapa_regua, criado_em`;
 
-/** O pedido dono de uma transação — nome, e-mail e produto vêm dele. */
+/** O pedido dono de uma transação — nome, e-mail, produto e etapa vêm dele. */
 async function pedidoDaTransacao(transacaoId) {
   const { rows } = await query(
-    `SELECT transacao_id, nome, email, produto FROM disparos_pos_venda
+    `SELECT transacao_id, nome, email, produto, etapa_atual FROM disparos_pos_venda
      WHERE transacao_id = $1 ORDER BY criado_em DESC LIMIT 1`,
     [transacaoId],
   );
@@ -40,7 +42,7 @@ async function pedidoDaTransacao(transacaoId) {
 /** O pedido mais recente de um e-mail — para resolver a transação de quem só tem o e-mail. */
 async function pedidoDoEmail(email) {
   const { rows } = await query(
-    `SELECT transacao_id, nome, email, produto FROM disparos_pos_venda
+    `SELECT transacao_id, nome, email, produto, etapa_atual FROM disparos_pos_venda
      WHERE lower(email) = lower($1) ORDER BY criado_em DESC LIMIT 1`,
     [email],
   );
@@ -119,6 +121,13 @@ export default async function rotasAtendimentos(app) {
             resumo: { type: 'string' },
             desfecho: { type: ['string', 'null'] },
             risco_chargeback: { type: 'boolean' },
+            motivo: { type: ['string', 'null'] },
+            resolvido: { type: ['boolean', 'null'] },
+            reembolso_pedido: { type: 'boolean' },
+            reembolso_evitado: { type: ['boolean', 'null'] },
+            csat: { type: ['integer', 'null'] },
+            duracao_s: { type: ['integer', 'null'] },
+            etapa_regua: { type: ['integer', 'null'] },
             criado_em: { type: 'string', format: 'date-time' },
           },
         },
@@ -144,11 +153,33 @@ export default async function rotasAtendimentos(app) {
       email = email ?? pedido.email;
     }
 
+    /*
+     * Os campos do dashboard. O bot manda o que sabe (motivo, resolvido,
+     * reembolso, csat, duração); a etapa da régua é resolvida AQUI, do
+     * pedido — o bot não conhece a régua e não precisa conhecer.
+     *
+     * `reembolso_evitado` só vale quando houve pedido de reembolso: gravar
+     * um "evitado" sem pedido inflaria o save rate com conversas que nunca
+     * estiveram em risco.
+     */
+    const reembolsoPedido = req.body.reembolso_pedido === true;
     const { rows } = await query(
-      `INSERT INTO chat_atendimentos (transacao_id, email, resumo, desfecho, risco_chargeback)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO chat_atendimentos
+         (transacao_id, email, resumo, desfecho, risco_chargeback,
+          motivo, resolvido, reembolso_pedido, reembolso_evitado, csat,
+          duracao_s, etapa_regua)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING ${COLUNAS}`,
-      [transacao, email, resumo, req.body.desfecho ?? null, req.body.risco_chargeback === true],
+      [
+        transacao, email, resumo, req.body.desfecho ?? null, req.body.risco_chargeback === true,
+        String(req.body.motivo ?? '').trim().toLowerCase() || null,
+        typeof req.body.resolvido === 'boolean' ? req.body.resolvido : null,
+        reembolsoPedido,
+        reembolsoPedido ? req.body.reembolso_evitado === true : null,
+        Number.isInteger(req.body.csat) ? req.body.csat : null,
+        Number.isInteger(req.body.duracao_s) ? Math.max(0, req.body.duracao_s) : null,
+        pedido?.etapa_atual ?? null,
+      ],
     );
 
     // O espelho "último atendimento" vai para O PEDIDO da conversa quando a
@@ -174,5 +205,136 @@ export default async function rotasAtendimentos(app) {
       cliente: pedido?.nome ?? null,
       produto: pedido?.produto ?? null,
     };
+  });
+
+  /*
+   * A nota de satisfação (1–5 estrelas), dada DEPOIS do encerramento.
+   *
+   * O bot grava o atendimento quando a conversa fecha; as estrelas aparecem
+   * na tela seguinte. Então a nota chega separada e vai para o atendimento
+   * MAIS RECENTE daquele pedido/cliente — uma janela de 24h impede que uma
+   * avaliação atrasada caia numa conversa de semanas atrás.
+   */
+  app.post('/api/atendimentos/csat/', {
+    schema: {
+      tags: ['Suporte'],
+      summary: 'Registra a nota de satisfação (1–5) do último atendimento',
+      description: 'A nota vai para o atendimento mais recente (últimas 24h) do '
+        + '`transacao_id` ou `email` informado. Repetir a chamada sobrescreve — '
+        + 'o cliente pode mudar de ideia no clique seguinte.',
+      security: [{ bearerAuth: [] }],
+      body: {
+        type: 'object',
+        required: ['csat'],
+        properties: {
+          transacao_id: { type: 'string', maxLength: 120 },
+          email: { type: 'string', maxLength: 200 },
+          csat: { type: 'integer', minimum: 1, maximum: 5 },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            id: { type: 'integer', description: 'O atendimento que recebeu a nota.' },
+            csat: { type: 'integer' },
+          },
+        },
+        400: { $ref: 'Erro#' },
+        404: { $ref: 'Erro#' },
+      },
+    },
+    onRequest: [app.exigirSessao],
+  }, async (req) => {
+    const transacao = String(req.body.transacao_id ?? '').trim() || null;
+    const email = String(req.body.email ?? '').trim() || null;
+    if (!transacao && !email) {
+      throw new ErroHttp(400, 'Informe transacao_id ou email — a nota pertence a uma conversa.');
+    }
+
+    const valores = [req.body.csat];
+    const conds = [];
+    if (transacao) {
+      valores.push(transacao);
+      conds.push(`transacao_id = $${valores.length}`);
+    }
+    if (email) {
+      valores.push(email);
+      conds.push(`lower(email) = lower($${valores.length})`);
+    }
+
+    const { rows } = await query(
+      `UPDATE chat_atendimentos SET csat = $1
+       WHERE id = (SELECT id FROM chat_atendimentos
+                   WHERE (${conds.join(' OR ')})
+                     AND criado_em >= now() - interval '24 hours'
+                   ORDER BY criado_em DESC LIMIT 1)
+       RETURNING id, csat`,
+      valores,
+    );
+    if (!rows.length) {
+      throw new ErroHttp(404, 'Nenhum atendimento nas últimas 24h para receber a nota.');
+    }
+    return rows[0];
+  });
+
+  /*
+   * O backlog da base de conhecimento: perguntas que a IA não soube responder.
+   *
+   * O bot grava uma linha POR OCORRÊNCIA (não um contador): é o que permite
+   * ver "31 vezes, 12 nesta semana" e ler exemplos reais. O ranking é feito
+   * pela rota de métricas; aqui é só o registro.
+   */
+  app.post('/api/perguntas-sem-resposta/', {
+    schema: {
+      tags: ['Suporte'],
+      summary: 'Registra perguntas que a IA não conseguiu responder',
+      description: 'Uma linha por ocorrência. Aceita uma pergunta ou um lote '
+        + '(`perguntas: [...]`) da mesma conversa. É o backlog de evolução da '
+        + 'base de conhecimento.',
+      security: [{ bearerAuth: [] }],
+      body: {
+        type: 'object',
+        properties: {
+          pergunta: { type: 'string', maxLength: 500 },
+          perguntas: { type: 'array', maxItems: 20, items: { type: 'string', maxLength: 500 } },
+          transacao_id: { type: 'string', maxLength: 120 },
+          email: { type: 'string', maxLength: 200 },
+          produto: { type: 'string', maxLength: 300 },
+        },
+      },
+      response: {
+        201: {
+          type: 'object',
+          properties: { gravadas: { type: 'integer' } },
+        },
+        400: { $ref: 'Erro#' },
+      },
+    },
+    onRequest: [app.exigirSessao],
+  }, async (req, resposta) => {
+    const lote = [
+      ...(Array.isArray(req.body.perguntas) ? req.body.perguntas : []),
+      ...(req.body.pergunta ? [req.body.pergunta] : []),
+    ]
+      .map((p) => String(p ?? '').trim().slice(0, 500))
+      .filter(Boolean);
+    if (!lote.length) throw new ErroHttp(400, 'Informe pergunta ou perguntas.');
+
+    const transacao = String(req.body.transacao_id ?? '').trim() || null;
+    const email = String(req.body.email ?? '').trim() || null;
+    const produto = String(req.body.produto ?? '').trim() || null;
+
+    let gravadas = 0;
+    for (const pergunta of lote) {
+      await query(
+        `INSERT INTO chat_perguntas_sem_resposta (pergunta, transacao_id, email, produto)
+         VALUES ($1, $2, $3, $4)`,
+        [pergunta, transacao, email, produto],
+      );
+      gravadas += 1;
+    }
+    resposta.code(201);
+    return { gravadas };
   });
 }

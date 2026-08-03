@@ -435,6 +435,166 @@ export default async function rotasMetricas(app) {
     return rows;
   });
 
+  /* ──────────────────────  suporte IA (dashboard)  ───────────────────── */
+
+  app.get('/api/metricas/suporte/', {
+    schema: {
+      tags: ['Métricas'],
+      summary: 'Tudo que o dashboard do suporte IA mostra, numa resposta só',
+      description: 'KPIs (resolution rate, refund save rate, CSAT, tempo médio, '
+        + 'utilização do chat), ranking de motivos de contato, perguntas sem '
+        + 'resposta, contatos por etapa da régua e as comparações 24h × 24h '
+        + 'anteriores que alimentam os insights. `dias` recorta a janela dos '
+        + 'KPIs e rankings (padrão 30).',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: { dias: { type: 'integer', default: 30, minimum: 1, maximum: 365 } },
+      },
+    },
+    onRequest: [app.exigirSessao],
+  }, async (req) => {
+    const dias = Math.min(365, Math.max(1, Number(req.query.dias) || 30));
+
+    /*
+     * KPIs da janela. As taxas são calculadas SÓ sobre quem tem o dado:
+     * `resolvido` nulo é conversa de antes das colunas (ou bot antigo) e não
+     * entra no resolution rate — contá-la como "não resolvida" afundaria a
+     * taxa com dado que não existe.
+     */
+    const kpis = await query(
+      `SELECT
+         count(*)::int                                                AS conversas,
+         count(*) FILTER (WHERE resolvido IS NOT NULL)::int           AS classificadas,
+         count(*) FILTER (WHERE resolvido)::int                       AS resolvidas,
+         count(*) FILTER (WHERE resolvido = false)::int               AS nao_resolvidas,
+         count(*) FILTER (WHERE reembolso_pedido)::int                AS reembolso_pedidos,
+         count(*) FILTER (WHERE reembolso_evitado)::int               AS reembolso_evitados,
+         round(avg(duracao_s) FILTER (WHERE duracao_s IS NOT NULL))::int AS tempo_medio_s,
+         round(avg(csat) FILTER (WHERE csat IS NOT NULL)::numeric, 2)::float8 AS csat_media,
+         count(csat)::int                                             AS csat_respostas,
+         count(DISTINCT coalesce(transacao_id, lower(email)))::int    AS clientes_chat
+       FROM chat_atendimentos
+       WHERE criado_em >= now() - make_interval(days => $1::int)`,
+      [dias],
+    );
+
+    // O denominador da taxa de utilização: quantos pedidos existem na fila.
+    // É a fila INTEIRA, não a janela — o cliente de um pedido antigo ainda
+    // pode abrir o chat hoje.
+    const fila = await query(
+      'SELECT count(DISTINCT transacao_id)::int AS pedidos FROM disparos_pos_venda',
+    );
+
+    // Ranking de motivos. Motivo nulo (conversa antiga) fica de fora do
+    // ranking mas é contado à parte — somem de qualquer recorte se ninguém
+    // disser.
+    const motivos = await query(
+      `SELECT motivo,
+              count(*)::int                          AS total,
+              count(*) FILTER (WHERE resolvido)::int AS resolvidos
+       FROM chat_atendimentos
+       WHERE criado_em >= now() - make_interval(days => $1::int) AND motivo IS NOT NULL
+       GROUP BY motivo ORDER BY total DESC, motivo LIMIT 15`,
+      [dias],
+    );
+    const semMotivo = await query(
+      `SELECT count(*)::int AS n FROM chat_atendimentos
+       WHERE criado_em >= now() - make_interval(days => $1::int) AND motivo IS NULL`,
+      [dias],
+    );
+
+    // Perguntas sem resposta, agrupadas pelo texto normalizado. O exemplo
+    // exibido é a ocorrência mais recente — a frase real de um cliente real.
+    const perguntas = await query(
+      `SELECT (array_agg(pergunta ORDER BY criado_em DESC))[1] AS pergunta,
+              count(*)::int                                    AS total,
+              max(criado_em)                                   AS ultima_em
+       FROM chat_perguntas_sem_resposta
+       WHERE criado_em >= now() - make_interval(days => $1::int)
+       GROUP BY lower(pergunta)
+       ORDER BY total DESC, max(criado_em) DESC LIMIT 20`,
+      [dias],
+    );
+
+    // Onde na jornada nascem os contatos — a performance da régua.
+    const regua = await query(
+      `SELECT etapa_regua::int AS etapa, count(*)::int AS total,
+              count(*) FILTER (WHERE reembolso_pedido)::int AS reembolsos
+       FROM chat_atendimentos
+       WHERE criado_em >= now() - make_interval(days => $1::int) AND etapa_regua IS NOT NULL
+       GROUP BY etapa_regua ORDER BY etapa_regua`,
+      [dias],
+    );
+
+    /*
+     * As comparações que viram insights: últimas 24h × as 24h ANTERIORES.
+     * Vêm cruas — quem escreve as frases é o painel; a API entrega números
+     * auditáveis.
+     */
+    const motivos24 = await query(
+      `SELECT motivo,
+              count(*) FILTER (WHERE criado_em >= now() - interval '24 hours')::int AS atual,
+              count(*) FILTER (WHERE criado_em <  now() - interval '24 hours')::int AS anterior
+       FROM chat_atendimentos
+       WHERE criado_em >= now() - interval '48 hours' AND motivo IS NOT NULL
+       GROUP BY motivo ORDER BY atual DESC`,
+    );
+    const gerais24 = await query(
+      `SELECT
+         count(*) FILTER (WHERE criado_em >= now() - interval '24 hours')::int AS conversas_atual,
+         count(*) FILTER (WHERE criado_em <  now() - interval '24 hours')::int AS conversas_anterior,
+         count(*) FILTER (WHERE reembolso_pedido AND criado_em >= now() - interval '24 hours')::int AS reembolsos_atual,
+         count(*) FILTER (WHERE reembolso_pedido AND criado_em <  now() - interval '24 hours')::int AS reembolsos_anterior,
+         count(*) FILTER (WHERE resolvido = false AND criado_em >= now() - interval '24 hours')::int AS nao_resolvidas_atual
+       FROM chat_atendimentos
+       WHERE criado_em >= now() - interval '48 hours'`,
+    );
+    const perguntas24 = await query(
+      `SELECT
+         count(*) FILTER (WHERE criado_em >= now() - interval '24 hours')::int AS atual,
+         count(*) FILTER (WHERE criado_em <  now() - interval '24 hours')::int AS anterior
+       FROM chat_perguntas_sem_resposta
+       WHERE criado_em >= now() - interval '48 hours'`,
+    );
+    // Um motivo que apareceu nas últimas 24h sem NENHUMA ocorrência nos 7
+    // dias anteriores é padrão novo — o tipo de coisa que vira ação imediata.
+    const motivosNovos = await query(
+      `SELECT motivo, count(*)::int AS total
+       FROM chat_atendimentos a
+       WHERE criado_em >= now() - interval '24 hours' AND motivo IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM chat_atendimentos b
+           WHERE b.motivo = a.motivo
+             AND b.criado_em >= now() - interval '8 days'
+             AND b.criado_em <  now() - interval '24 hours')
+       GROUP BY motivo ORDER BY total DESC LIMIT 5`,
+    );
+
+    const k = kpis.rows[0];
+    const taxa = (num, den) => (den > 0 ? Math.round((num / den) * 1000) / 10 : null);
+    return {
+      janela_dias: dias,
+      kpis: {
+        ...k,
+        resolution_rate: taxa(k.resolvidas, k.classificadas),
+        refund_save_rate: taxa(k.reembolso_evitados, k.reembolso_pedidos),
+        pedidos_fila: fila.rows[0].pedidos,
+        taxa_utilizacao: taxa(k.clientes_chat, fila.rows[0].pedidos),
+      },
+      motivos: motivos.rows,
+      sem_motivo: semMotivo.rows[0].n,
+      perguntas: perguntas.rows,
+      regua: regua.rows,
+      tendencias: {
+        motivos_24h: motivos24.rows,
+        gerais_24h: gerais24.rows[0],
+        perguntas_24h: perguntas24.rows[0],
+        motivos_novos_24h: motivosNovos.rows,
+      },
+    };
+  });
+
   app.get('/api/metricas/cadencia/', {
     schema: {
       tags: ['Métricas'],

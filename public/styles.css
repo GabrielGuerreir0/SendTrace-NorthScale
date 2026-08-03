@@ -1250,3 +1250,94 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
   padding-top: 14px;
   border-top: 1px solid color-mix(in srgb, currentColor 14%, transparent);
 }
+
+/* ─────────────────────────  abas do painel  ─────────────────────── */
+
+.abas {
+  display: flex; gap: 6px;
+  padding: 10px clamp(16px, 3vw, 34px) 0;
+}
+.aba-btn {
+  appearance: none; cursor: pointer;
+  background: transparent; color: var(--tinta-2);
+  border: 1px solid transparent; border-bottom: none;
+  border-radius: 12px 12px 0 0;
+  padding: 9px 18px 8px;
+  font: inherit; font-size: 13.5px; font-weight: 560;
+}
+.aba-btn:hover { color: var(--tinta); }
+.aba-btn[aria-selected="true"] {
+  background: var(--superficie); color: var(--tinta);
+  border-color: var(--borda);
+  box-shadow: var(--sombra-1);
+}
+
+/* ────────────────────  aba Suporte IA (principal)  ───────────────── */
+
+/* Insights: sempre ícone + texto — a cor nunca carrega o significado sozinha. */
+.sup-insights { list-style: none; display: grid; gap: 8px; }
+.sup-insight {
+  display: flex; gap: 10px; align-items: baseline;
+  padding: 10px 14px; border-radius: 12px;
+  border: 1px solid var(--borda);
+  background: var(--superficie-2);
+  font-size: 13.5px; line-height: 1.5;
+}
+.sup-insight::before {
+  font-size: 12px; line-height: 1.4; flex: none;
+}
+.sup-insight[data-nivel="alerta"]  { border-color: color-mix(in srgb, var(--st-travado) 45%, var(--borda)); }
+.sup-insight[data-nivel="alerta"]::before  { content: "⚠"; color: var(--st-travado); }
+.sup-insight[data-nivel="atencao"] { border-color: color-mix(in srgb, var(--st-atrasado) 45%, var(--borda)); }
+.sup-insight[data-nivel="atencao"]::before { content: "◆"; color: var(--st-atrasado); }
+.sup-insight[data-nivel="info"]::before    { content: "○"; color: var(--tinta-fraca); }
+
+/* Os KPIs reusam o cartão .kpi da régua; aqui eles não filtram nada. */
+.kpis--suporte .kpi { cursor: default; }
+.kpis--suporte .kpi:hover { transform: none; border-color: var(--borda); }
+.kpi[data-tom="bom"]   .kpi-ico { color: var(--st-processando); }
+.kpi[data-tom="ruim"]  .kpi-ico { color: var(--st-travado); }
+.kpi[data-tom="medio"] .kpi-ico { color: var(--st-atrasado); }
+.kpi[data-tom="neutro"] .kpi-ico { color: var(--st-em-dia); }
+
+.sup-grade {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: clamp(14px, 1.6vw, 20px);
+}
+@media (max-width: 900px) { .sup-grade { grid-template-columns: 1fr; } }
+
+/* Rankings: barra proporcional + número — todo valor também está em texto. */
+.sup-ranking { list-style: none; display: grid; gap: 10px; }
+.sup-item { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: baseline; }
+.sup-item-rotulo { font-size: 13px; }
+.sup-item-num { font-size: 13px; font-weight: 640; font-variant-numeric: tabular-nums; }
+.sup-item-sub { grid-column: 1 / -1; font-size: 11.5px; color: var(--tinta-fraca); }
+.sup-item-barra {
+  grid-column: 1 / -1; height: 6px; border-radius: 4px;
+  background: color-mix(in srgb, var(--tinta) 7%, transparent);
+  overflow: hidden;
+}
+.sup-item-barra > span {
+  display: block; height: 100%;
+  background: var(--st-em-dia); border-radius: 4px;
+}
+.sup-ranking--perguntas .sup-item-barra > span { background: var(--st-atrasado); }
+
+/* Contatos por etapa da régua: colunas com a fatia de reembolso hachurada. */
+.sup-regua { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 12px; align-items: end; min-height: 150px; }
+.sup-etapa { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+.sup-etapa-total { font-size: 13px; font-weight: 640; font-variant-numeric: tabular-nums; }
+.sup-etapa-coluna {
+  width: min(46px, 80%); border-radius: 6px 6px 2px 2px; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  background: color-mix(in srgb, var(--st-em-dia) 24%, var(--superficie-2));
+}
+.sup-etapa-reembolso {
+  background: repeating-linear-gradient(135deg,
+    var(--st-travado) 0 4px, color-mix(in srgb, var(--st-travado) 35%, transparent) 4px 8px);
+}
+.sup-etapa-nome {
+  font-size: 11px; color: var(--tinta-2); text-align: center;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sup-rodape { font-size: 11.5px; color: var(--tinta-fraca); }

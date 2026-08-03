@@ -7,6 +7,32 @@ O canvas é no estilo n8n mas **travado**: os nós não se arrastam, não há zo
 nem pan. O layout se calcula sozinho e sempre cabe na tela — quando a régua não
 cabe numa linha, dobra em serpentina, com setas indicando a direção do fluxo.
 
+## As duas abas
+
+O painel abre na aba **Suporte IA** — a principal. Em menos de 30 segundos um
+gestor responde: a IA está resolvendo? Estamos evitando reembolsos? Quais os
+principais motivos de contato? O que a IA ainda não sabe responder? Há algo
+exigindo ação imediata?
+
+| bloco | o que mostra |
+|---|---|
+| **Insights automáticos** (primeiro card) | mudanças relevantes das últimas 24 h contra as 24 h anteriores — regras determinísticas sobre os atendimentos gravados, auditáveis contra a tabela; nenhum LLM inventa número |
+| **KPIs** | conversas iniciadas, resolution rate, refund save rate, não resolvidas, tempo médio, CSAT (1–5 estrelas na tela final do chat) e taxa de utilização do chat |
+| **Principais motivos de contato** | ranking classificado pela IA ao encerrar cada conversa (rastreamento, reembolso, cancelamento, uso do produto…) |
+| **Perguntas sem resposta** | o que a IA não soube responder — o backlog da base de conhecimento, com frequência e exemplo real |
+| **Onde a jornada gera contato** | em que etapa da régua o pedido estava quando o cliente chamou, com a fatia de reembolso hachurada |
+
+Os dados nascem no chatbot de suporte (NorthSupportCB): ao encerrar cada
+conversa ele grava em `chat_atendimentos` o motivo, se resolveu, se houve
+pedido de reembolso e se foi revertido, a duração — e as perguntas sem
+resposta em `chat_perguntas_sem_resposta` (migração `015`). A etapa da régua
+é anotada pela API na gravação, a partir do pedido. As taxas são calculadas
+**só sobre conversas que têm o dado**: as de antes das colunas ficam de fora
+em vez de afundar os números.
+
+A segunda aba é a **régua de pós-venda** — tudo que este README descreve
+abaixo, intacto.
+
 ## De onde vêm os números
 
 Da **API do SendTrace** (Django REST), não mais de SQL direto:

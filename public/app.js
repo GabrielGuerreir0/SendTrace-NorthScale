@@ -6,6 +6,9 @@ import { validarMensagem, medirSms } from './copy.js';
 import { desenharColunas, svgEl } from './charts.js';
 import { n, nc, relativo, dataHora, dia, hora, truncar, duracaoH } from './format.js';
 import { snapshotDemo, pedidosDemo } from './demo.js';
+// A aba principal (Suporte IA) vive em módulo próprio; importá-lo também liga
+// os botões de aba. Aqui só acoplamos o carregamento aos ciclos do painel.
+import { carregarSuporte } from './suporte.js';
 
 /* Mesmos traçados usados nos nós do canvas, para o card por canal falar a
    mesma língua visual que o fluxo. */
@@ -1057,6 +1060,7 @@ function reagendar() {
     estado.timer = setInterval(() => {
       carregarSnapshot({ silencioso: true });
       carregarPedidos();
+      carregarSuporte();
     }, estado.intervalo);
   }
 }
@@ -1071,6 +1075,7 @@ $('sel-intervalo').addEventListener('change', (e) => {
 $('btn-atualizar').addEventListener('click', () => {
   carregarSnapshot();
   carregarPedidos();
+  carregarSuporte();
 });
 
 $('btn-demo').addEventListener('click', (e) => {
@@ -1950,5 +1955,6 @@ $('linha-ativar').addEventListener('click', async (ev) => {
   renderLegenda();
   carregarSnapshot();   // já traz a linha ativa e desenha o seletor
   carregarPedidos();
+  carregarSuporte();    // a aba principal
   reagendar();
 })();
