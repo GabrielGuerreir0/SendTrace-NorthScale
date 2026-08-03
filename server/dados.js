@@ -996,6 +996,28 @@ export async function suporteResumo(dias = 30, produto = null, plataforma = null
 }
 
 /**
+ * As conversas por trás dos números da aba de suporte — o drill-down da
+ * tabela. Repassa os filtros à rota da API e dá rótulo ao tópico de cada
+ * linha (nome da tabela de tópicos; fallback para o slug legível).
+ */
+export async function suporteConversas(filtros = {}) {
+  const params = {};
+  for (const [k, v] of Object.entries(filtros)) {
+    if (v !== null && v !== undefined && v !== '') params[k] = v;
+  }
+  const dados = await obter('/api/atendimentos/painel/', params);
+  return {
+    total: dados.count ?? 0,
+    conversas: (dados.results ?? []).map((c) => ({
+      ...c,
+      topico_label: (c.topico_nome && c.topico_nome !== c.motivo)
+        ? c.topico_nome
+        : rotuloMotivo(c.motivo ?? '') || null,
+    })),
+  };
+}
+
+/**
  * Drill-down paginado com filtros.
  *
  * `estado` aceita os seis estados e mais o pseudo-estado 'na_regua' = tudo que

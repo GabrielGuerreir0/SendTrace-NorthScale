@@ -24,6 +24,7 @@
 import { query } from '../../server/db.js';
 import { paginacaoParams, paginado } from '../esquemas.js';
 import { fatiar, ErroHttp } from '../comum.js';
+import { DO_PRODUTO, DA_PLATAFORMA } from '../sql.js';
 
 const COLUNAS = `id, transacao_id, email, resumo, desfecho, risco_chargeback,
   motivo, topico_id, resolvido, reembolso_pedido, reembolso_evitado, csat,
@@ -314,6 +315,85 @@ export default async function rotasAtendimentos(app) {
       throw new ErroHttp(404, 'Nenhum atendimento nas últimas 24h para receber a nota.');
     }
     return rows[0];
+  });
+
+  /*
+   * O drill-down do DASHBOARD: as conversas por trás de cada número.
+   *
+   * O GET /api/atendimentos/ de cima é a memória do bot e exige a chave de um
+   * cliente, de propósito. Esta rota é outra pergunta — "quais conversas
+   * compõem este KPI/motivo?" — com os mesmos recortes da tela: janela de
+   * dias, tópico, desfecho, reembolso, avaliação, produto e plataforma.
+   */
+  app.get('/api/atendimentos/painel/', {
+    schema: {
+      tags: ['Suporte'],
+      summary: 'As conversas do dashboard, com os mesmos filtros da tela',
+      description: 'Lista paginada, da mais recente para a mais antiga (pelo INÍCIO '
+        + 'da conversa). `reembolso`: pedido = falou em sair; consumado = saiu '
+        + '(reembolso/cancelamento não revertido); evitado = pediu e ficou.',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          ...paginacaoParams,
+          dias: { type: 'integer', default: 30, minimum: 1, maximum: 365 },
+          motivo: { type: 'string', maxLength: 60, description: 'Slug do tópico.' },
+          resolvido: { type: 'string', enum: ['sim', 'nao'] },
+          reembolso: { type: 'string', enum: ['pedido', 'consumado', 'evitado'] },
+          com_csat: { type: 'boolean', description: 'Só conversas avaliadas.' },
+          produto: { type: 'string', description: 'Nome do produto (ofertas somadas).' },
+          plataforma: { type: 'string', description: 'Plataforma de venda exata.' },
+        },
+      },
+    },
+    onRequest: [app.exigirSessao],
+  }, async (req) => {
+    const valores = [Math.min(365, Math.max(1, Number(req.query.dias) || 30))];
+    const partes = ['coalesce(a.iniciado_em, a.criado_em) >= now() - make_interval(days => $1::int)'];
+
+    // O mesmo recorte do resto do dashboard: a conversa entra quando o pedido
+    // dela pertence ao produto/plataforma — EXISTS, para transação repetida
+    // na fila não duplicar conversa.
+    valores.push(req.query.produto ?? null, req.query.plataforma ?? null);
+    partes.push(`($2::text IS NULL AND $3::text IS NULL
+      OR EXISTS (SELECT 1 FROM disparos_pos_venda d
+                 WHERE d.transacao_id = a.transacao_id
+                   AND ${DO_PRODUTO(2, 'd.')} AND ${DA_PLATAFORMA(3, 'd.')}))`);
+
+    if (req.query.motivo) {
+      valores.push(String(req.query.motivo).trim().toLowerCase());
+      partes.push(`a.motivo = $${valores.length}`);
+    }
+    if (req.query.resolvido === 'sim') partes.push('a.resolvido = true');
+    if (req.query.resolvido === 'nao') partes.push('a.resolvido = false');
+    if (req.query.reembolso === 'pedido') partes.push('a.reembolso_pedido');
+    // "Consumado" = pediu para sair e a saída NÃO foi revertida — é o
+    // numerador da taxa de reembolso da tela.
+    if (req.query.reembolso === 'consumado') {
+      partes.push('a.reembolso_pedido AND NOT coalesce(a.reembolso_evitado, false)');
+    }
+    if (req.query.reembolso === 'evitado') partes.push('a.reembolso_evitado = true');
+    if (req.query.com_csat === true) partes.push('a.csat IS NOT NULL');
+
+    const onde = `WHERE ${partes.join(' AND ')}`;
+    const cont = await query(
+      `SELECT count(*)::int AS n FROM chat_atendimentos a ${onde}`, valores,
+    );
+    const { limit, offset, envelope } = fatiar(req, cont.rows[0].n);
+    const { rows } = await query(
+      `SELECT a.id, a.transacao_id, a.email, a.resumo, a.desfecho, a.motivo,
+              t.nome AS topico_nome, a.resolvido, a.reembolso_pedido,
+              a.reembolso_evitado, a.csat, a.duracao_s, a.etapa_regua,
+              coalesce(a.iniciado_em, a.criado_em) AS inicio
+       FROM chat_atendimentos a
+       LEFT JOIN chat_topicos t ON t.id = a.topico_id
+       ${onde}
+       ORDER BY coalesce(a.iniciado_em, a.criado_em) DESC
+       LIMIT $${valores.length + 1} OFFSET $${valores.length + 2}`,
+      [...valores, limit, offset],
+    );
+    return envelope(rows);
   });
 
   /*

@@ -14,7 +14,7 @@ import {
   etapasRollup, ondaPorEtapa, ondaHoraria, entradasPorDia,
   statusBruto, alertas, listarPedidos,
   reguaDefinicao, cadenciaObservada, porCanal, semMensagem, resumoLinhas, piorCasoSms, errosSemCanal, mensagem, salvarMensagem, criarLinha, apagarLinha, editarLinha, etapasDaRegua,
-  produtosDaFila, plataformasDaFila, fonteDados, suporteResumo,
+  produtosDaFila, plataformasDaFila, fonteDados, suporteResumo, suporteConversas,
 } from './dados.js';
 import {
   apiConfigurada, enderecoApi, saude as saudeApi, ErroApi,
@@ -979,6 +979,25 @@ async function atender(req, res, url, sessao) {
       textoOuNulo(url.searchParams.get('produto')),
       textoOuNulo(url.searchParams.get('plataforma')),
     ));
+  }
+
+  /* ── as conversas por trás dos KPIs/motivos — a tabela da aba de suporte ── */
+  if (url.pathname === '/api/suporte/conversas') {
+    const q = url.searchParams;
+    const dias = inteiroOuNulo(q.get('dias'));
+    if (dias === false) return json(res, 400, { erro: 'dias inválido' });
+    const resolvidoRaw = q.get('resolvido');
+    const reembolsoRaw = q.get('reembolso');
+    return json(res, 200, await suporteConversas({
+      dias: dias ?? 30,
+      motivo: textoOuNulo(q.get('motivo')),
+      resolvido: ['sim', 'nao'].includes(resolvidoRaw) ? resolvidoRaw : null,
+      reembolso: ['pedido', 'consumado', 'evitado'].includes(reembolsoRaw) ? reembolsoRaw : null,
+      com_csat: q.get('com_csat') === '1' ? true : null,
+      produto: textoOuNulo(q.get('produto')),
+      plataforma: textoOuNulo(q.get('plataforma')),
+      page_size: 50,
+    }));
   }
 
   if (url.pathname === '/api/pedidos') {

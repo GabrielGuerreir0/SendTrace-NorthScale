@@ -480,6 +480,42 @@
     <div class="sup-regua" id="sup-regua"><p class="vazio-suave">carregando…</p></div>
   </section>
 
+  <!-- ── as conversas por trás dos números ── -->
+  <section class="cartao" id="sup-conversas-cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Conversas</h2>
+        <p class="cartao-sub">
+          Clique num KPI ou num motivo acima para filtrar esta lista.
+          Passe o mouse numa linha para ler o resumo do atendimento.
+        </p>
+      </div>
+      <div class="sup-filtro" id="sup-filtro" hidden>
+        <span id="sup-filtro-rotulo"></span>
+        <button class="btn btn-fantasma" id="sup-filtro-limpar" type="button">Limpar filtro</button>
+      </div>
+    </header>
+    <div class="sup-tabela-envolve">
+      <table class="sup-tabela">
+        <thead>
+          <tr>
+            <th scope="col">Início</th>
+            <th scope="col">Pedido</th>
+            <th scope="col">Tópico</th>
+            <th scope="col">Desfecho</th>
+            <th scope="col">Reembolso</th>
+            <th scope="col" class="num">CSAT</th>
+            <th scope="col" class="num">Duração</th>
+          </tr>
+        </thead>
+        <tbody id="sup-conversas">
+          <tr><td colspan="7" class="vazio-suave">carregando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sup-rodape" id="sup-conversas-total"></p>
+  </section>
+
   <p class="sup-rodape" id="sup-rodape"></p>
 </main>
 

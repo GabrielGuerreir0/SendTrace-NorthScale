@@ -495,6 +495,8 @@ export default async function rotasMetricas(app) {
          count(*) FILTER (WHERE resolvido = false)::int               AS nao_resolvidas,
          count(*) FILTER (WHERE reembolso_pedido)::int                AS reembolso_pedidos,
          count(*) FILTER (WHERE reembolso_evitado)::int               AS reembolso_evitados,
+         count(*) FILTER (WHERE reembolso_pedido
+                            AND NOT coalesce(reembolso_evitado, false))::int AS reembolsos_consumados,
          round(avg(duracao_s) FILTER (WHERE duracao_s IS NOT NULL))::int AS tempo_medio_s,
          round(avg(csat) FILTER (WHERE csat IS NOT NULL)::numeric, 2)::float8 AS csat_media,
          count(csat)::int                                             AS csat_respostas,
@@ -631,6 +633,10 @@ export default async function rotasMetricas(app) {
         ...k,
         resolution_rate: taxa(k.resolvidas, k.classificadas),
         refund_save_rate: taxa(k.reembolso_evitados, k.reembolso_pedidos),
+        // A taxa da tela: de TODAS as conversas com a IA, quantas terminaram
+        // em reembolso/cancelamento consumado. O complemento é quem conversou
+        // e NÃO cancelou.
+        taxa_reembolso: taxa(k.reembolsos_consumados, k.conversas),
         pedidos_fila: fila.rows[0].pedidos,
         taxa_utilizacao: taxa(k.clientes_chat, fila.rows[0].pedidos),
       },

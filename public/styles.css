@@ -1403,3 +1403,20 @@ body[data-menu="fechado"] .menu-alternar { justify-content: center; padding: 9px
 .sup-tabela .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sup-tabela-motivo { display: flex; flex-direction: column; gap: 5px; min-width: 180px; }
 .sup-tabela-motivo .sup-item-barra { grid-column: auto; }
+
+/* KPI clicável e linhas clicáveis da aba de suporte: o cartão é a pergunta,
+   a tabela de conversas é o "quais são". */
+.kpis--suporte .kpi--clique { cursor: pointer; font: inherit; text-align: left; }
+.kpis--suporte .kpi--clique:hover { border-color: var(--eixo); transform: translateY(-1px); }
+.sup-linha-clique { cursor: pointer; }
+.sup-linha-clique:hover td { background: color-mix(in srgb, var(--tinta) 4%, transparent); }
+
+.sup-filtro {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 12.5px; color: var(--tinta-2);
+}
+.sup-filtro span {
+  padding: 4px 10px; border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--st-em-dia) 45%, var(--borda));
+  background: color-mix(in srgb, var(--st-em-dia) 10%, var(--superficie));
+}

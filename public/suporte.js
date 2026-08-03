@@ -9,7 +9,7 @@
  * é só desenho. Nenhum número aparece só como cor ou barra: todo valor também
  * está em texto.
  */
-import { n, relativo } from './format.js';
+import { n, relativo, dataHora } from './format.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -80,10 +80,20 @@ function renderInsights(s) {
   }));
 }
 
-function tile({ icone, tom, rotulo, valor, nota }) {
-  const div = document.createElement('div');
-  div.className = 'kpi';
-  div.dataset.tom = tom;
+/**
+ * Um KPI. Com `filtro`, o cartão vira botão: clicar recorta a tabela de
+ * conversas lá embaixo por aquele número e rola até ela — o KPI é a
+ * pergunta, a tabela é o "quais são".
+ */
+function tile({ icone, tom, rotulo, valor, nota, filtro }) {
+  const el = document.createElement(filtro ? 'button' : 'div');
+  el.className = filtro ? 'kpi kpi--clique' : 'kpi';
+  el.dataset.tom = tom;
+  if (filtro) {
+    el.type = 'button';
+    el.title = 'Ver estas conversas na tabela';
+    el.addEventListener('click', () => aplicarFiltroConversas(filtro));
+  }
 
   const topo = document.createElement('div');
   topo.className = 'kpi-topo';
@@ -103,36 +113,44 @@ function tile({ icone, tom, rotulo, valor, nota }) {
   sub.className = 'kpi-nota';
   sub.textContent = nota;
 
-  div.append(topo, val, sub);
-  return div;
+  el.append(topo, val, sub);
+  return el;
 }
 
 function renderKpis(s) {
   const k = s.kpis ?? {};
+  const naoCancelaram = Math.max(0, (k.conversas ?? 0) - (k.reembolsos_consumados ?? 0));
   $('sup-kpis').replaceChildren(
     tile({
       icone: '●', tom: 'neutro', rotulo: 'Conversas',
       valor: n(k.conversas ?? 0),
       nota: `iniciadas em ${s.janela_dias} dias`,
+      filtro: { rotulo: 'todas as conversas da janela' },
     }),
     tile({
-      icone: '✓', tom: 'bom', rotulo: 'Resolution rate',
+      icone: '✓', tom: 'bom', rotulo: 'Taxa de resolução',
       valor: pct(k.resolution_rate),
       nota: k.classificadas
         ? `${n(k.resolvidas)} de ${n(k.classificadas)} resolvidas pela IA`
         : 'sem conversas classificadas ainda',
+      filtro: { resolvido: 'sim', rotulo: 'resolvidas pela IA' },
     }),
+    // A taxa de reembolso da tela: de TODAS as conversas com a IA, quantas
+    // terminaram em reembolso/cancelamento. O complemento é quem conversou
+    // e NÃO cancelou.
     tile({
-      icone: '↩', tom: 'bom', rotulo: 'Refund save rate',
-      valor: pct(k.refund_save_rate),
-      nota: k.reembolso_pedidos
-        ? `${n(k.reembolso_evitados)} de ${n(k.reembolso_pedidos)} saídas (reembolso/cancelamento) revertidas`
-        : 'nenhum pedido de reembolso ou cancelamento na janela',
+      icone: '↩', tom: 'ruim', rotulo: 'Taxa de reembolso',
+      valor: pct(k.taxa_reembolso),
+      nota: k.conversas
+        ? `${n(k.reembolsos_consumados ?? 0)} de ${n(k.conversas)} conversas cancelaram · ${n(naoCancelaram)} não cancelaram`
+        : 'nenhuma conversa na janela',
+      filtro: { reembolso: 'consumado', rotulo: 'terminaram em reembolso/cancelamento' },
     }),
     tile({
       icone: '✕', tom: 'ruim', rotulo: 'Não resolvidas',
       valor: n(k.nao_resolvidas ?? 0),
       nota: 'escaladas para humano ou perdidas',
+      filtro: { resolvido: 'nao', rotulo: 'não resolvidas pela IA' },
     }),
     tile({
       icone: '◔', tom: 'neutro', rotulo: 'Tempo médio',
@@ -147,6 +165,7 @@ function renderKpis(s) {
       nota: k.csat_respostas
         ? `média de ${n(k.csat_respostas)} avaliação${k.csat_respostas === 1 ? '' : 'ões'} (1–5)`
         : 'nenhuma avaliação ainda',
+      filtro: { com_csat: '1', rotulo: 'com avaliação do cliente' },
     }),
     tile({
       icone: '◍', tom: 'neutro', rotulo: 'Utilização do chat',
@@ -211,8 +230,13 @@ function renderMotivos(s) {
   corpo.replaceChildren(...lista.map((m) => {
     const tr = document.createElement('tr');
     // A descrição do tópico — o critério de encaixe que a IA usa — fica no
-    // hover da linha: quem quiser saber "o que cai aqui" lê sem poluir a tabela.
-    if (m.descricao) tr.title = m.descricao;
+    // hover da linha; clicar recorta a tabela de conversas por este tópico.
+    tr.title = [m.descricao, 'Clique para ver estas conversas'].filter(Boolean).join(' · ');
+    tr.className = 'sup-linha-clique';
+    tr.addEventListener('click', () => aplicarFiltroConversas({
+      motivo: m.motivo,
+      rotulo: `motivo “${m.label ?? m.motivo}”`,
+    }));
 
     const tdMotivo = document.createElement('td');
     tdMotivo.className = 'sup-tabela-motivo';
@@ -308,6 +332,103 @@ function renderRegua(s) {
   }));
 }
 
+/* ═════════════════  a tabela de conversas (drill-down)  ═════════════ */
+
+/**
+ * O recorte ativo da tabela — vem de um clique num KPI ou num motivo. É
+ * estado próprio (não da URL) porque vive só nesta aba; o chip ao lado do
+ * título diz o que está valendo, e "Limpar filtro" volta ao tudo.
+ */
+let filtroConversas = {};
+
+function aplicarFiltroConversas(filtro) {
+  filtroConversas = filtro ?? {};
+  const chip = $('sup-filtro');
+  const temRecorte = Boolean(filtro?.motivo || filtro?.resolvido || filtro?.reembolso || filtro?.com_csat);
+  chip.hidden = !temRecorte && !filtro?.rotulo;
+  $('sup-filtro-rotulo').textContent = filtro?.rotulo ? `Mostrando: ${filtro.rotulo}` : '';
+  carregarConversas();
+  $('sup-conversas-cartao').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+$('sup-filtro-limpar').addEventListener('click', () => {
+  filtroConversas = {};
+  $('sup-filtro').hidden = true;
+  carregarConversas();
+});
+
+let geracaoConversas = 0;
+
+async function carregarConversas() {
+  const meu = ++geracaoConversas;
+  try {
+    const qs = new URLSearchParams({ dias: String(Number($('sup-dias').value) || 30) });
+    const produto = $('sel-produto').value;
+    const plataforma = $('sel-plataforma').value;
+    if (produto) qs.set('produto', produto);
+    if (plataforma) qs.set('plataforma', plataforma);
+    for (const chave of ['motivo', 'resolvido', 'reembolso', 'com_csat']) {
+      if (filtroConversas[chave]) qs.set(chave, filtroConversas[chave]);
+    }
+
+    const resp = await fetch(`/api/suporte/conversas?${qs}`);
+    if (resp.status === 401) { location.replace('/login'); return; }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const dados = await resp.json();
+    if (meu !== geracaoConversas) return;
+    renderConversas(dados);
+  } catch {
+    if (meu !== geracaoConversas) return;
+    renderConversas({ total: 0, conversas: [] });
+  }
+}
+
+function renderConversas({ total, conversas }) {
+  const corpo = $('sup-conversas');
+  if (!conversas.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 7;
+    td.className = 'vazio-suave';
+    td.textContent = filtroConversas.rotulo
+      ? `Nenhuma conversa em “${filtroConversas.rotulo}” nesta janela.`
+      : 'Nenhuma conversa registrada nesta janela ainda.';
+    tr.append(td);
+    corpo.replaceChildren(tr);
+    $('sup-conversas-total').textContent = '';
+    return;
+  }
+
+  const celula = (texto, classe) => {
+    const td = document.createElement('td');
+    if (classe) td.className = classe;
+    td.textContent = texto;
+    return td;
+  };
+
+  corpo.replaceChildren(...conversas.map((c) => {
+    const tr = document.createElement('tr');
+    // O resumo inteiro do atendimento mora no hover — a tabela mostra o que
+    // se compara; o texto, quem quiser lê.
+    if (c.resumo) tr.title = c.resumo;
+
+    tr.append(celula(c.inicio ? dataHora(c.inicio) : '—'));
+    tr.append(celula(c.transacao_id ?? c.email ?? '—'));
+    tr.append(celula(c.topico_label ?? '—'));
+    tr.append(celula(c.resolvido === true ? '✓ resolvida'
+      : c.resolvido === false ? '✕ escalada' : '—'));
+    tr.append(celula(!c.reembolso_pedido ? '—'
+      : c.reembolso_evitado ? 'revertido' : 'consumado'));
+    tr.append(celula(c.csat ? `★ ${c.csat}` : '—', 'num'));
+    tr.append(celula(duracao(c.duracao_s), 'num'));
+    return tr;
+  }));
+
+  $('sup-conversas-total').textContent = total > conversas.length
+    ? `Mostrando as ${n(conversas.length)} mais recentes de ${n(total)} conversas.`
+    : `${n(total)} conversa${total === 1 ? '' : 's'}.`;
+}
+
 /* ══════════════════════════  carregamento  ══════════════════════════ */
 
 let geracao = 0;
@@ -335,6 +456,9 @@ export async function carregarSuporte() {
     renderMotivos(s);
     renderPerguntas(s);
     renderRegua(s);
+    // A tabela recarrega junto, mantendo o filtro ativo — senão os cards
+    // falariam de uma janela e a lista, de outra.
+    carregarConversas();
     // O recorte ativo fica ESCRITO no rodapé: um filtro que só se vê no topo
     // é um recorte invisível pesando sobre todos os números da aba.
     const recorte = [produto && `produto “${produto}”`, plataforma && `plataforma ${plataforma}`]
