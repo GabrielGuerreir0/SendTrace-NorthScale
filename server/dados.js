@@ -140,6 +140,19 @@ export function nomeProduto(bruto) {
 const doProduto = (d, produto) => !produto || nomeProduto(d.produto) === produto;
 
 /**
+ * Recorte por plataforma de venda (DigiStore24, JVZoo, BuyGoods…).
+ *
+ * Igualdade exata sobre o valor gravado, como no produto: o seletor é montado
+ * do que existe na fila, então o que se escolhe é literalmente o que está lá.
+ */
+const daPlataforma = (d, plataforma) => !plataforma
+  || String(d.plataforma ?? '').trim() === plataforma;
+
+/** Os dois recortes do topo juntos — todo número do painel passa por aqui. */
+const noRecorte = (d, produto, plataforma) => doProduto(d, produto)
+  && daPlataforma(d, plataforma);
+
+/**
  * A qual canal o erro pertence, deduzido do prefixo de `ultimo_erro`.
  *
  * A fila guarda o erro numa coluna de texto só, sem canal — mas o worker
@@ -455,7 +468,7 @@ export async function linhaAtivaBruta() {
  * Uma passada só pela fila: com 15 contadores por etapa, percorrer a lista uma
  * vez por métrica seria quinze varreduras para responder o que uma responde.
  */
-export async function etapasRollup(produto = null) {
+export async function etapasRollup(produto = null, plataforma = null) {
   const { itens } = await fila();
   const agora = Date.now();
   const porEtapa = new Map();
@@ -467,7 +480,7 @@ export async function etapasRollup(produto = null) {
   });
 
   for (const d of itens) {
-    if (!doProduto(d, produto)) continue;
+    if (!noRecorte(d, produto, plataforma)) continue;
     const etapa = Number(d.etapa_atual);
     if (!porEtapa.has(etapa)) porEtapa.set(etapa, { etapa, ...vazio() });
     const r = porEtapa.get(etapa);
@@ -501,14 +514,14 @@ export async function etapasRollup(produto = null) {
  * (etapa 0), não quando entrou na etapa atual — a fila não guarda histórico de
  * transições, então "entradas por etapa" seria mentira.
  */
-export async function ondaPorEtapa(produto = null) {
+export async function ondaPorEtapa(produto = null, plataforma = null) {
   const { itens } = await fila();
   const agora = Date.now();
   const saida = [];
   const mapa = new Map();
 
   for (const d of itens) {
-    if (!doProduto(d, produto)) continue;
+    if (!noRecorte(d, produto, plataforma)) continue;
     if (String(d.status ?? '').trim().toLowerCase() !== 'ativo') continue;
     const p = ms(d.proximo_disparo);
     if (!Number.isFinite(p) || p <= agora || p > agora + 48 * 3_600_000) continue;
@@ -541,7 +554,7 @@ const recebeNoCanal = (msgs, d, canal) => enviaNoCanal(msgs, d.etapa_atual, cana
 
 /** Onda global de disparos, hora a hora, nas próximas 48 h. */
 export async function ondaHoraria({
-  etapa = null, canal = null, linha = '1', produto = null,
+  etapa = null, canal = null, linha = '1', produto = null, plataforma = null,
 } = {}) {
   const [{ itens }, msgs] = await Promise.all([fila(), canal ? mensagensDe(linha) : []]);
   const agora = Date.now();
@@ -550,7 +563,7 @@ export async function ondaHoraria({
 
   const baldes = new Map();
   for (const d of itens) {
-    if (!doProduto(d, produto)) continue;
+    if (!noRecorte(d, produto, plataforma)) continue;
     if (String(d.status ?? '').trim().toLowerCase() !== 'ativo') continue;
     if (etapa !== null && Number(d.etapa_atual) !== Number(etapa)) continue;
     if (canal && !recebeNoCanal(msgs, d, canal)) continue;
@@ -578,7 +591,7 @@ export async function ondaHoraria({
  * data e deslocá-la de novo.
  */
 export async function entradasPorDia({
-  etapa = null, canal = null, linha = '1', produto = null,
+  etapa = null, canal = null, linha = '1', produto = null, plataforma = null,
 } = {}) {
   const tz = process.env.TZ_PAINEL || 'America/Sao_Paulo';
   const [{ itens }, msgs] = await Promise.all([fila(), canal ? mensagensDe(linha) : []]);
@@ -594,7 +607,7 @@ export async function entradasPorDia({
 
   const contas = new Map();
   for (const d of itens) {
-    if (!doProduto(d, produto)) continue;
+    if (!noRecorte(d, produto, plataforma)) continue;
     if (etapa !== null && Number(d.etapa_atual) !== Number(etapa)) continue;
     if (canal && !recebeNoCanal(msgs, d, canal)) continue;
 
@@ -618,12 +631,12 @@ export async function entradasPorDia({
  * Só linhas 'ativo' entram: nas demais o `proximo_disparo` é resíduo do último
  * agendamento.
  */
-export async function cadenciaObservada(produto = null) {
+export async function cadenciaObservada(produto = null, plataforma = null) {
   const { itens } = await fila();
   const porEtapa = new Map();
 
   for (const d of itens) {
-    if (!doProduto(d, produto)) continue;
+    if (!noRecorte(d, produto, plataforma)) continue;
     if (String(d.status ?? '').trim().toLowerCase() !== 'ativo') continue;
     const a = ms(d.criado_em);
     const b = ms(d.proximo_disparo);
@@ -654,7 +667,7 @@ export async function cadenciaObservada(produto = null) {
  * diferentes: `sem_contato` é falta de dado do comprador; `sem_mensagem` é
  * falta de cadastro na régua.
  */
-export async function porCanal(linha = '1', produto = null) {
+export async function porCanal(linha = '1', produto = null, plataforma = null) {
   const [{ itens }, msgs] = await Promise.all([fila(), mensagensDe(linha)]);
   if (!msgs.length) return [];
   const agora = Date.now();
@@ -665,7 +678,7 @@ export async function porCanal(linha = '1', produto = null) {
       em_dia: 0, atrasado: 0, processando: 0, travado: 0, com_erro: 0,
     };
     for (const d of itens) {
-      if (!estaVivo(d) || !doProduto(d, produto)) continue;
+      if (!estaVivo(d) || !noRecorte(d, produto, plataforma)) continue;
       if (!enviaNoCanal(msgs, d.etapa_atual, canal)) continue;
 
       r.total += 1;
@@ -693,12 +706,12 @@ export async function porCanal(linha = '1', produto = null) {
  * Quantos estão numa etapa sem NENHUMA mensagem ativa cadastrada. Somem do
  * recorte por canal, então precisam aparecer em algum lugar.
  */
-export async function semMensagem(linha = '1', produto = null) {
+export async function semMensagem(linha = '1', produto = null, plataforma = null) {
   const [{ itens }, msgs] = await Promise.all([fila(), mensagensDe(linha)]);
   if (!msgs.length) return 0;
 
   const comCopy = new Set(msgs.filter((m) => m.ativo !== false).map((m) => Number(m.etapa)));
-  return itens.filter((d) => estaVivo(d) && doProduto(d, produto)
+  return itens.filter((d) => estaVivo(d) && noRecorte(d, produto, plataforma)
     && !comCopy.has(Number(d.etapa_atual))).length;
 }
 
@@ -708,9 +721,9 @@ export async function semMensagem(linha = '1', produto = null) {
  * Somem do recorte por canal, então a soma dos dois canais ficaria menor que o
  * total de erros e ninguém entenderia por quê.
  */
-export async function errosSemCanal(produto = null) {
+export async function errosSemCanal(produto = null, plataforma = null) {
   const { itens } = await fila();
-  return itens.filter((d) => estaVivo(d) && doProduto(d, produto)
+  return itens.filter((d) => estaVivo(d) && noRecorte(d, produto, plataforma)
     && d.ultimo_erro && canalDoErro(d) === null).length;
 }
 
@@ -722,13 +735,13 @@ export async function errosSemCanal(produto = null) {
  * vai CRU, com código e embalagem: é o texto que de fato entra no lugar do
  * marcador quando a mensagem sai.
  */
-export async function piorCasoSms(produto = null) {
+export async function piorCasoSms(produto = null, plataforma = null) {
   const { itens } = await fila();
   let nome = null;
   let prod = null;
 
   for (const d of itens) {
-    if (!doProduto(d, produto)) continue;
+    if (!noRecorte(d, produto, plataforma)) continue;
     const primeiro = String(d.nome ?? '').trim().split(' ')[0];
     if (primeiro && (nome === null || primeiro.length > nome.length)) nome = primeiro;
     const p = String(d.produto ?? '').trim();
@@ -738,11 +751,11 @@ export async function piorCasoSms(produto = null) {
 }
 
 /** Distribuição bruta de status — descobre valores que não conhecemos de antemão. */
-export async function statusBruto(produto = null) {
+export async function statusBruto(produto = null, plataforma = null) {
   const { itens } = await fila();
   const contas = new Map();
   for (const d of itens) {
-    if (!doProduto(d, produto)) continue;
+    if (!noRecorte(d, produto, plataforma)) continue;
     const s = d.status ?? '';
     contas.set(s, (contas.get(s) ?? 0) + 1);
   }
@@ -752,13 +765,13 @@ export async function statusBruto(produto = null) {
 }
 
 /** Fila de problemas: erros registrados e itens presos no worker. */
-export async function alertas(produto = null) {
+export async function alertas(produto = null, plataforma = null) {
   const { itens } = await fila();
   const agora = Date.now();
   const corte = agora - LOCK_TIMEOUT_MIN * 60_000;
 
   const escolhidos = itens.filter((d) => {
-    if (!doProduto(d, produto)) return false;
+    if (!noRecorte(d, produto, plataforma)) return false;
     const status = String(d.status ?? '').trim().toLowerCase();
     const p = ms(d.proximo_disparo);
     const c = ms(d.claimed_at);
@@ -819,6 +832,29 @@ export async function produtosDaFila() {
 }
 
 /**
+ * As plataformas de venda presentes na fila, com o total de cada uma — o
+ * catálogo do segundo seletor do topo. Como o de produtos, NÃO respeita os
+ * recortes ativos: é a lista de onde se escolhe.
+ *
+ * Pedidos sem plataforma (anteriores à coluna, ou o worker não gravou) não
+ * viram opção — não existe recorte "sem plataforma" para escolher, e uma opção
+ * vazia no seletor seria um botão sem significado.
+ */
+export async function plataformasDaFila() {
+  const { itens } = await fila();
+  const contas = new Map();
+  for (const d of itens) {
+    const nome = String(d.plataforma ?? '').trim();
+    if (!nome) continue;
+    contas.set(nome, (contas.get(nome) ?? 0) + 1);
+  }
+  return [...contas.entries()]
+    .map(([nome, total]) => ({ plataforma: nome, total }))
+    .sort((a, b) => b.total - a.total || a.plataforma.localeCompare(b.plataforma))
+    .slice(0, 50);
+}
+
+/**
  * Drill-down paginado com filtros.
  *
  * `estado` aceita os seis estados e mais o pseudo-estado 'na_regua' = tudo que
@@ -828,14 +864,14 @@ export async function produtosDaFila() {
  */
 export async function listarPedidos({
   etapa, estado, canal, problema, busca, limit, offset, ordem, linha = '1',
-  produto = null,
+  produto = null, plataforma = null,
 }) {
   const [{ itens }, msgs] = await Promise.all([fila(), canal ? mensagensDe(linha) : []]);
   const agora = Date.now();
   const alvo = busca ? String(busca).toLowerCase() : null;
 
   const filtrados = itens.filter((d) => {
-    if (!doProduto(d, produto)) return false;
+    if (!noRecorte(d, produto, plataforma)) return false;
     if (etapa !== null && etapa !== undefined && Number(d.etapa_atual) !== Number(etapa)) return false;
 
     const e = estadoDe(d, agora);
@@ -846,7 +882,7 @@ export async function listarPedidos({
     }
 
     if (alvo) {
-      const casa = [d.transacao_id, d.nome, d.email, d.telefone, d.produto]
+      const casa = [d.transacao_id, d.nome, d.email, d.telefone, d.produto, d.plataforma]
         .some((c) => c && String(c).toLowerCase().includes(alvo));
       if (!casa) return false;
     }
@@ -889,6 +925,7 @@ export async function listarPedidos({
       email: d.email,
       telefone: d.telefone,
       produto: d.produto,
+      plataforma: d.plataforma ?? null,
       etapa: Number(d.etapa_atual),
       status: d.status,
       estado: estadoDe(d, agora),

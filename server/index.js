@@ -14,7 +14,7 @@ import {
   etapasRollup, ondaPorEtapa, ondaHoraria, entradasPorDia,
   statusBruto, alertas, listarPedidos,
   reguaDefinicao, cadenciaObservada, porCanal, semMensagem, resumoLinhas, piorCasoSms, errosSemCanal, mensagem, salvarMensagem, criarLinha, apagarLinha, editarLinha, etapasDaRegua,
-  produtosDaFila, fonteDados,
+  produtosDaFila, plataformasDaFila, fonteDados,
 } from './dados.js';
 import {
   apiConfigurada, enderecoApi, saude as saudeApi, ErroApi,
@@ -155,13 +155,13 @@ const CANAL_IDS = new Set(Object.keys(CANAIS));
 const PROBLEMA_IDS = new Set(['com_erro', 'sem_contato', 'com_contato']);
 
 /**
- * Nome de produto vindo da query string, ou null.
+ * Nome de produto ou de plataforma vindo da query string, ou null.
  *
- * Só normaliza e limita o tamanho: a comparação no banco é por igualdade e
- * parametrizada, então um nome desconhecido devolve lista vazia — que é a
- * resposta correta para "os pedidos de um produto que não existe".
+ * Só normaliza e limita o tamanho: a comparação é por igualdade exata, então
+ * um nome desconhecido devolve lista vazia — que é a resposta correta para
+ * "os pedidos de um produto (ou plataforma) que não existe".
  */
-function produtoOuNulo(raw) {
+function textoOuNulo(raw) {
   const v = (raw ?? '').trim();
   return v === '' ? null : v.slice(0, 200);
 }
@@ -280,19 +280,24 @@ async function snapshot(filtros = {}) {
   const linha = validas.includes(String(filtros.linha)) ? String(filtros.linha) : ativa;
   const doFiltro = { ...filtros, linha };
   /*
-   * O produto recorta o painel INTEIRO, ao contrário de etapa/canal (que só
-   * recortam os dois gráficos temporais). É outra pergunta: "como está a régua
-   * deste produto" — e responder com os nós e os KPIs de todos os produtos
-   * juntos daria um número que não é do produto nenhum.
+   * O produto e a plataforma recortam o painel INTEIRO, ao contrário de
+   * etapa/canal (que só recortam os dois gráficos temporais). É outra
+   * pergunta: "como está a régua deste produto (ou desta plataforma)" — e
+   * responder com os nós e os KPIs de todos juntos daria um número que não é
+   * de recorte nenhum. Os dois se combinam: "NeuroMind Pro na JVZoo" é uma
+   * pergunta legítima.
    */
   const produto = filtros.produto ?? null;
+  const plataforma = filtros.plataforma ?? null;
 
   const [regua, rollup, onda, horaria, entradas, statuses, problemas, cadencia,
-    canais, orfaos, linhas, piorSms, errosOrfaos, produtos, fonte] = await Promise.all([
-    reguaDefinicao(linha), etapasRollup(produto), ondaPorEtapa(produto), ondaHoraria(doFiltro),
-    entradasPorDia(doFiltro), statusBruto(produto), alertas(produto), cadenciaObservada(produto),
-    porCanal(linha, produto), semMensagem(linha, produto), resumoLinhas(),
-    piorCasoSms(produto), errosSemCanal(produto), produtosDaFila(), fonteDados(),
+    canais, orfaos, linhas, piorSms, errosOrfaos, produtos, plataformas, fonte] = await Promise.all([
+    reguaDefinicao(linha), etapasRollup(produto, plataforma), ondaPorEtapa(produto, plataforma),
+    ondaHoraria(doFiltro), entradasPorDia(doFiltro), statusBruto(produto, plataforma),
+    alertas(produto, plataforma), cadenciaObservada(produto, plataforma),
+    porCanal(linha, produto, plataforma), semMensagem(linha, produto, plataforma), resumoLinhas(),
+    piorCasoSms(produto, plataforma), errosSemCanal(produto, plataforma),
+    produtosDaFila(), plataformasDaFila(), fonteDados(),
   ]);
 
   const reguaOk = regua !== null;
@@ -353,10 +358,11 @@ async function snapshot(filtros = {}) {
     lockTimeoutMin: LOCK_TIMEOUT_MIN,
     reguaOk,
     filtros: {
-      etapa: filtros.etapa ?? null, canal: filtros.canal ?? null, produto,
+      etapa: filtros.etapa ?? null, canal: filtros.canal ?? null, produto, plataforma,
     },
-    // O catálogo do seletor do topo, sempre completo — é dele que se escolhe.
+    // Os catálogos dos seletores do topo, sempre completos — é deles que se escolhe.
     produtos,
+    plataformas,
     /*
      * De onde vieram estes números.
      *
@@ -951,10 +957,12 @@ async function atender(req, res, url, sessao) {
     const linhaRaw = q.get('linha');
     const linha = /^\d{1,4}$/.test(linhaRaw ?? '') ? linhaRaw : null;
 
-    // O produto é a exceção: recorta o painel inteiro, não só os gráficos.
-    const produto = produtoOuNulo(q.get('produto'));
+    // Produto e plataforma são a exceção: recortam o painel inteiro, não só
+    // os gráficos.
+    const produto = textoOuNulo(q.get('produto'));
+    const plataforma = textoOuNulo(q.get('plataforma'));
 
-    return json(res, 200, await snapshot({ etapa, canal, linha, produto }));
+    return json(res, 200, await snapshot({ etapa, canal, linha, produto, plataforma }));
   }
 
   if (url.pathname === '/api/pedidos') {
@@ -987,7 +995,8 @@ async function atender(req, res, url, sessao) {
 
     return json(res, 200, await listarPedidos({
       etapa, estado, canal, problema, busca, limit, offset, ordem: q.get('ordem'), linha,
-      produto: produtoOuNulo(q.get('produto')),
+      produto: textoOuNulo(q.get('produto')),
+      plataforma: textoOuNulo(q.get('plataforma')),
     }));
   }
 

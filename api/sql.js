@@ -70,6 +70,16 @@ export const DO_PRODUTO = (n, alias = '') =>
   `($${n}::text IS NULL OR ${NOME_PRODUTO(alias)} = $${n}::text)`;
 
 /**
+ * Recorte por plataforma de venda (DigiStore24, JVZoo, BuyGoods…).
+ *
+ * Igualdade exata sobre o valor gravado (aparado de espaços): o catálogo é
+ * montado do que existe na fila, então o que se escolhe é o que está lá. Um
+ * pedido sem plataforma nunca casa com recorte nenhum.
+ */
+export const DA_PLATAFORMA = (n, alias = '') =>
+  `($${n}::text IS NULL OR btrim(${alias}plataforma) = $${n}::text)`;
+
+/**
  * A qual canal o erro pertence, deduzido do prefixo de `ultimo_erro`.
  *
  * A fila guarda o erro numa coluna de texto só, sem canal — mas o worker

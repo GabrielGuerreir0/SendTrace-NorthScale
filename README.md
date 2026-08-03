@@ -574,6 +574,25 @@ somaria `B12 Complex` com `D3 Complex` num `Complex` só. Formatos que a regra n
 reconhece (`PROMO - X`, `X 6 Bottles` sem parêntese) viram opção própria no
 seletor — o erro aparece na tela em vez de fundir produtos em silêncio.
 
+## Filtro por plataforma
+
+Ao lado do seletor de produto há um segundo seletor, com as **plataformas de
+venda** presentes na fila — DigiStore24, JVZoo, BuyGoods… — lidas da coluna
+`disparos_pos_venda.plataforma` (migração `014`, escrita pelo worker/n8n na
+entrada do pedido). O alcance é o mesmo do filtro de produto: recorta o painel
+**inteiro**, e os dois recortes se combinam — "NeuroMind Pro na JVZoo" é uma
+pergunta legítima.
+
+A comparação é por **igualdade exata** do valor gravado, sem normalização: o
+seletor é montado do que existe na fila, então o que se escolhe é literalmente
+o que está lá. Pedidos sem plataforma (anteriores à coluna, ou que o worker não
+gravou) não viram opção — não existe recorte "sem plataforma" — e uma
+plataforma nova entra sozinha na lista, sem deploy e sem cadastro.
+
+Na API REST, todas as rotas de métricas e o CRUD da fila aceitam
+`?plataforma=`, e `/api/metricas/plataformas/` devolve o catálogo com o total
+de cada uma.
+
 ## A qual canal um erro pertence
 
 A fila guarda o erro numa coluna de texto só (`ultimo_erro`), sem campo de

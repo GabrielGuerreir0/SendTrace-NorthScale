@@ -88,9 +88,11 @@ const estado = {
   timer: null,
   filtros: { etapa: null, estado: null, canal: null, problema: null, busca: '', ordem: 'proximo' },
   graficos: { etapa: null, canal: null },
-  // Recorte do painel INTEIRO. Diferente dos filtros acima (que só valem para a
-  // tabela) e dos de gráfico (que só valem para os dois temporais).
+  // Recortes do painel INTEIRO. Diferentes dos filtros acima (que só valem
+  // para a tabela) e dos de gráfico (que só valem para os dois temporais).
+  // Os dois se combinam: "este produto, nesta plataforma".
   produto: null,
+  plataforma: null,
   pagina: { limit: 25, offset: 0, total: 0 },
 };
 
@@ -265,11 +267,15 @@ function renderLegenda() {
 
 function renderHeroi(s) {
   $('heroi-valor').textContent = n(s.totais.na_regua);
-  // Com um produto escolhido, o número-herói deixa de ser o da operação e passa
-  // a ser o daquele produto. O rótulo precisa dizer isso, senão o mesmo lugar
-  // da tela mostra duas grandezas diferentes sem aviso.
-  $('heroi-rotulo').textContent = estado.produto
-    ? `Na régua agora · ${truncar(estado.produto, 28)}`
+  // Com um produto ou uma plataforma escolhidos, o número-herói deixa de ser o
+  // da operação e passa a ser o daquele recorte. O rótulo precisa dizer isso,
+  // senão o mesmo lugar da tela mostra duas grandezas diferentes sem aviso.
+  const recorte = [
+    estado.produto && truncar(estado.produto, 28),
+    estado.plataforma && truncar(estado.plataforma, 20),
+  ].filter(Boolean);
+  $('heroi-rotulo').textContent = recorte.length
+    ? `Na régua agora · ${recorte.join(' · ')}`
     : 'Pedidos na régua agora';
 
   const partes = [];
@@ -751,6 +757,38 @@ function renderFiltroProduto(s) {
   sel.value = escolhido ?? '';
 }
 
+/**
+ * O seletor de plataforma do topo — mesmas regras do de produto: lista sempre
+ * completa, escolha que sumiu da fila continua como opção, e a lista só é
+ * refeita quando muda de verdade (nunca com o seletor em foco).
+ */
+let assinaturaPlataformas = null;
+
+function renderFiltroPlataforma(s) {
+  const sel = $('sel-plataforma');
+  const lista = s.plataformas ?? [];
+  const escolhido = estado.plataforma;
+
+  const rotulos = [['', 'Todas as plataformas']];
+  for (const p of lista) {
+    rotulos.push([p.plataforma, `${p.plataforma}${p.total ? ` · ${n(p.total)}` : ''}`]);
+  }
+  if (escolhido && !lista.some((p) => p.plataforma === escolhido)) {
+    rotulos.push([escolhido, `${escolhido} · 0`]);
+  }
+
+  sel.value = escolhido ?? '';
+  sel.dataset.ativo = escolhido ? 'sim' : 'nao';
+
+  const assinatura = rotulos.map((r) => r.join('|')).join('\n');
+  if (assinatura === assinaturaPlataformas || document.activeElement === sel) return;
+  assinaturaPlataformas = assinatura;
+
+  sel.replaceChildren(...rotulos.map(([value, textContent]) =>
+    Object.assign(document.createElement('option'), { value, textContent })));
+  sel.value = escolhido ?? '';
+}
+
 /* Os dois seletores de etapa (tabela e gráficos) saem da mesma lista do
    snapshot — a régua é auto-detectada, então nada aqui é fixo no código. */
 function renderFiltrosEtapa(s) {
@@ -791,10 +829,15 @@ function renderTabela({ pedidos, total }) {
     td.className = 'vazio-suave';
     const f = estado.filtros;
     const temFiltro = f.busca || f.etapa !== null || f.estado || f.canal || f.problema;
-    // O recorte por produto vive no topo da página: sem citá-lo aqui, a tabela
-    // pareceria vazia "sem motivo" para quem esqueceu que escolheu um produto.
-    td.textContent = estado.produto
-      ? `Nenhum pedido de “${estado.produto}”${temFiltro ? ' com estes filtros' : ''}.`
+    // Os recortes por produto e plataforma vivem no topo da página: sem
+    // citá-los aqui, a tabela pareceria vazia "sem motivo" para quem esqueceu
+    // que escolheu um recorte.
+    const recorte = [
+      estado.produto && `“${estado.produto}”`,
+      estado.plataforma && `na ${estado.plataforma}`,
+    ].filter(Boolean).join(' ');
+    td.textContent = recorte
+      ? `Nenhum pedido de ${recorte}${temFiltro ? ' com estes filtros' : ''}.`
       : temFiltro
         ? 'Nenhum pedido corresponde a estes filtros.'
         : 'A tabela `disparos_pos_venda` está vazia.';
@@ -898,6 +941,7 @@ async function carregarSnapshot({ silencioso = false } = {}) {
       if (g.etapa !== null) qs.set('etapa', String(g.etapa));
       if (g.canal) qs.set('canal', g.canal);
       if (estado.produto) qs.set('produto', estado.produto);
+      if (estado.plataforma) qs.set('plataforma', estado.plataforma);
       if (estado.linhaExibindo) qs.set('linha', estado.linhaExibindo);
       const resp = await fetch(`/api/snapshot${qs.toString() ? `?${qs}` : ''}`);
       // Sessão perdida (o token desta pessoa na API venceu ou foi revogado):
@@ -934,6 +978,7 @@ async function carregarSnapshot({ silencioso = false } = {}) {
     renderAlertas(s);
     renderFiltrosEtapa(s);
     renderFiltroProduto(s);
+    renderFiltroPlataforma(s);
     fluxo.atualizar(s.etapas, s.totais);
     trilha.atualizar(s.etapas, s.canais ?? CANAIS_META, s.destinos, s.linha, s.piorCasoSms);
     renderLinha(s);
@@ -982,9 +1027,10 @@ async function carregarPedidos() {
     if (f.canal) qs.set('canal', f.canal);
     if (f.problema) qs.set('problema', f.problema);
     if (f.busca) qs.set('q', f.busca);
-    // O recorte do topo vale para a tabela também — senão o painel inteiro
-    // falaria de um produto e a lista, de todos.
+    // Os recortes do topo valem para a tabela também — senão o painel inteiro
+    // falaria de um produto (ou plataforma) e a lista, de todos.
     if (estado.produto) qs.set('produto', estado.produto);
+    if (estado.plataforma) qs.set('plataforma', estado.plataforma);
     // O filtro por canal depende de qual linha tem mensagem cadastrada: sem
     // isto a tabela contaria por uma linha e a tela mostraria outra.
     if (estado.linhaExibindo) qs.set('linha', estado.linhaExibindo);
@@ -1032,14 +1078,19 @@ $('btn-demo').addEventListener('click', (e) => {
   $('faixa-demo').hidden = !estado.demo;
   estado.pagina.offset = 0;
   // Os números da demonstração são gerados no navegador em bloco, sem recorte
-  // por produto. Deixar o seletor ativo ali faria a tabela filtrar e os KPIs
-  // não — dois recortes diferentes na mesma tela.
-  if (estado.demo) estado.produto = null;
+  // por produto nem plataforma. Deixar os seletores ativos ali faria a tabela
+  // filtrar e os KPIs não — dois recortes diferentes na mesma tela.
+  if (estado.demo) { estado.produto = null; estado.plataforma = null; }
   const sel = $('sel-produto');
   sel.disabled = estado.demo;
   sel.title = estado.demo
     ? 'Indisponível na demonstração — os números são gerados no navegador'
     : 'Recorta o painel inteiro por produto — as ofertas do mesmo produto contam juntas';
+  const selPlat = $('sel-plataforma');
+  selPlat.disabled = estado.demo;
+  selPlat.title = estado.demo
+    ? 'Indisponível na demonstração — os números são gerados no navegador'
+    : 'Recorta o painel inteiro por plataforma de venda (DigiStore24, JVZoo, BuyGoods…)';
   carregarSnapshot();
   carregarPedidos();
 });
@@ -1053,6 +1104,15 @@ $('btn-demo').addEventListener('click', (e) => {
 $('sel-produto').addEventListener('change', (e) => {
   estado.produto = e.target.value || null;
   e.target.dataset.ativo = estado.produto ? 'sim' : 'nao';
+  estado.pagina.offset = 0;
+  carregarSnapshot({ silencioso: true });
+  carregarPedidos();
+});
+
+/** Troca a plataforma do painel INTEIRO — mesma mecânica do produto. */
+$('sel-plataforma').addEventListener('change', (e) => {
+  estado.plataforma = e.target.value || null;
+  e.target.dataset.ativo = estado.plataforma ? 'sim' : 'nao';
   estado.pagina.offset = 0;
   carregarSnapshot({ silencioso: true });
   carregarPedidos();

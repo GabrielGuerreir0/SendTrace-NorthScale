@@ -9,11 +9,11 @@ import { query } from '../../server/db.js';
 import { DisparoPosVenda, DisparoEntrada, paginado, paginacaoParams } from '../esquemas.js';
 import { registrarCrud, fatiar, montarBusca, montarOrdem, ErroHttp } from '../comum.js';
 
-const COLUNAS = `id, transacao_id, nome, email, telefone, produto, etapa_atual,
-  proximo_disparo, status, tentativas, ultimo_erro, claimed_at, criado_em,
-  chat_resumo, chat_resumo_em`;
+const COLUNAS = `id, transacao_id, nome, email, telefone, produto, plataforma,
+  etapa_atual, proximo_disparo, status, tentativas, ultimo_erro, claimed_at,
+  criado_em, chat_resumo, chat_resumo_em`;
 
-const BUSCA_EM = ['transacao_id', 'nome', 'email', 'telefone', 'produto'];
+const BUSCA_EM = ['transacao_id', 'nome', 'email', 'telefone', 'produto', 'plataforma'];
 const ORDENAVEIS = ['id', 'criado_em', 'proximo_disparo', 'etapa_atual', 'tentativas', 'status'];
 
 export default async function rotasFila(app) {
@@ -163,6 +163,7 @@ export default async function rotasFila(app) {
       proximo_disparo__gte: { coluna: 'proximo_disparo', op: '>=', esquema: { type: 'string', format: 'date-time' } },
       proximo_disparo__lte: { coluna: 'proximo_disparo', op: '<=', esquema: { type: 'string', format: 'date-time' } },
       produto: { coluna: 'produto', esquema: { type: 'string', description: 'Nome exato da oferta, como está na fila.' } },
+      plataforma: { coluna: 'plataforma', esquema: { type: 'string', description: "Plataforma de venda exata: 'DigiStore24', 'JVZoo', 'BuyGoods'…" } },
     },
   });
 }

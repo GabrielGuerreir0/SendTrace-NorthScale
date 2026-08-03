@@ -6,18 +6,20 @@
  * seis números. O banco responde isso numa passada, e o que sai daqui são
  * dezenas de bytes.
  *
- * Todas aceitam `?produto=` (pelo NOME, com as ofertas somadas) e, onde faz
- * sentido, `?etapa=`.
+ * Todas aceitam `?produto=` (pelo NOME, com as ofertas somadas) e
+ * `?plataforma=` (DigiStore24, JVZoo, BuyGoods…) — os dois se combinam — e,
+ * onde faz sentido, `?etapa=`.
  */
 import { query } from '../../server/db.js';
 import { LOCK_TIMEOUT_MIN } from '../../server/config.js';
-import { ESTADO, NOME_PRODUTO, DO_PRODUTO, CANAL_DO_ERRO } from '../sql.js';
+import { ESTADO, NOME_PRODUTO, DO_PRODUTO, DA_PLATAFORMA, CANAL_DO_ERRO } from '../sql.js';
 
-/** $1 é sempre o lock; $2, sempre o produto. Manter a ordem evita confusão. */
-const base = (produto) => [LOCK_TIMEOUT_MIN, produto ?? null];
+/** $1 é sempre o lock; $2, o produto; $3, a plataforma. A ordem evita confusão. */
+const base = (produto, plataforma) => [LOCK_TIMEOUT_MIN, produto ?? null, plataforma ?? null];
 
 const filtroProduto = {
   produto: { type: 'string', description: 'Nome do produto (as ofertas contam juntas). Vazio = todos.' },
+  plataforma: { type: 'string', description: "Plataforma de venda exata: 'DigiStore24', 'JVZoo', 'BuyGoods'… Vazio = todas." },
 };
 
 export default async function rotasMetricas(app) {
@@ -54,7 +56,7 @@ export default async function rotasMetricas(app) {
     },
     onRequest: [app.exigirSessao],
   }, async (req) => {
-    const valores = base(req.query.produto);
+    const valores = base(req.query.produto, req.query.plataforma);
     let etapaSql = '';
     if (req.query.etapa !== undefined) {
       valores.push(Number(req.query.etapa));
@@ -77,7 +79,7 @@ export default async function rotasMetricas(app) {
            WHERE status = 'ativo' AND proximo_disparo > now()
              AND proximo_disparo <= now() + interval '1 hour')::int AS prestes
        FROM disparos_pos_venda
-       WHERE ${DO_PRODUTO(2)}${etapaSql}`,
+       WHERE ${DO_PRODUTO(2)} AND ${DA_PLATAFORMA(3)}${etapaSql}`,
       valores,
     );
     const t = rows[0];
@@ -118,10 +120,10 @@ export default async function rotasMetricas(app) {
          min(proximo_disparo) FILTER (WHERE status = 'ativo')       AS proximo_em,
          coalesce(max(tentativas), 0)::int                          AS max_tentativas
        FROM disparos_pos_venda
-       WHERE ${DO_PRODUTO(2)}
+       WHERE ${DO_PRODUTO(2)} AND ${DA_PLATAFORMA(3)}
        GROUP BY etapa_atual
        ORDER BY etapa_atual`,
-      base(req.query.produto),
+      base(req.query.produto, req.query.plataforma),
     );
     return rows;
   });
@@ -151,6 +153,40 @@ export default async function rotasMetricas(app) {
     return rows;
   });
 
+  app.get('/api/metricas/plataformas/', {
+    schema: {
+      tags: ['Métricas'],
+      summary: 'Catálogo de plataformas de venda da fila',
+      description: 'As plataformas presentes na fila (DigiStore24, JVZoo, BuyGoods…), '
+        + 'com o total de pedidos de cada uma. É a lista de onde se escolhe um filtro, '
+        + 'então NÃO respeita os filtros de recorte. Pedidos sem plataforma não viram opção.',
+      security: [{ bearerAuth: [] }],
+      querystring: { type: 'object', properties: { limite: { type: 'integer', default: 50, maximum: 200 } } },
+      response: {
+        200: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              plataforma: { type: 'string' },
+              total: { type: 'integer' },
+            },
+          },
+        },
+      },
+    },
+    onRequest: [app.exigirSessao],
+  }, async (req) => {
+    const { rows } = await query(
+      `SELECT btrim(plataforma) AS plataforma, count(*)::int AS total
+       FROM disparos_pos_venda
+       WHERE plataforma IS NOT NULL AND btrim(plataforma) <> ''
+       GROUP BY 1 ORDER BY count(*) DESC, 1 LIMIT $1`,
+      [Math.min(200, Number(req.query.limite) || 50)],
+    );
+    return rows;
+  });
+
   app.get('/api/metricas/status/', {
     schema: {
       tags: ['Métricas'],
@@ -165,8 +201,9 @@ export default async function rotasMetricas(app) {
   }, async (req) => {
     const { rows } = await query(
       `SELECT status, count(*)::int AS total FROM disparos_pos_venda
-       WHERE ${DO_PRODUTO(1)} GROUP BY status ORDER BY total DESC, status`,
-      [req.query.produto ?? null],
+       WHERE ${DO_PRODUTO(1)} AND ${DA_PLATAFORMA(2)}
+       GROUP BY status ORDER BY total DESC, status`,
+      [req.query.produto ?? null, req.query.plataforma ?? null],
     );
     return rows;
   });
@@ -198,7 +235,8 @@ export default async function rotasMetricas(app) {
      * "could not determine data type of parameter $1" — um parâmetro sobrando
      * é erro, não algo ignorado.
      */
-    const valores = [req.query.produto ?? null, Number(req.query.horas) || 48];
+    const valores = [req.query.produto ?? null, Number(req.query.horas) || 48,
+      req.query.plataforma ?? null];
     let etapaSql = '';
     if (req.query.etapa !== undefined) {
       valores.push(Number(req.query.etapa));
@@ -210,7 +248,7 @@ export default async function rotasMetricas(app) {
        WHERE status = 'ativo'
          AND proximo_disparo >= date_trunc('hour', now())
          AND proximo_disparo <  now() + make_interval(hours => $2::int)
-         AND ${DO_PRODUTO(1)}${etapaSql}
+         AND ${DO_PRODUTO(1)} AND ${DA_PLATAFORMA(3)}${etapaSql}
        GROUP BY 1 ORDER BY 1`,
       valores,
     );
@@ -239,9 +277,9 @@ export default async function rotasMetricas(app) {
               count(*)::int AS total
        FROM disparos_pos_venda
        WHERE criado_em >= date_trunc('day', (now() AT TIME ZONE $1) - make_interval(days => $3::int)) AT TIME ZONE $1
-         AND ${DO_PRODUTO(2)}
+         AND ${DO_PRODUTO(2)} AND ${DA_PLATAFORMA(4)}
        GROUP BY 1 ORDER BY 1`,
-      [tz, req.query.produto ?? null, dias - 1],
+      [tz, req.query.produto ?? null, dias - 1, req.query.plataforma ?? null],
     );
     return rows;
   });
@@ -291,6 +329,7 @@ export default async function rotasMetricas(app) {
   }, async (req) => {
     const linha = String(req.query.linha ?? '1');
     const produto = req.query.produto ?? null;
+    const plataforma = req.query.plataforma ?? null;
     const TEM_CONTATO = `CASE c.canal
         WHEN 'email' THEN d.email    IS NOT NULL AND d.email    <> ''
         ELSE              d.telefone IS NOT NULL AND d.telefone <> ''
@@ -308,12 +347,12 @@ export default async function rotasMetricas(app) {
        FROM disparos_pos_venda d
        CROSS JOIN (VALUES ('email'), ('sms')) AS c(canal)
        WHERE d.status IN ('ativo', 'processando')
-         AND ${DO_PRODUTO(1, 'd.')}
+         AND ${DO_PRODUTO(1, 'd.')} AND ${DA_PLATAFORMA(3, 'd.')}
          AND EXISTS (SELECT 1 FROM mensagens_regua m
                       WHERE m.etapa = d.etapa_atual AND m.canal = c.canal
                         AND m.ativo AND m.linha = $2::text)
        GROUP BY c.canal ORDER BY total DESC, c.canal`,
-      [produto, linha],
+      [produto, linha, plataforma],
     );
 
     const orfaos = await query(
@@ -324,8 +363,9 @@ export default async function rotasMetricas(app) {
          count(*) FILTER (WHERE d.ultimo_erro IS NOT NULL
                             AND ${CANAL_DO_ERRO('d')} IS NULL)::int AS erro_sem_canal
        FROM disparos_pos_venda d
-       WHERE d.status IN ('ativo', 'processando') AND ${DO_PRODUTO(1, 'd.')}`,
-      [produto, linha],
+       WHERE d.status IN ('ativo', 'processando')
+         AND ${DO_PRODUTO(1, 'd.')} AND ${DA_PLATAFORMA(3, 'd.')}`,
+      [produto, linha, plataforma],
     );
 
     return { canais: canais.rows, ...orfaos.rows[0] };
@@ -374,14 +414,15 @@ export default async function rotasMetricas(app) {
               ${ESTADO} AS estado,
               ${CANAL_DO_ERRO('disparos_pos_venda')} AS canal_erro
        FROM disparos_pos_venda
-       WHERE ${DO_PRODUTO(2)}
+       WHERE ${DO_PRODUTO(2)} AND ${DA_PLATAFORMA(3)}
          AND (ultimo_erro IS NOT NULL
            OR (status = 'processando'
                AND (claimed_at IS NULL OR claimed_at < now() - make_interval(mins => $1::int)))
            OR (status = 'ativo' AND proximo_disparo <= now() - interval '1 hour'))
        ORDER BY tentativas DESC, proximo_disparo ASC
-       LIMIT $3`,
-      [...base(req.query.produto), Math.min(200, Number(req.query.limite) || 25)],
+       LIMIT $4`,
+      [...base(req.query.produto, req.query.plataforma),
+        Math.min(200, Number(req.query.limite) || 25)],
     );
     return rows;
   });
@@ -421,9 +462,9 @@ export default async function rotasMetricas(app) {
               max(e.offset_h)::float8 AS configurado_h
        FROM disparos_pos_venda d
        LEFT JOIN etapas_regua e ON e.etapa = d.etapa_atual
-       WHERE d.status = 'ativo' AND ${DO_PRODUTO(1, 'd.')}
+       WHERE d.status = 'ativo' AND ${DO_PRODUTO(1, 'd.')} AND ${DA_PLATAFORMA(2, 'd.')}
        GROUP BY 1 ORDER BY 1`,
-      [req.query.produto ?? null],
+      [req.query.produto ?? null, req.query.plataforma ?? null],
     );
     return rows;
   });

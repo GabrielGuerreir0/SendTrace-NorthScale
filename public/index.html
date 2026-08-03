@@ -39,6 +39,16 @@
       </select>
     </label>
 
+    <!-- Mesmo alcance do seletor de produto: a plataforma (DigiStore24, JVZoo,
+         BuyGoods…) recorta a página toda, e os dois recortes se combinam. -->
+    <label class="campo-sel campo-produto" id="campo-plataforma">
+      <span class="sr">Filtrar o painel por plataforma de venda</span>
+      <select id="sel-plataforma"
+              title="Recorta o painel inteiro por plataforma de venda (DigiStore24, JVZoo, BuyGoods…)">
+        <option value="">Todas as plataformas</option>
+      </select>
+    </label>
+
     <div class="pilula-live" id="pilula-live" data-estado="carregando">
       <span class="pulso" aria-hidden="true"></span>
       <span id="live-txt">conectando…</span>
