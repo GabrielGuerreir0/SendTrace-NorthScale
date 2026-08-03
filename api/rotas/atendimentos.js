@@ -26,8 +26,31 @@ import { paginacaoParams, paginado } from '../esquemas.js';
 import { fatiar, ErroHttp } from '../comum.js';
 
 const COLUNAS = `id, transacao_id, email, resumo, desfecho, risco_chargeback,
-  motivo, resolvido, reembolso_pedido, reembolso_evitado, csat, duracao_s,
-  iniciado_em, etapa_regua, criado_em`;
+  motivo, topico_id, resolvido, reembolso_pedido, reembolso_evitado, csat,
+  duracao_s, iniciado_em, etapa_regua, criado_em`;
+
+/**
+ * Resolve o TÓPICO de um atendimento: acha pelo slug ou cria na hora.
+ *
+ * Criar aqui (e não numa rota à parte) é o que garante a relação: nenhum
+ * atendimento fica com um motivo que não existe em chat_topicos. A descrição
+ * só é gravada quando o tópico ainda não tem uma — cada conversa nova não
+ * pode ficar reescrevendo o critério do tópico.
+ */
+async function resolverTopico(slug, nome, descricao) {
+  if (!slug) return null;
+  const nomeFinal = String(nome ?? '').trim()
+    || slug.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+  const { rows } = await query(
+    `INSERT INTO chat_topicos (slug, nome, descricao)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (slug) DO UPDATE
+       SET descricao = coalesce(chat_topicos.descricao, EXCLUDED.descricao)
+     RETURNING id`,
+    [slug, nomeFinal.slice(0, 120), String(descricao ?? '').trim().slice(0, 500) || null],
+  );
+  return rows[0]?.id ?? null;
+}
 
 /** O pedido dono de uma transação — nome, e-mail, produto e etapa vêm dele. */
 async function pedidoDaTransacao(transacaoId) {
@@ -122,6 +145,7 @@ export default async function rotasAtendimentos(app) {
             desfecho: { type: ['string', 'null'] },
             risco_chargeback: { type: 'boolean' },
             motivo: { type: ['string', 'null'] },
+            topico_id: { type: ['integer', 'null'] },
             resolvido: { type: ['boolean', 'null'] },
             reembolso_pedido: { type: 'boolean' },
             reembolso_evitado: { type: ['boolean', 'null'] },
@@ -166,16 +190,26 @@ export default async function rotasAtendimentos(app) {
     const iniciadoEm = req.body.iniciado_em && !Number.isNaN(Date.parse(req.body.iniciado_em))
       ? new Date(req.body.iniciado_em)
       : null;
+
+    // O motivo é o SLUG do tópico. O tópico correspondente é achado — ou
+    // criado agora, com o nome e a descrição que o bot mandou — e o
+    // atendimento nasce relacionado a ele.
+    const motivoSlug = String(req.body.motivo ?? '').trim().toLowerCase() || null;
+    const topicoId = await resolverTopico(
+      motivoSlug, req.body.topico_nome, req.body.topico_descricao,
+    );
+
     const { rows } = await query(
       `INSERT INTO chat_atendimentos
          (transacao_id, email, resumo, desfecho, risco_chargeback,
-          motivo, resolvido, reembolso_pedido, reembolso_evitado, csat,
-          duracao_s, iniciado_em, etapa_regua)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          motivo, topico_id, resolvido, reembolso_pedido, reembolso_evitado,
+          csat, duracao_s, iniciado_em, etapa_regua)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING ${COLUNAS}`,
       [
         transacao, email, resumo, req.body.desfecho ?? null, req.body.risco_chargeback === true,
-        String(req.body.motivo ?? '').trim().toLowerCase() || null,
+        motivoSlug,
+        topicoId,
         typeof req.body.resolvido === 'boolean' ? req.body.resolvido : null,
         reembolsoPedido,
         reembolsoPedido ? req.body.reembolso_evitado === true : null,
@@ -280,6 +314,53 @@ export default async function rotasAtendimentos(app) {
       throw new ErroHttp(404, 'Nenhum atendimento nas últimas 24h para receber a nota.');
     }
     return rows[0];
+  });
+
+  /*
+   * Os TÓPICOS de contato, com descrição e volume — é o que a IA lê antes de
+   * classificar uma conversa: a descrição é o critério de encaixe. Assunto
+   * que se enquadra num tópico existente reutiliza o slug dele; assunto
+   * realmente novo vira tópico novo no POST /api/atendimentos/.
+   */
+  app.get('/api/topicos/', {
+    schema: {
+      tags: ['Suporte'],
+      summary: 'Os tópicos de contato, com descrição e volume de conversas',
+      description: 'Do mais comum ao mais raro. A descrição é o critério de '
+        + 'encaixe que a IA usa para decidir se uma conversa nova pertence ao '
+        + 'tópico — sem forçar: assunto genuinamente diferente vira tópico novo.',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: { limite: { type: 'integer', default: 60, maximum: 200 } },
+      },
+      response: {
+        200: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'integer' },
+              slug: { type: 'string' },
+              nome: { type: 'string' },
+              descricao: { type: ['string', 'null'] },
+              total: { type: 'integer' },
+            },
+          },
+        },
+      },
+    },
+    onRequest: [app.exigirSessao],
+  }, async (req) => {
+    const { rows } = await query(
+      `SELECT t.id, t.slug, t.nome, t.descricao,
+              count(a.id)::int AS total
+       FROM chat_topicos t
+       LEFT JOIN chat_atendimentos a ON a.topico_id = t.id
+       GROUP BY t.id ORDER BY total DESC, t.slug LIMIT $1`,
+      [Math.min(200, Number(req.query.limite) || 60)],
+    );
+    return rows;
   });
 
   /*

@@ -515,18 +515,22 @@ export default async function rotasMetricas(app) {
       [produto, plataforma],
     );
 
-    // Ranking de motivos. Motivo nulo (conversa antiga) fica de fora do
-    // ranking mas é contado à parte — somem de qualquer recorte se ninguém
-    // disser.
+    // Ranking por TÓPICO: nome e descrição vêm de chat_topicos; o slug
+    // (motivo) segue como chave. Atendimento com motivo mas sem tópico
+    // (registro de antes da tabela) ainda aparece, pelo slug. Conversa sem
+    // motivo nenhum fica de fora do ranking mas é contada à parte.
     const motivos = await query(
-      `SELECT motivo,
+      `SELECT coalesce(t.slug, a.motivo)             AS motivo,
+              coalesce(t.nome, a.motivo)             AS nome,
+              max(t.descricao)                       AS descricao,
               count(*)::int                          AS total,
               count(*) FILTER (WHERE resolvido)::int AS resolvidos
        FROM chat_atendimentos a
+       LEFT JOIN chat_topicos t ON t.id = a.topico_id
        WHERE coalesce(a.iniciado_em, a.criado_em) >= now() - make_interval(days => $1::int)
-         AND motivo IS NOT NULL
+         AND (a.motivo IS NOT NULL OR a.topico_id IS NOT NULL)
          AND ${recorte(2, 3)}
-       GROUP BY motivo ORDER BY total DESC, motivo LIMIT 15`,
+       GROUP BY 1, 2 ORDER BY total DESC, 1 LIMIT 15`,
       [dias, produto, plataforma],
     );
     const semMotivo = await query(

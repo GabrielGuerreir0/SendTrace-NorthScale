@@ -210,6 +210,9 @@ function renderMotivos(s) {
 
   corpo.replaceChildren(...lista.map((m) => {
     const tr = document.createElement('tr');
+    // A descrição do tópico — o critério de encaixe que a IA usa — fica no
+    // hover da linha: quem quiser saber "o que cai aqui" lê sem poluir a tabela.
+    if (m.descricao) tr.title = m.descricao;
 
     const tdMotivo = document.createElement('td');
     tdMotivo.className = 'sup-tabela-motivo';

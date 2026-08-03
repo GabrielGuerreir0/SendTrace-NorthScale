@@ -984,7 +984,12 @@ export async function suporteResumo(dias = 30, produto = null, plataforma = null
   const nomes = new Map(etapas.itens.map((e) => [Number(e.etapa), e.nome]));
   return {
     ...dados,
-    motivos: (dados.motivos ?? []).map((m) => ({ ...m, label: rotuloMotivo(m.motivo) })),
+    // O rótulo preferido é o NOME do tópico (vem da tabela); o fallback cobre
+    // registros de antes de chat_topicos existir.
+    motivos: (dados.motivos ?? []).map((m) => ({
+      ...m,
+      label: (m.nome && m.nome !== m.motivo) ? m.nome : rotuloMotivo(m.motivo),
+    })),
     regua: (dados.regua ?? []).map((r) => ({ ...r, nome: nomes.get(Number(r.etapa)) ?? `Etapa ${r.etapa}` })),
     insights: gerarInsights(dados.tendencias ?? {}),
   };
