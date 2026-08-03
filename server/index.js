@@ -297,7 +297,9 @@ async function snapshot(filtros = {}) {
     alertas(produto, plataforma), cadenciaObservada(produto, plataforma),
     porCanal(linha, produto, plataforma), semMensagem(linha, produto, plataforma), resumoLinhas(),
     piorCasoSms(produto, plataforma), errosSemCanal(produto, plataforma),
-    produtosDaFila(), plataformasDaFila(), fonteDados(),
+    // O catálogo de produtos obedece à plataforma: com uma escolhida, o
+    // seletor só oferece o que ela vende. O de plataformas continua completo.
+    produtosDaFila(plataforma), plataformasDaFila(), fonteDados(),
   ]);
 
   const reguaOk = regua !== null;

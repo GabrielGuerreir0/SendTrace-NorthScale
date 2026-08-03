@@ -545,8 +545,10 @@ alertas e a tabela. É diferente dos filtros de gráfico (que só recortam a ond
 as entradas) e dos filtros da tabela (que só recortam a lista).
 
 A lista sai da própria `disparos_pos_venda` — não há cadastro de produtos em
-lugar nenhum — e é sempre completa, mesmo com um recorte ativo: filtrá-la
-deixaria só o produto já escolhido e não haveria como trocar.
+lugar nenhum — e nunca obedece ao próprio recorte: filtrá-la por produto
+deixaria só o já escolhido e não haveria como trocar. Ela obedece, porém, ao
+recorte por **plataforma** (abaixo): com uma plataforma escolhida, o seletor só
+oferece os produtos que ela vende.
 
 O agrupamento é pelo **nome do produto**, não pelo texto cru da oferta. A fila
 guarda `UP2 - NightCalm (6 Bottles)`, `M3 - NeuroMind Pro (6 Bottles)`,
@@ -588,6 +590,14 @@ seletor é montado do que existe na fila, então o que se escolhe é literalment
 o que está lá. Pedidos sem plataforma (anteriores à coluna, ou que o worker não
 gravou) não viram opção — não existe recorte "sem plataforma" — e uma
 plataforma nova entra sozinha na lista, sem deploy e sem cadastro.
+
+Escolher uma plataforma também **estreita o seletor de produtos**: ele passa a
+listar só os produtos daquela plataforma, com as contagens já recortadas —
+oferecer um produto que a plataforma não vende seria um convite a um painel de
+zeros. O produto que já estava escolhido não é descartado: se a plataforma não
+o vende, ele continua no seletor marcado com `· 0`, deixando visível que o
+recorte combinado está vazio. O seletor de plataformas, por sua vez, continua
+sempre completo.
 
 Na API REST, todas as rotas de métricas e o CRUD da fila aceitam
 `?plataforma=`, e `/api/metricas/plataformas/` devolve o catálogo com o total

@@ -816,11 +816,18 @@ function ordemData(a, b) {
  *
  * Deliberadamente NÃO respeita o filtro de produto: é a lista de onde se
  * escolhe, e filtrá-la deixaria só a opção já escolhida, sem como trocar.
+ *
+ * O recorte por PLATAFORMA, porém, vale aqui: com uma plataforma escolhida, o
+ * seletor só oferece os produtos que existem nela, com as contagens daquele
+ * recorte — oferecer um produto que a plataforma não vende seria um convite a
+ * um painel inteiro de zeros. Para ver todos os produtos, limpa-se a
+ * plataforma.
  */
-export async function produtosDaFila() {
+export async function produtosDaFila(plataforma = null) {
   const { itens } = await fila();
   const contas = new Map();
   for (const d of itens) {
+    if (!daPlataforma(d, plataforma)) continue;
     const nome = nomeProduto(d.produto);
     if (!nome) continue;
     contas.set(nome, (contas.get(nome) ?? 0) + 1);

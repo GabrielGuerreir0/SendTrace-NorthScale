@@ -136,9 +136,16 @@ export default async function rotasMetricas(app) {
       summary: 'Catálogo de produtos da fila',
       description: 'Agrupado pelo NOME: as quatro ofertas de NeuroMind Pro viram uma '
         + 'linha só, com os pedidos somados. É a lista de onde se escolhe um filtro, '
-        + 'então NÃO respeita o filtro de produto.',
+        + 'então NÃO respeita o filtro de produto — mas aceita `?plataforma=`, para '
+        + 'oferecer só os produtos que aquela plataforma vende.',
       security: [{ bearerAuth: [] }],
-      querystring: { type: 'object', properties: { limite: { type: 'integer', default: 300, maximum: 1000 } } },
+      querystring: {
+        type: 'object',
+        properties: {
+          limite: { type: 'integer', default: 300, maximum: 1000 },
+          plataforma: { type: 'string', description: "Só os produtos desta plataforma: 'DigiStore24', 'JVZoo', 'BuyGoods'… Vazio = todas." },
+        },
+      },
       response: { 200: { type: 'array', items: { $ref: 'Produto#' } } },
     },
     onRequest: [app.exigirSessao],
@@ -146,9 +153,10 @@ export default async function rotasMetricas(app) {
     const { rows } = await query(
       `SELECT nome AS produto, count(*)::int AS total
        FROM (SELECT ${NOME_PRODUTO()} AS nome FROM disparos_pos_venda
-             WHERE produto IS NOT NULL AND btrim(produto) <> '') t
+             WHERE produto IS NOT NULL AND btrim(produto) <> ''
+               AND ${DA_PLATAFORMA(2)}) t
        GROUP BY nome ORDER BY count(*) DESC, nome LIMIT $1`,
-      [Math.min(1000, Number(req.query.limite) || 300)],
+      [Math.min(1000, Number(req.query.limite) || 300), req.query.plataforma ?? null],
     );
     return rows;
   });

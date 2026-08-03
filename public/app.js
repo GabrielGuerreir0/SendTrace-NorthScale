@@ -717,13 +717,14 @@ function renderStatusBruto(s) {
 /**
  * O seletor de produto do topo.
  *
- * A lista vem do snapshot e é SEMPRE completa (o servidor não a filtra por
- * produto): se ela obedecesse ao recorte, escolher um produto deixaria só ele
- * na lista e não haveria como voltar nem trocar.
+ * A lista vem do snapshot e NÃO obedece ao próprio recorte (escolher um
+ * produto deixaria só ele na lista, sem como voltar nem trocar) — mas obedece
+ * ao de PLATAFORMA: com uma escolhida, o servidor manda só os produtos que
+ * ela vende, com as contagens daquele recorte.
  *
- * O produto escolhido continua na lista mesmo quando some da fila — um recorte
- * ativo que desaparece do controle é um filtro invisível pesando sobre todos os
- * números da tela.
+ * O produto escolhido continua na lista mesmo quando some dela (saiu da fila,
+ * ou a plataforma escolhida não o vende) — um recorte ativo que desaparece do
+ * controle é um filtro invisível pesando sobre todos os números da tela.
  */
 let assinaturaProdutos = null;
 
