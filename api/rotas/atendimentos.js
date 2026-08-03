@@ -24,7 +24,13 @@
 import { query } from '../../server/db.js';
 import { paginacaoParams, paginado } from '../esquemas.js';
 import { fatiar, ErroHttp } from '../comum.js';
-import { DO_PRODUTO, DA_PLATAFORMA } from '../sql.js';
+import { DO_PRODUTO, DA_PLATAFORMA, STATUS_CANCELADO } from '../sql.js';
+
+/** O pedido desta conversa está CANCELADO na fila? — a verdade vem de lá. */
+const PEDIDO_CANCELADO = `EXISTS (
+  SELECT 1 FROM disparos_pos_venda d
+  WHERE d.transacao_id = a.transacao_id
+    AND lower(btrim(d.status)) IN ${STATUS_CANCELADO})`;
 
 const COLUNAS = `id, transacao_id, email, resumo, desfecho, risco_chargeback,
   motivo, topico_id, resolvido, reembolso_pedido, reembolso_evitado, csat,
@@ -368,11 +374,10 @@ export default async function rotasAtendimentos(app) {
     if (req.query.resolvido === 'sim') partes.push('a.resolvido = true');
     if (req.query.resolvido === 'nao') partes.push('a.resolvido = false');
     if (req.query.reembolso === 'pedido') partes.push('a.reembolso_pedido');
-    // "Consumado" = pediu para sair e a saída NÃO foi revertida — é o
-    // numerador da taxa de reembolso da tela.
-    if (req.query.reembolso === 'consumado') {
-      partes.push('a.reembolso_pedido AND NOT coalesce(a.reembolso_evitado, false)');
-    }
+    // "Consumado" = o PEDIDO da conversa está cancelado NA FILA — a mesma
+    // verificação da taxa de reembolso da tela, pelo status real, não pelo
+    // que a conversa registrou.
+    if (req.query.reembolso === 'consumado') partes.push(PEDIDO_CANCELADO);
     if (req.query.reembolso === 'evitado') partes.push('a.reembolso_evitado = true');
     if (req.query.com_csat === true) partes.push('a.csat IS NOT NULL');
 
@@ -385,7 +390,8 @@ export default async function rotasAtendimentos(app) {
       `SELECT a.id, a.transacao_id, a.email, a.resumo, a.desfecho, a.motivo,
               t.nome AS topico_nome, a.resolvido, a.reembolso_pedido,
               a.reembolso_evitado, a.csat, a.duracao_s, a.etapa_regua,
-              coalesce(a.iniciado_em, a.criado_em) AS inicio
+              coalesce(a.iniciado_em, a.criado_em) AS inicio,
+              ${PEDIDO_CANCELADO} AS pedido_cancelado
        FROM chat_atendimentos a
        LEFT JOIN chat_topicos t ON t.id = a.topico_id
        ${onde}

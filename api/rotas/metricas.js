@@ -12,7 +12,9 @@
  */
 import { query } from '../../server/db.js';
 import { LOCK_TIMEOUT_MIN } from '../../server/config.js';
-import { ESTADO, NOME_PRODUTO, DO_PRODUTO, DA_PLATAFORMA, CANAL_DO_ERRO } from '../sql.js';
+import {
+  ESTADO, NOME_PRODUTO, DO_PRODUTO, DA_PLATAFORMA, CANAL_DO_ERRO, STATUS_CANCELADO,
+} from '../sql.js';
 
 /** $1 é sempre o lock; $2, o produto; $3, a plataforma. A ordem evita confusão. */
 const base = (produto, plataforma) => [LOCK_TIMEOUT_MIN, produto ?? null, plataforma ?? null];
@@ -497,6 +499,10 @@ export default async function rotasMetricas(app) {
          count(*) FILTER (WHERE reembolso_evitado)::int               AS reembolso_evitados,
          count(*) FILTER (WHERE reembolso_pedido
                             AND NOT coalesce(reembolso_evitado, false))::int AS reembolsos_consumados,
+         count(*) FILTER (WHERE EXISTS (
+           SELECT 1 FROM disparos_pos_venda d
+           WHERE d.transacao_id = a.transacao_id
+             AND lower(btrim(d.status)) IN ${STATUS_CANCELADO}))::int AS pedidos_cancelados,
          round(avg(duracao_s) FILTER (WHERE duracao_s IS NOT NULL))::int AS tempo_medio_s,
          round(avg(csat) FILTER (WHERE csat IS NOT NULL)::numeric, 2)::float8 AS csat_media,
          count(csat)::int                                             AS csat_respostas,
@@ -633,10 +639,12 @@ export default async function rotasMetricas(app) {
         ...k,
         resolution_rate: taxa(k.resolvidas, k.classificadas),
         refund_save_rate: taxa(k.reembolso_evitados, k.reembolso_pedidos),
-        // A taxa da tela: de TODAS as conversas com a IA, quantas terminaram
-        // em reembolso/cancelamento consumado. O complemento é quem conversou
-        // e NÃO cancelou.
-        taxa_reembolso: taxa(k.reembolsos_consumados, k.conversas),
+        // A taxa da tela: de TODAS as conversas com a IA, quantas têm o
+        // PEDIDO de fato cancelado NA FILA (verificado pelo status em
+        // disparos_pos_venda, não pelo que a conversa registrou). O
+        // complemento é quem conversou e não cancelou. Conversa sem pedido
+        // casado conta como não cancelada — não há o que verificar.
+        taxa_reembolso: taxa(k.pedidos_cancelados, k.conversas),
         pedidos_fila: fila.rows[0].pedidos,
         taxa_utilizacao: taxa(k.clientes_chat, fila.rows[0].pedidos),
       },

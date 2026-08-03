@@ -119,7 +119,7 @@ function tile({ icone, tom, rotulo, valor, nota, filtro }) {
 
 function renderKpis(s) {
   const k = s.kpis ?? {};
-  const naoCancelaram = Math.max(0, (k.conversas ?? 0) - (k.reembolsos_consumados ?? 0));
+  const naoCancelaram = Math.max(0, (k.conversas ?? 0) - (k.pedidos_cancelados ?? 0));
   $('sup-kpis').replaceChildren(
     tile({
       icone: '●', tom: 'neutro', rotulo: 'Conversas',
@@ -135,16 +135,16 @@ function renderKpis(s) {
         : 'sem conversas classificadas ainda',
       filtro: { resolvido: 'sim', rotulo: 'resolvidas pela IA' },
     }),
-    // A taxa de reembolso da tela: de TODAS as conversas com a IA, quantas
-    // terminaram em reembolso/cancelamento. O complemento é quem conversou
-    // e NÃO cancelou.
+    // A taxa de reembolso: de TODAS as conversas com a IA, quantas têm o
+    // PEDIDO cancelado de fato na fila — verificado pelo status, não pelo
+    // que a conversa registrou. O complemento é quem conversou e não cancelou.
     tile({
       icone: '↩', tom: 'ruim', rotulo: 'Taxa de reembolso',
       valor: pct(k.taxa_reembolso),
       nota: k.conversas
-        ? `${n(k.reembolsos_consumados ?? 0)} de ${n(k.conversas)} conversas cancelaram · ${n(naoCancelaram)} não cancelaram`
+        ? `${n(k.pedidos_cancelados ?? 0)} de ${n(k.conversas)} conversas com pedido cancelado na fila · ${n(naoCancelaram)} não cancelaram`
         : 'nenhuma conversa na janela',
-      filtro: { reembolso: 'consumado', rotulo: 'terminaram em reembolso/cancelamento' },
+      filtro: { reembolso: 'consumado', rotulo: 'com o pedido cancelado na fila' },
     }),
     tile({
       icone: '✕', tom: 'ruim', rotulo: 'Não resolvidas',
@@ -417,8 +417,10 @@ function renderConversas({ total, conversas }) {
     tr.append(celula(c.topico_label ?? '—'));
     tr.append(celula(c.resolvido === true ? '✓ resolvida'
       : c.resolvido === false ? '✕ escalada' : '—'));
-    tr.append(celula(!c.reembolso_pedido ? '—'
-      : c.reembolso_evitado ? 'revertido' : 'consumado'));
+    // A coluna diz o que a FILA diz: pedido cancelado de verdade, ou pediu e
+    // o pedido segue vivo (retido), ou nunca pediu.
+    tr.append(celula(c.pedido_cancelado ? 'pedido cancelado'
+      : c.reembolso_pedido ? 'pediu · retido' : '—'));
     tr.append(celula(c.csat ? `★ ${c.csat}` : '—', 'num'));
     tr.append(celula(duracao(c.duracao_s), 'num'));
     return tr;
