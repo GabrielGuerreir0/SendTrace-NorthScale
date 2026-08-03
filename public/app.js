@@ -1249,9 +1249,10 @@ function renderUsuarios({ usuarios, eu, emailConfigurado, conviteDias, somenteLe
   if (conviteDias) estado.conviteDias = conviteDias;
 
   /*
-   * A API do SendTrace só LÊ usuários — não existe rota para criar, promover,
-   * desativar nem emitir senha provisória. Some o formulário e somem os botões:
-   * um controle que sempre devolve erro é pior que controle nenhum.
+   * `somenteLeitura` é a saída de emergência: se o servidor voltar a dizer que
+   * a API não aceita escrita, o formulário e os botões somem — um controle que
+   * sempre devolve erro é pior que controle nenhum. Hoje ele não é enviado:
+   * criar, promover, desativar e emitir senha provisória passam pela API.
    */
   const soLeitura = somenteLeitura === true;
   $('form-novo').hidden = soLeitura;

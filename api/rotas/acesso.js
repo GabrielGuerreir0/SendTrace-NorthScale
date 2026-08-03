@@ -6,7 +6,10 @@
  * regra de conta desativada. Duas implementações de "esta senha confere?" é
  * pedir para uma delas envelhecer sozinha.
  */
-import { autenticar } from '../../server/auth.js';
+import {
+  autenticar, conferirSenha, trocarSenha, criarUsuario, definirAdmin, definirAtivo,
+  emitirSenhaProvisoria, contarAdmins, validarSenha, normalizarEmail, emailValido,
+} from '../../server/auth.js';
 import { query } from '../../server/db.js';
 import { ErroHttp, fatiar, montarBusca, montarOrdem } from '../comum.js';
 
@@ -70,13 +73,63 @@ export default async function rotasAcesso(app) {
     return app.emitirTokens(u);
   });
 
+  /*
+   * Trocar a PRÓPRIA senha. Exige a senha atual mesmo com token válido: sem
+   * isso, um computador deixado aberto vira sequestro de conta permanente.
+   * É também o que transforma a senha provisória de um convite em definitiva.
+   */
+  app.post('/api/auth/senha/', {
+    schema: {
+      tags: ['Acesso'],
+      summary: 'Troca a senha da própria conta',
+      description: 'Confere a senha atual antes de aceitar a nova. Se a atual era '
+        + 'provisória, ela vira definitiva e o prazo do convite deixa de existir.',
+      security: [{ bearerAuth: [] }],
+      body: {
+        type: 'object',
+        properties: {
+          atual: { type: 'string' },
+          nova: { type: 'string' },
+        },
+        required: ['atual', 'nova'],
+      },
+      response: {
+        200: { type: 'object', properties: { ok: { type: 'boolean' } } },
+        400: { $ref: 'Erro#' },
+        403: { $ref: 'Erro#' },
+      },
+    },
+    onRequest: [app.exigirSessao],
+  }, async (req) => {
+    if (req.usuario.servico || req.usuario.user_id == null) {
+      throw new ErroHttp(403, 'O token de serviço não tem senha para trocar.');
+    }
+    const { rows } = await query(
+      'SELECT email, senha_hash, senha_salt, senha_params FROM painel_usuarios WHERE id = $1',
+      [req.usuario.user_id],
+    );
+    if (!rows[0] || !(await conferirSenha(req.body.atual, rows[0]))) {
+      // Atraso fixo, como no login: errar a senha atual não pode ser mais
+      // rápido que acertá-la.
+      await new Promise((ok) => setTimeout(ok, 260));
+      throw new ErroHttp(400, 'Senha atual incorreta.');
+    }
+    const problema = validarSenha(req.body.nova, { email: rows[0].email });
+    if (problema) throw new ErroHttp(400, problema);
+    if (req.body.nova === req.body.atual) {
+      throw new ErroHttp(400, 'A nova senha precisa ser diferente da atual.');
+    }
+    await trocarSenha(req.usuario.user_id, req.body.nova);
+    return { ok: true };
+  });
+
   /* ────────────────────────────  usuários  ──────────────────────────── */
 
   app.get('/api/usuarios/', {
     schema: {
       tags: ['Usuários'],
       summary: 'Lista os usuários do painel',
-      description: 'Somente leitura, e só para administradores. Senhas nunca são expostas.',
+      description: 'Só para administradores. Senhas nunca são expostas.',
       security: [{ bearerAuth: [] }],
       querystring: {
         type: 'object',
@@ -166,5 +219,133 @@ export default async function rotasAcesso(app) {
     );
     if (!rows[0]) throw new ErroHttp(404, 'Usuário não encontrado.');
     return rows[0];
+  });
+
+  /*
+   * Criar usuário — só administrador.
+   *
+   * A senha chega pronta (quem cria sorteia uma) e nasce PROVISÓRIA: com
+   * prazo (CONVITE_DIAS) e exigindo troca no primeiro acesso. Quem cria não
+   * deve seguir sabendo a senha de ninguém.
+   */
+  app.post('/api/usuarios/', {
+    schema: {
+      tags: ['Usuários'],
+      summary: 'Cria um usuário com senha provisória',
+      description: 'Só administradores. A senha enviada vale por um prazo e a conta '
+        + 'exige a troca no primeiro acesso (`trocar_senha`). O envio do convite por '
+        + 'e-mail é papel do painel, não desta API.',
+      security: [{ bearerAuth: [] }],
+      body: {
+        type: 'object',
+        properties: {
+          email: { type: 'string' },
+          nome: { type: 'string', maxLength: 120 },
+          senha: { type: 'string' },
+          admin: { type: 'boolean', default: false },
+        },
+        required: ['email', 'senha'],
+      },
+      response: {
+        201: { $ref: 'PainelUsuario#' },
+        400: { $ref: 'Erro#' },
+        409: { $ref: 'Erro#' },
+      },
+    },
+    onRequest: [app.exigirAdmin],
+  }, async (req, resposta) => {
+    const email = normalizarEmail(req.body.email);
+    if (!emailValido(email)) throw new ErroHttp(400, 'E-mail inválido.');
+
+    const problema = validarSenha(req.body.senha, { email });
+    if (problema) throw new ErroHttp(400, problema);
+
+    try {
+      const novo = await criarUsuario({
+        email,
+        nome: String(req.body.nome ?? '').trim().slice(0, 120) || null,
+        senha: req.body.senha,
+        admin: !!req.body.admin,
+        criadoPor: req.usuario.user_id,
+      });
+      resposta.code(201);
+      return novo;
+    } catch (err) {
+      if (err.code === '23505') throw new ErroHttp(409, 'Já existe um usuário com esse e-mail.');
+      throw err;
+    }
+  });
+
+  /*
+   * Alterar usuário — só administrador. Três mudanças possíveis, combináveis:
+   * `admin`, `ativo` e `senha` (que emite uma provisória nova e derruba as
+   * sessões da conta). As travas impedem o tiro no pé: ninguém se rebaixa nem
+   * se desativa, e sempre sobra pelo menos um administrador ativo.
+   */
+  app.patch('/api/usuarios/:id/', {
+    schema: {
+      tags: ['Usuários'],
+      summary: 'Promove/rebaixa, ativa/desativa ou emite senha provisória',
+      description: 'Só administradores. `senha` vira provisória: com prazo, exigindo '
+        + 'troca no primeiro acesso e encerrando as sessões abertas da conta.',
+      security: [{ bearerAuth: [] }],
+      params: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] },
+      body: {
+        type: 'object',
+        properties: {
+          admin: { type: 'boolean' },
+          ativo: { type: 'boolean' },
+          senha: { type: 'string' },
+        },
+      },
+      response: {
+        200: { $ref: 'PainelUsuario#' },
+        400: { $ref: 'Erro#' },
+        404: { $ref: 'Erro#' },
+      },
+    },
+    onRequest: [app.exigirAdmin],
+  }, async (req) => {
+    const alvo = Number(req.params.id);
+    const corpo = req.body ?? {};
+
+    const { rows } = await query(
+      'SELECT email, admin, ativo FROM painel_usuarios WHERE id = $1', [alvo],
+    );
+    const atual = rows[0];
+    if (!atual) throw new ErroHttp(404, 'Usuário não encontrado.');
+
+    if (corpo.admin === false) {
+      // Rebaixar a si mesmo tiraria o acesso à própria tela em uso, sem volta
+      // se não houver outro admin — e o painel não pode ficar sem nenhum.
+      if (alvo === req.usuario.user_id) {
+        throw new ErroHttp(400, 'Você não pode remover o seu próprio acesso de administrador.');
+      }
+      if (atual.admin && atual.ativo && (await contarAdmins()) <= 1) {
+        throw new ErroHttp(400, 'Precisa sobrar pelo menos um administrador ativo.');
+      }
+    }
+    if ('admin' in corpo) await definirAdmin(alvo, corpo.admin);
+
+    if (corpo.ativo === false) {
+      if (alvo === req.usuario.user_id) {
+        throw new ErroHttp(400, 'Você não pode desativar a própria conta.');
+      }
+      if (atual.admin && atual.ativo && corpo.admin !== false && (await contarAdmins()) <= 1) {
+        throw new ErroHttp(400, 'Precisa sobrar pelo menos um administrador ativo.');
+      }
+    }
+    if ('ativo' in corpo) await definirAtivo(alvo, corpo.ativo);
+
+    if (corpo.senha !== undefined) {
+      const problema = validarSenha(corpo.senha, { email: atual.email });
+      if (problema) throw new ErroHttp(400, problema);
+      await emitirSenhaProvisoria(alvo, corpo.senha);
+    }
+
+    const { rows: fim } = await query(
+      `SELECT ${COLUNAS_USUARIO} FROM painel_usuarios WHERE id = $1`, [alvo],
+    );
+    return fim[0];
   });
 }

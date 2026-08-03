@@ -4,11 +4,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { LOCK_TIMEOUT_MIN, SESSAO_HORAS } from './config.js';
+import { LOCK_TIMEOUT_MIN, SESSAO_HORAS, CONVITE_DIAS } from './config.js';
 import { CANAIS, DESTINOS, STATUS_LABELS, ESTADOS, REGUA_FALLBACK } from './etapas.config.js';
-// A régua e a fila vêm da API (Django REST). O Postgres continua aqui só para
-// o login e a gestão de usuários do painel — a API expõe /api/usuarios/ apenas
-// para leitura, sem criar, promover nem emitir senha provisória.
+// A régua, a fila E os usuários vêm da API: o painel não toca o Postgres. A
+// gestão de contas (criar, promover, desativar, senha provisória) é proxy das
+// rotas /api/usuarios/ da API, com o token de quem está logado; só o CONVITE
+// por e-mail sai daqui, porque o SMTP é configuração do painel.
 import {
   etapasRollup, ondaPorEtapa, ondaHoraria, entradasPorDia,
   statusBruto, alertas, listarPedidos,
@@ -19,7 +20,9 @@ import {
   apiConfigurada, enderecoApi, saude as saudeApi, ErroApi,
   autenticarUsuario, dadosDoToken, comCredencial, obter as obterApi, listarTudo,
   criar as criarApi, substituir as substituirApi, apagar as apagarApi,
+  remendar as remendarApi,
 } from './api.js';
+import { enviarConvite, emailConfigurado } from './email.js';
 import {
   abrirSessao, lerSessao, fecharSessao, contarSessoesDe, limparVencidas,
 } from './sessoes.js';
@@ -521,54 +524,141 @@ async function rotasAuth(req, res, url, sessao) {
   }
 
   /*
-   * Trocar a própria senha: NÃO EXISTE MAIS por aqui.
-   *
-   * A senha agora mora na API, e o schema dela não expõe rota de troca — só
-   * `GET /api/usuarios/`. Um 501 explicando é melhor que um formulário que
-   * aceita o que a pessoa digita e não muda nada em lugar nenhum.
+   * Trocar a própria senha. Quem confere a atual e grava a nova é a API
+   * (`POST /api/auth/senha/`), com o token desta pessoa. É este caminho que
+   * transforma a senha provisória de um convite em definitiva.
    */
   if (p === '/api/auth/senha' && req.method === 'POST') {
-    return json(res, 501, {
-      erro: 'A senha é gerenciada pela API do SendTrace — o painel não tem como trocá-la. '
-        + 'Peça a troca a quem administra a API.',
-    });
+    if (!sessao) return json(res, 401, { erro: 'sem sessão' });
+    const corpo = await lerJson(req);
+    try {
+      await criarApi('/api/auth/senha/', {
+        atual: String(corpo.atual ?? ''),
+        nova: String(corpo.nova ?? ''),
+      });
+    } catch (err) {
+      // O 400 da API é veredito ("senha atual incorreta", "curta demais"),
+      // não sessão morta — sem este catch ele cairia no tratador global, que
+      // derrubaria a sessão ou responderia 502.
+      if (err instanceof ErroApi && (err.status === 400 || err.status === 403)) {
+        return json(res, 400, { erro: detalharErroApi(err, 'Não foi possível trocar a senha.') });
+      }
+      throw err;
+    }
+    // A troca zera a pendência; o objeto da sessão é o mesmo que as próximas
+    // requisições leem, então o painel abre sem exigir novo login.
+    sessao.usuario.trocar_senha = false;
+    return json(res, 200, { ok: true });
   }
 
   return null;   // não é rota de acesso
 }
 
 /**
- * Usuários — somente leitura.
+ * Usuários — gestão completa, por proxy.
  *
- * A API expõe `GET /api/usuarios/` e nada mais: não há como criar conta,
- * promover a administrador, desativar nem emitir senha provisória. O painel
- * mostra a lista e diz, na própria tela, onde essas ações passaram a morar.
- * Oferecer botões que devolveriam erro seria pior que não oferecê-los.
+ * Quem escreve de verdade é a API (`POST`/`PATCH /api/usuarios/`), com o token
+ * do administrador logado — as travas (último admin, auto-rebaixamento, regra
+ * de senha) moram lá. O painel só acrescenta o que é dele: a contagem de
+ * sessões e o CONVITE por e-mail, porque o SMTP é configuração daqui.
  */
 async function rotasUsuarios(req, res, url, sessao) {
   if (!url.pathname.startsWith('/api/usuarios')) return null;
   if (!sessao.usuario.admin) {
-    return json(res, 403, { erro: 'Só administradores veem a lista de usuários.' });
+    return json(res, 403, { erro: 'Só administradores gerenciam usuários.' });
   }
-  if (url.pathname !== '/api/usuarios') return json(res, 404, { erro: 'rota não encontrada' });
 
-  if (req.method !== 'GET') {
-    return json(res, 501, {
-      erro: 'A API do SendTrace só permite LER usuários. Criar, promover, desativar '
-        + 'ou emitir senha provisória tem que ser feito na API.',
+  const cargaUsuarios = async () => {
+    const { itens } = await listarTudo('/api/usuarios/');
+    return {
+      usuarios: itens.map((u) => ({
+        ...u,
+        // A contagem é das sessões DESTE painel, que é o que ele sabe de fato.
+        sessoes: contarSessoesDe(u.email),
+      })),
+      eu: sessao.usuario.id,
+      // A interface esconde a opção de enviar e-mail quando não há SMTP —
+      // oferecer um botão que nunca funciona é pior que não oferecer.
+      emailConfigurado,
+      conviteDias: CONVITE_DIAS,
+    };
+  };
+
+  if (url.pathname === '/api/usuarios' && req.method === 'GET') {
+    return json(res, 200, await cargaUsuarios());
+  }
+
+  if (url.pathname === '/api/usuarios' && req.method === 'POST') {
+    const corpo = await lerJson(req);
+    let novo;
+    try {
+      novo = await criarApi('/api/usuarios/', {
+        email: String(corpo.email ?? ''),
+        nome: String(corpo.nome ?? '').trim().slice(0, 120),
+        senha: String(corpo.senha ?? ''),
+        admin: !!corpo.admin,
+      });
+    } catch (err) {
+      // 400/409 da API é veredito de validação (e-mail inválido, senha fraca,
+      // duplicata) — vai para a tela como está, sem virar 502 nem derrubar
+      // a sessão no tratador global.
+      if (err instanceof ErroApi && (err.status === 400 || err.status === 409)) {
+        return json(res, err.status, {
+          erro: detalharErroApi(err, 'A API recusou a criação do usuário.'),
+        });
+      }
+      throw err;
+    }
+
+    // O e-mail é acessório: a conta já existe e a senha aparece na tela de
+    // quem criou. Uma falha de SMTP informa, mas não desfaz nada.
+    let envio = { enviado: false, motivo: 'não solicitado' };
+    if (corpo.enviarEmail !== false) {
+      envio = await enviarConvite({
+        para: novo.email, senha: corpo.senha, admin: !!corpo.admin,
+        quemConvidou: sessao.usuario.email, dias: CONVITE_DIAS, req,
+      });
+    }
+    return json(res, 201, { usuario: novo, email: envio, conviteDias: CONVITE_DIAS });
+  }
+
+  const m = /^\/api\/usuarios\/(\d+)$/.exec(url.pathname);
+  if (m && req.method === 'PATCH') {
+    const corpo = await lerJson(req);
+    // Só o que a API conhece segue adiante — `enviarEmail` é assunto do painel.
+    const mudanca = {};
+    for (const campo of ['admin', 'ativo', 'senha']) {
+      if (campo in corpo) mudanca[campo] = corpo[campo];
+    }
+
+    let alterado;
+    try {
+      alterado = await remendarApi(`/api/usuarios/${m[1]}/`, mudanca);
+    } catch (err) {
+      if (err instanceof ErroApi && (err.status === 400 || err.status === 404 || err.status === 409)) {
+        return json(res, err.status, {
+          erro: detalharErroApi(err, 'A API recusou a mudança.'),
+        });
+      }
+      throw err;
+    }
+
+    // Senha provisória nova: o convite sai daqui, como na criação.
+    let envio = null;
+    if (corpo.senha && corpo.enviarEmail !== false) {
+      envio = await enviarConvite({
+        para: alterado.email, senha: corpo.senha, admin: !!alterado.admin,
+        quemConvidou: sessao.usuario.email, dias: CONVITE_DIAS, req,
+      });
+    }
+
+    return json(res, 200, {
+      ...(await cargaUsuarios()),
+      ...(envio ? { email: envio } : {}),
     });
   }
 
-  const { itens } = await listarTudo('/api/usuarios/');
-  return json(res, 200, {
-    usuarios: itens.map((u) => ({
-      ...u,
-      // A contagem é das sessões DESTE painel, que é o que ele sabe de fato.
-      sessoes: contarSessoesDe(u.email),
-    })),
-    eu: sessao.usuario.id,
-    somenteLeitura: true,
-  });
+  return json(res, 404, { erro: 'rota não encontrada' });
 }
 
 /**
@@ -603,21 +693,24 @@ async function atender(req, res, url, sessao) {
     return ATENDIDO;
   }
 
-  // Já logado não tem o que fazer na tela de login.
+  // Já logado não tem o que fazer na tela de login — EXCETO quem ainda deve
+  // trocar a senha provisória: a tela de definir senha própria mora lá, e
+  // redirecionar viraria um pingue-pongue entre / e /login.
   if (url.pathname === '/login' || url.pathname === '/login.html') {
-    res.writeHead(302, { Location: '/' }).end();
+    if (!usuario.trocar_senha) {
+      res.writeHead(302, { Location: '/' }).end();
+      return ATENDIDO;
+    }
+    await servirEstatico(req, res, '/login.html');
     return ATENDIDO;
   }
 
-  /*
-   * A senha provisória NÃO fecha mais o painel.
-   *
-   * Antes, `trocar_senha` bloqueava tudo até a pessoa definir a própria senha.
-   * Com a senha morando na API, que não expõe rota de troca, esse bloqueio
-   * viraria porta trancada sem chave: a conta entraria e não conseguiria fazer
-   * nada, para sempre. O sinalizador continua vindo no perfil e a tela de
-   * usuários o mostra.
-   */
+  // Senha provisória: o painel fica fechado até ela ser trocada. Só as rotas
+  // de acesso respondem — é o que a tela de troca precisa.
+  if (usuario.trocar_senha && url.pathname.startsWith('/api/')
+      && !url.pathname.startsWith('/api/auth/')) {
+    return json(res, 403, { erro: 'troca de senha pendente', trocarSenha: true });
+  }
 
   const respostaUsuarios = await rotasUsuarios(req, res, url, sessao);
   if (respostaUsuarios !== null) return respostaUsuarios;

@@ -11,3 +11,8 @@ export const LOCK_TIMEOUT_MIN = Number(process.env.LOCK_TIMEOUT_MIN) || 10;
 
 /** Quanto tempo a sessão do painel dura sem novo login. */
 export const SESSAO_HORAS = Number(process.env.SESSAO_HORAS) || 12;
+
+/* Quantos dias a senha provisória vale. Existe porque ela pode ir por e-mail e
+   ficar numa caixa de entrada para sempre — sem prazo, uma conta que nunca foi
+   usada continua aberta indefinidamente com a senha que alguém já viu. */
+export const CONVITE_DIAS = Math.max(1, Number(process.env.CONVITE_DIAS) || 7);

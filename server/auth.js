@@ -23,10 +23,11 @@ export const SESSAO_HORAS = Number(process.env.SESSAO_HORAS) || 12;
 const MAX_FALHAS = 6;
 const BLOQUEIO_MIN = 15;
 
-/* Quantos dias a senha provisória vale. Existe porque ela pode ir por e-mail e
-   ficar numa caixa de entrada para sempre — sem prazo, uma conta que nunca foi
-   usada continua aberta indefinidamente com a senha que alguém já viu. */
-export const CONVITE_DIAS = Math.max(1, Number(process.env.CONVITE_DIAS) || 7);
+/* Quantos dias a senha provisória vale. A definição mora em config.js porque o
+   painel também precisa dela (para o texto do convite) sem arrastar este
+   arquivo — que puxa o pool de Postgres junto. */
+export { CONVITE_DIAS } from './config.js';
+import { CONVITE_DIAS } from './config.js';
 
 /* ────────────────────────────── senha ────────────────────────────── */
 

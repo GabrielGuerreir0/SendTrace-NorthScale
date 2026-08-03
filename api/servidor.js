@@ -212,7 +212,7 @@ await app.register(swagger, {
       { name: 'Régua', description: 'Quando cada etapa dispara e o que ela diz.' },
       { name: 'Linhas', description: 'Variações de copy e qual está no ar.' },
       { name: 'Configuração', description: 'Chave/valor que o robô lê.' },
-      { name: 'Usuários', description: 'Contas do painel — somente leitura.' },
+      { name: 'Usuários', description: 'Contas do painel. Qualquer conta lê a própria; só administradores listam, criam e alteram.' },
       { name: 'Métricas', description: 'Perguntas agregadas, respondidas pelo banco.' },
       { name: 'Produtos', description: 'Readmes de produto — o conhecimento que a IA de suporte recebe.' },
       { name: 'Suporte', description: 'Histórico de atendimentos do chatbot — a memória do suporte por cliente.' },
