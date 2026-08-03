@@ -961,10 +961,16 @@ function gerarInsights(t) {
  * Tudo que a aba de suporte mostra: os números vêm da rota agregada da API
  * (`/api/metricas/suporte/`), os rótulos e as frases de insight nascem aqui.
  * As etapas da régua entram para dar NOME às etapas onde os contatos nascem.
+ *
+ * `produto` e `plataforma` são os recortes do topo — os MESMOS da régua: a
+ * conversa entra quando o pedido dela pertence ao recorte.
  */
-export async function suporteResumo(dias = 30) {
+export async function suporteResumo(dias = 30, produto = null, plataforma = null) {
+  const params = { dias };
+  if (produto) params.produto = produto;
+  if (plataforma) params.plataforma = plataforma;
   const [dados, etapas] = await Promise.all([
-    obter('/api/metricas/suporte/', { dias }),
+    obter('/api/metricas/suporte/', params),
     etapasCache().catch(() => ({ itens: [] })),
   ]);
 

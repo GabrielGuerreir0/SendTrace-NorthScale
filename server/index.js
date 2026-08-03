@@ -969,11 +969,16 @@ async function atender(req, res, url, sessao) {
 
   /* ── dashboard do suporte IA — a aba principal ──
      Os números saem da rota agregada da API; as frases de insight e os
-     rótulos nascem em dados.js. `dias` recorta a janela dos KPIs. */
+     rótulos nascem em dados.js. `dias` recorta a janela dos KPIs; produto
+     e plataforma são os MESMOS recortes do topo que valem para a régua. */
   if (url.pathname === '/api/suporte') {
     const dias = inteiroOuNulo(url.searchParams.get('dias'));
     if (dias === false) return json(res, 400, { erro: 'dias inválido' });
-    return json(res, 200, await suporteResumo(dias ?? 30));
+    return json(res, 200, await suporteResumo(
+      dias ?? 30,
+      textoOuNulo(url.searchParams.get('produto')),
+      textoOuNulo(url.searchParams.get('plataforma')),
+    ));
   }
 
   if (url.pathname === '/api/pedidos') {

@@ -1113,6 +1113,8 @@ $('sel-produto').addEventListener('change', (e) => {
   estado.pagina.offset = 0;
   carregarSnapshot({ silencioso: true });
   carregarPedidos();
+  // O recorte vale para as DUAS seções — a aba de suporte lê o mesmo seletor.
+  carregarSuporte();
 });
 
 /** Troca a plataforma do painel INTEIRO — mesma mecânica do produto. */
@@ -1122,6 +1124,7 @@ $('sel-plataforma').addEventListener('change', (e) => {
   estado.pagina.offset = 0;
   carregarSnapshot({ silencioso: true });
   carregarPedidos();
+  carregarSuporte();
 });
 
 $('f-etapa').addEventListener('change', (e) => {

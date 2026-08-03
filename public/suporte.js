@@ -273,8 +273,16 @@ let geracao = 0;
 export async function carregarSuporte() {
   const meu = ++geracao;
   try {
-    const dias = Number($('sup-dias').value) || 30;
-    const resp = await fetch(`/api/suporte?dias=${dias}`);
+    const qs = new URLSearchParams({ dias: String(Number($('sup-dias').value) || 30) });
+    // Os MESMOS recortes do topo que valem para a régua: a conversa entra
+    // quando o pedido dela pertence ao produto/plataforma escolhidos. Os
+    // seletores são a fonte da verdade — não há segundo estado a divergir.
+    const produto = $('sel-produto').value;
+    const plataforma = $('sel-plataforma').value;
+    if (produto) qs.set('produto', produto);
+    if (plataforma) qs.set('plataforma', plataforma);
+
+    const resp = await fetch(`/api/suporte?${qs}`);
     if (resp.status === 401) { location.replace('/login'); return; }
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const s = await resp.json();
@@ -285,9 +293,16 @@ export async function carregarSuporte() {
     renderMotivos(s);
     renderPerguntas(s);
     renderRegua(s);
+    // O recorte ativo fica ESCRITO no rodapé: um filtro que só se vê no topo
+    // é um recorte invisível pesando sobre todos os números da aba.
+    const recorte = [produto && `produto “${produto}”`, plataforma && `plataforma ${plataforma}`]
+      .filter(Boolean).join(' · ');
     $('sup-rodape').textContent = `KPIs e rankings sobre os últimos ${s.janela_dias} dias · `
       + 'insights comparam as últimas 24 h com as 24 h anteriores · '
-      + `sem motivo classificado: ${n(s.sem_motivo ?? 0)} conversa${(s.sem_motivo ?? 0) === 1 ? '' : 's'}.`;
+      + `sem motivo classificado: ${n(s.sem_motivo ?? 0)} conversa${(s.sem_motivo ?? 0) === 1 ? '' : 's'}`
+      + (recorte
+        ? ` · recorte ativo: ${recorte} — conversas sem pedido casado ficam de fora.`
+        : '.');
   } catch (err) {
     if (meu !== geracao) return;
     const li = document.createElement('li');

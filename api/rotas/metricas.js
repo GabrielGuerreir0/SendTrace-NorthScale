@@ -445,16 +445,41 @@ export default async function rotasMetricas(app) {
         + 'utilização do chat), ranking de motivos de contato, perguntas sem '
         + 'resposta, contatos por etapa da régua e as comparações 24h × 24h '
         + 'anteriores que alimentam os insights. `dias` recorta a janela dos '
-        + 'KPIs e rankings (padrão 30).',
+        + 'KPIs e rankings (padrão 30). `produto` e `plataforma` recortam '
+        + 'TUDO: a conversa entra quando o pedido dela (via transacao_id) '
+        + 'pertence ao recorte.',
       security: [{ bearerAuth: [] }],
       querystring: {
         type: 'object',
-        properties: { dias: { type: 'integer', default: 30, minimum: 1, maximum: 365 } },
+        properties: {
+          dias: { type: 'integer', default: 30, minimum: 1, maximum: 365 },
+          ...filtroProduto,
+        },
       },
     },
     onRequest: [app.exigirSessao],
   }, async (req) => {
     const dias = Math.min(365, Math.max(1, Number(req.query.dias) || 30));
+    const produto = req.query.produto ?? null;
+    const plataforma = req.query.plataforma ?? null;
+
+    /*
+     * O recorte do topo, aplicado a uma tabela de CONVERSAS: a conversa
+     * pertence ao recorte quando o pedido dela (achado pelo transacao_id)
+     * pertence. EXISTS, não JOIN — um transacao_id repetido na fila não pode
+     * duplicar a conversa na contagem.
+     *
+     * Sem recorte a condição é literalmente verdadeira e nada muda; COM
+     * recorte, conversas sem transação (só e-mail, sem pedido casado) ficam
+     * de fora — não há como saber de que produto elas falam.
+     *
+     * `np`/`nq` são as POSIÇÕES dos parâmetros produto/plataforma em cada
+     * consulta — elas variam, e um número errado casaria com outro valor.
+     */
+    const recorte = (np, nq) => `($${np}::text IS NULL AND $${nq}::text IS NULL
+      OR EXISTS (SELECT 1 FROM disparos_pos_venda d
+                 WHERE d.transacao_id = a.transacao_id
+                   AND ${DO_PRODUTO(np, 'd.')} AND ${DA_PLATAFORMA(nq, 'd.')}))`;
 
     /*
      * KPIs da janela. As taxas são calculadas SÓ sobre quem tem o dado:
@@ -474,16 +499,20 @@ export default async function rotasMetricas(app) {
          round(avg(csat) FILTER (WHERE csat IS NOT NULL)::numeric, 2)::float8 AS csat_media,
          count(csat)::int                                             AS csat_respostas,
          count(DISTINCT coalesce(transacao_id, lower(email)))::int    AS clientes_chat
-       FROM chat_atendimentos
-       WHERE criado_em >= now() - make_interval(days => $1::int)`,
-      [dias],
+       FROM chat_atendimentos a
+       WHERE criado_em >= now() - make_interval(days => $1::int)
+         AND ${recorte(2, 3)}`,
+      [dias, produto, plataforma],
     );
 
-    // O denominador da taxa de utilização: quantos pedidos existem na fila.
-    // É a fila INTEIRA, não a janela — o cliente de um pedido antigo ainda
-    // pode abrir o chat hoje.
+    // O denominador da taxa de utilização: quantos pedidos existem na fila —
+    // DO RECORTE, para a taxa comparar chat e fila do mesmo universo. É a
+    // fila inteira, não a janela: o cliente de um pedido antigo ainda pode
+    // abrir o chat hoje.
     const fila = await query(
-      'SELECT count(DISTINCT transacao_id)::int AS pedidos FROM disparos_pos_venda',
+      `SELECT count(DISTINCT transacao_id)::int AS pedidos FROM disparos_pos_venda
+       WHERE ${DO_PRODUTO(1)} AND ${DA_PLATAFORMA(2)}`,
+      [produto, plataforma],
     );
 
     // Ranking de motivos. Motivo nulo (conversa antiga) fica de fora do
@@ -493,15 +522,17 @@ export default async function rotasMetricas(app) {
       `SELECT motivo,
               count(*)::int                          AS total,
               count(*) FILTER (WHERE resolvido)::int AS resolvidos
-       FROM chat_atendimentos
+       FROM chat_atendimentos a
        WHERE criado_em >= now() - make_interval(days => $1::int) AND motivo IS NOT NULL
+         AND ${recorte(2, 3)}
        GROUP BY motivo ORDER BY total DESC, motivo LIMIT 15`,
-      [dias],
+      [dias, produto, plataforma],
     );
     const semMotivo = await query(
-      `SELECT count(*)::int AS n FROM chat_atendimentos
-       WHERE criado_em >= now() - make_interval(days => $1::int) AND motivo IS NULL`,
-      [dias],
+      `SELECT count(*)::int AS n FROM chat_atendimentos a
+       WHERE criado_em >= now() - make_interval(days => $1::int) AND motivo IS NULL
+         AND ${recorte(2, 3)}`,
+      [dias, produto, plataforma],
     );
 
     // Perguntas sem resposta, agrupadas pelo texto normalizado. O exemplo
@@ -510,21 +541,23 @@ export default async function rotasMetricas(app) {
       `SELECT (array_agg(pergunta ORDER BY criado_em DESC))[1] AS pergunta,
               count(*)::int                                    AS total,
               max(criado_em)                                   AS ultima_em
-       FROM chat_perguntas_sem_resposta
+       FROM chat_perguntas_sem_resposta a
        WHERE criado_em >= now() - make_interval(days => $1::int)
+         AND ${recorte(2, 3)}
        GROUP BY lower(pergunta)
        ORDER BY total DESC, max(criado_em) DESC LIMIT 20`,
-      [dias],
+      [dias, produto, plataforma],
     );
 
     // Onde na jornada nascem os contatos — a performance da régua.
     const regua = await query(
       `SELECT etapa_regua::int AS etapa, count(*)::int AS total,
               count(*) FILTER (WHERE reembolso_pedido)::int AS reembolsos
-       FROM chat_atendimentos
+       FROM chat_atendimentos a
        WHERE criado_em >= now() - make_interval(days => $1::int) AND etapa_regua IS NOT NULL
+         AND ${recorte(2, 3)}
        GROUP BY etapa_regua ORDER BY etapa_regua`,
-      [dias],
+      [dias, produto, plataforma],
     );
 
     /*
@@ -536,9 +569,11 @@ export default async function rotasMetricas(app) {
       `SELECT motivo,
               count(*) FILTER (WHERE criado_em >= now() - interval '24 hours')::int AS atual,
               count(*) FILTER (WHERE criado_em <  now() - interval '24 hours')::int AS anterior
-       FROM chat_atendimentos
+       FROM chat_atendimentos a
        WHERE criado_em >= now() - interval '48 hours' AND motivo IS NOT NULL
+         AND ${recorte(1, 2)}
        GROUP BY motivo ORDER BY atual DESC`,
+      [produto, plataforma],
     );
     const gerais24 = await query(
       `SELECT
@@ -547,34 +582,43 @@ export default async function rotasMetricas(app) {
          count(*) FILTER (WHERE reembolso_pedido AND criado_em >= now() - interval '24 hours')::int AS reembolsos_atual,
          count(*) FILTER (WHERE reembolso_pedido AND criado_em <  now() - interval '24 hours')::int AS reembolsos_anterior,
          count(*) FILTER (WHERE resolvido = false AND criado_em >= now() - interval '24 hours')::int AS nao_resolvidas_atual
-       FROM chat_atendimentos
-       WHERE criado_em >= now() - interval '48 hours'`,
+       FROM chat_atendimentos a
+       WHERE criado_em >= now() - interval '48 hours'
+         AND ${recorte(1, 2)}`,
+      [produto, plataforma],
     );
     const perguntas24 = await query(
       `SELECT
          count(*) FILTER (WHERE criado_em >= now() - interval '24 hours')::int AS atual,
          count(*) FILTER (WHERE criado_em <  now() - interval '24 hours')::int AS anterior
-       FROM chat_perguntas_sem_resposta
-       WHERE criado_em >= now() - interval '48 hours'`,
+       FROM chat_perguntas_sem_resposta a
+       WHERE criado_em >= now() - interval '48 hours'
+         AND ${recorte(1, 2)}`,
+      [produto, plataforma],
     );
     // Um motivo que apareceu nas últimas 24h sem NENHUMA ocorrência nos 7
     // dias anteriores é padrão novo — o tipo de coisa que vira ação imediata.
+    // O "sem ocorrência" olha a operação INTEIRA de propósito: um motivo
+    // corriqueiro noutro produto não é padrão novo só porque o recorte mudou.
     const motivosNovos = await query(
       `SELECT motivo, count(*)::int AS total
        FROM chat_atendimentos a
        WHERE criado_em >= now() - interval '24 hours' AND motivo IS NOT NULL
+         AND ${recorte(1, 2)}
          AND NOT EXISTS (
            SELECT 1 FROM chat_atendimentos b
            WHERE b.motivo = a.motivo
              AND b.criado_em >= now() - interval '8 days'
              AND b.criado_em <  now() - interval '24 hours')
        GROUP BY motivo ORDER BY total DESC LIMIT 5`,
+      [produto, plataforma],
     );
 
     const k = kpis.rows[0];
     const taxa = (num, den) => (den > 0 ? Math.round((num / den) * 1000) / 10 : null);
     return {
       janela_dias: dias,
+      recorte: { produto, plataforma },
       kpis: {
         ...k,
         resolution_rate: taxa(k.resolvidas, k.classificadas),
