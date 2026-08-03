@@ -34,6 +34,30 @@ $('aba-btn-suporte').addEventListener('click', () => mostrarAba('suporte'));
 $('aba-btn-regua').addEventListener('click', () => mostrarAba('regua'));
 mostrarAba(ABAS[localStorage.getItem('aba')] ? localStorage.getItem('aba') : 'suporte');
 
+/*
+ * O menu lateral se recolhe para uma coluna de ícones. O estado é do CSS
+ * (body[data-menu]) e fica salvo — quem trabalha com ele fechado não o
+ * reabre a cada visita. Abaixo de 720px o CSS força o recolhido; o estado
+ * salvo volta a valer no desktop.
+ */
+function pintarMenu() {
+  const fechado = document.body.dataset.menu === 'fechado';
+  const btn = $('menu-alternar');
+  btn.setAttribute('aria-expanded', String(!fechado));
+  btn.title = fechado ? 'Expandir o menu' : 'Recolher o menu';
+  btn.querySelector('.menu-rotulo').textContent = fechado ? 'Expandir' : 'Recolher';
+}
+
+if (localStorage.getItem('menu') === 'fechado') document.body.dataset.menu = 'fechado';
+pintarMenu();
+
+$('menu-alternar').addEventListener('click', () => {
+  const fechado = document.body.dataset.menu === 'fechado';
+  document.body.dataset.menu = fechado ? 'aberto' : 'fechado';
+  localStorage.setItem('menu', document.body.dataset.menu);
+  pintarMenu();
+});
+
 /* ═════════════════════════════  formato  ════════════════════════════ */
 
 const pct = (v) => (v === null || v === undefined ? '—' : `${String(v).replace('.', ',')}%`);

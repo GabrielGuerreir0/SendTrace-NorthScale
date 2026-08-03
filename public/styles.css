@@ -1251,25 +1251,67 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
   border-top: 1px solid color-mix(in srgb, currentColor 14%, transparent);
 }
 
-/* ─────────────────────────  abas do painel  ─────────────────────── */
+/* ──────────────────────  menu lateral de navegação  ─────────────────────
+   Fixo à esquerda; o resto da página abre espaço via padding no body, então
+   nenhum layout existente precisou mudar. Recolhido, sobra só a coluna de
+   ícones — e o body encolhe o padding junto. */
 
-.abas {
-  display: flex; gap: 6px;
-  padding: 10px clamp(16px, 3vw, 34px) 0;
+:root { --menu-larg: 208px; --menu-larg-mini: 58px; }
+
+body { padding-left: var(--menu-larg); transition: padding-left .18s ease; }
+body[data-menu="fechado"] { padding-left: var(--menu-larg-mini); }
+
+.menu {
+  position: fixed; top: 0; bottom: 0; left: 0; z-index: 40;
+  width: var(--menu-larg);
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 12px 10px;
+  background: var(--superficie);
+  border-right: 1px solid var(--borda);
+  transition: width .18s ease;
+  overflow: hidden;
 }
-.aba-btn {
+body[data-menu="fechado"] .menu { width: var(--menu-larg-mini); }
+
+.menu-nav { display: flex; flex-direction: column; gap: 4px; }
+
+.menu-item, .menu-alternar {
   appearance: none; cursor: pointer;
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 9px 10px;
   background: transparent; color: var(--tinta-2);
-  border: 1px solid transparent; border-bottom: none;
-  border-radius: 12px 12px 0 0;
-  padding: 9px 18px 8px;
-  font: inherit; font-size: 13.5px; font-weight: 560;
+  border: 1px solid transparent; border-radius: 10px;
+  font: inherit; font-size: 13px; font-weight: 560;
+  text-align: left; white-space: nowrap;
 }
-.aba-btn:hover { color: var(--tinta); }
-.aba-btn[aria-selected="true"] {
-  background: var(--superficie); color: var(--tinta);
-  border-color: var(--borda);
-  box-shadow: var(--sombra-1);
+.menu-item svg, .menu-alternar svg { width: 19px; height: 19px; flex: none; }
+.menu-item:hover, .menu-alternar:hover { color: var(--tinta); background: var(--superficie-2); }
+
+/* A seção ativa: fundo marcado + filete na borda — não é só cor no ícone. */
+.menu-item[aria-selected="true"] {
+  color: var(--tinta);
+  background: color-mix(in srgb, var(--st-em-dia) 10%, var(--superficie));
+  border-color: color-mix(in srgb, var(--st-em-dia) 45%, var(--borda));
+}
+.menu-item[aria-selected="true"] svg { color: var(--st-em-dia); }
+
+.menu-alternar { color: var(--tinta-fraca); margin-bottom: 6px; }
+.menu-seta { transition: transform .18s ease; transform-origin: center; }
+body[data-menu="fechado"] .menu-seta { transform: rotate(180deg); }
+
+/* Recolhido: some o texto, centra o ícone. O nome continua no title e no
+   .sr-equivalente (o span segue no DOM para leitores de tela via title). */
+body[data-menu="fechado"] .menu-rotulo { display: none; }
+body[data-menu="fechado"] .menu-item,
+body[data-menu="fechado"] .menu-alternar { justify-content: center; padding: 9px 0; }
+
+/* Em tela estreita o menu vive recolhido: 208px fixos custariam a coluna
+   inteira de um celular — o estado salvo volta a valer no desktop. */
+@media (max-width: 720px) {
+  body { padding-left: var(--menu-larg-mini) !important; }
+  .menu { width: var(--menu-larg-mini) !important; }
+  .menu-rotulo { display: none; }
+  .menu-item, .menu-alternar { justify-content: center; padding: 9px 0; }
 }
 
 /* ────────────────────  aba Suporte IA (principal)  ───────────────── */

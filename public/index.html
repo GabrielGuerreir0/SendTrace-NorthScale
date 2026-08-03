@@ -86,14 +86,49 @@
   </div>
 </header>
 
-<!-- ── as duas abas do painel ──
-     Suporte IA é a PRINCIPAL: é onde um gestor responde em 30 segundos se a
-     IA está resolvendo, se reembolsos estão sendo evitados e o que ela ainda
-     não sabe. A régua continua inteira na segunda aba. -->
-<nav class="abas" aria-label="Abas do painel">
-  <button class="aba-btn" id="aba-btn-suporte" type="button" aria-selected="true">Suporte IA</button>
-  <button class="aba-btn" id="aba-btn-regua" type="button" aria-selected="false">Régua de pós-venda</button>
-</nav>
+<!-- ── menu lateral de navegação ──
+     Suporte IA é a seção PRINCIPAL: é onde um gestor responde em 30 segundos
+     se a IA está resolvendo, se reembolsos estão sendo evitados e o que ela
+     ainda não sabe. A régua continua inteira na segunda seção.
+
+     O menu se RECOLHE para uma coluna só de ícones — o estado fica salvo.
+     Recolhido, cada item mantém o nome no title e no texto para leitor de
+     tela: o ícone sozinho nunca é a única identificação. -->
+<aside class="menu" id="menu">
+  <button class="menu-alternar" id="menu-alternar" type="button"
+          aria-expanded="true" title="Recolher o menu">
+    <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor"
+         stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path class="menu-seta" d="M9.5 4 L5.5 8 L9.5 12"/>
+    </svg>
+    <span class="menu-rotulo">Recolher</span>
+  </button>
+
+  <nav class="menu-nav" aria-label="Seções do painel">
+    <button class="menu-item" id="aba-btn-suporte" type="button"
+            aria-selected="true" title="Suporte IA">
+      <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
+           stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 4.5h14v9.5H8.5L4.5 17.5v-3.5H3z"/>
+        <path d="M10 7.2l.85 1.75 1.9.3-1.4 1.35.35 1.9L10 11.6l-1.7.9.35-1.9-1.4-1.35 1.9-.3z"
+              fill="currentColor" stroke="none"/>
+      </svg>
+      <span class="menu-rotulo">Suporte IA</span>
+    </button>
+
+    <button class="menu-item" id="aba-btn-regua" type="button"
+            aria-selected="false" title="Régua de pós-venda">
+      <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
+           stroke-width="1.4" stroke-linecap="round">
+        <path d="M4 15.5 L16 5" opacity=".5"/>
+        <circle cx="4" cy="15.5" r="1.6" fill="currentColor" stroke="none" opacity=".65"/>
+        <circle cx="10" cy="10.2" r="2" fill="currentColor" stroke="none" opacity=".85"/>
+        <circle cx="16" cy="5" r="2.6" fill="currentColor" stroke="none"/>
+      </svg>
+      <span class="menu-rotulo">Régua de pós-venda</span>
+    </button>
+  </nav>
+</aside>
 
 <!-- ── criar uma linha de copy nova ── -->
 <dialog class="janela janela--linha" id="janela-linha" aria-labelledby="linha-nova-tit">
