@@ -133,12 +133,12 @@ services:
       - banco
 
     ports:
-      # Só no loopback do host: o acesso do time agora entra pelo proxy em
-      # https://sendtrace.thenorthscales.com (serviço `proxy` abaixo). O bind
-      # local continua existindo para o healthcheck do deploy e para depurar
-      # por SSH. Em HTTPS o cookie de sessão sai com Secure — o painel detecta
-      # pelo X-Forwarded-Proto que o Caddy manda.
-      - "127.0.0.1:4300:4300"
+      # As DUAS portas de entrada, de propósito: o domínio
+      # https://sendtrace.thenorthscales.com (serviço `proxy` abaixo) é o
+      # caminho novo do time, e o acesso direto por <ip>:4300 continua aberto
+      # como sempre foi. Lembrete: no acesso direto o tráfego é HTTP puro e o
+      # cookie de sessão viaja em claro — pelo domínio ele sai com Secure.
+      - "4300:4300"
 
     init: true
     read_only: true
