@@ -863,7 +863,7 @@ export async function plataformasDaFila() {
 
 /* ═══════════════════════  dashboard do suporte IA  ══════════════════════ */
 
-/** Rótulos humanos do vocabulário de motivos que o bot grava. */
+/** Rótulos humanos dos motivos CANÔNICOS que o bot grava. */
 export const MOTIVO_LABELS = {
   rastreamento: 'Tracking / Onde está meu pedido',
   reembolso: 'Pedido de reembolso',
@@ -875,7 +875,14 @@ export const MOTIVO_LABELS = {
   outro: 'Outros assuntos',
 };
 
-const rotuloMotivo = (m) => MOTIVO_LABELS[m] ?? m;
+/**
+ * O vocabulário é ABERTO: quando nenhum motivo canônico serve, a IA cria um
+ * nome novo em slug ('brinde_nao_recebido') — e assuntos similares reutilizam
+ * o mesmo slug, mesclando na mesma linha. Slug desconhecido vira rótulo
+ * legível aqui; mostrá-lo cru obrigaria o leitor a decifrar underscore.
+ */
+const rotuloMotivo = (m) => MOTIVO_LABELS[m]
+  ?? String(m ?? '').replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 
 /**
  * As frases dos "Insights automáticos" — escritas AQUI, sobre os números

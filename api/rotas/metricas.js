@@ -500,7 +500,7 @@ export default async function rotasMetricas(app) {
          count(csat)::int                                             AS csat_respostas,
          count(DISTINCT coalesce(transacao_id, lower(email)))::int    AS clientes_chat
        FROM chat_atendimentos a
-       WHERE criado_em >= now() - make_interval(days => $1::int)
+       WHERE coalesce(a.iniciado_em, a.criado_em) >= now() - make_interval(days => $1::int)
          AND ${recorte(2, 3)}`,
       [dias, produto, plataforma],
     );
@@ -523,14 +523,16 @@ export default async function rotasMetricas(app) {
               count(*)::int                          AS total,
               count(*) FILTER (WHERE resolvido)::int AS resolvidos
        FROM chat_atendimentos a
-       WHERE criado_em >= now() - make_interval(days => $1::int) AND motivo IS NOT NULL
+       WHERE coalesce(a.iniciado_em, a.criado_em) >= now() - make_interval(days => $1::int)
+         AND motivo IS NOT NULL
          AND ${recorte(2, 3)}
        GROUP BY motivo ORDER BY total DESC, motivo LIMIT 15`,
       [dias, produto, plataforma],
     );
     const semMotivo = await query(
       `SELECT count(*)::int AS n FROM chat_atendimentos a
-       WHERE criado_em >= now() - make_interval(days => $1::int) AND motivo IS NULL
+       WHERE coalesce(a.iniciado_em, a.criado_em) >= now() - make_interval(days => $1::int)
+         AND motivo IS NULL
          AND ${recorte(2, 3)}`,
       [dias, produto, plataforma],
     );
@@ -554,7 +556,8 @@ export default async function rotasMetricas(app) {
       `SELECT etapa_regua::int AS etapa, count(*)::int AS total,
               count(*) FILTER (WHERE reembolso_pedido)::int AS reembolsos
        FROM chat_atendimentos a
-       WHERE criado_em >= now() - make_interval(days => $1::int) AND etapa_regua IS NOT NULL
+       WHERE coalesce(a.iniciado_em, a.criado_em) >= now() - make_interval(days => $1::int)
+         AND etapa_regua IS NOT NULL
          AND ${recorte(2, 3)}
        GROUP BY etapa_regua ORDER BY etapa_regua`,
       [dias, produto, plataforma],
@@ -567,23 +570,23 @@ export default async function rotasMetricas(app) {
      */
     const motivos24 = await query(
       `SELECT motivo,
-              count(*) FILTER (WHERE criado_em >= now() - interval '24 hours')::int AS atual,
-              count(*) FILTER (WHERE criado_em <  now() - interval '24 hours')::int AS anterior
+              count(*) FILTER (WHERE coalesce(a.iniciado_em, a.criado_em) >= now() - interval '24 hours')::int AS atual,
+              count(*) FILTER (WHERE coalesce(a.iniciado_em, a.criado_em) <  now() - interval '24 hours')::int AS anterior
        FROM chat_atendimentos a
-       WHERE criado_em >= now() - interval '48 hours' AND motivo IS NOT NULL
+       WHERE coalesce(a.iniciado_em, a.criado_em) >= now() - interval '48 hours' AND motivo IS NOT NULL
          AND ${recorte(1, 2)}
        GROUP BY motivo ORDER BY atual DESC`,
       [produto, plataforma],
     );
     const gerais24 = await query(
       `SELECT
-         count(*) FILTER (WHERE criado_em >= now() - interval '24 hours')::int AS conversas_atual,
-         count(*) FILTER (WHERE criado_em <  now() - interval '24 hours')::int AS conversas_anterior,
-         count(*) FILTER (WHERE reembolso_pedido AND criado_em >= now() - interval '24 hours')::int AS reembolsos_atual,
-         count(*) FILTER (WHERE reembolso_pedido AND criado_em <  now() - interval '24 hours')::int AS reembolsos_anterior,
-         count(*) FILTER (WHERE resolvido = false AND criado_em >= now() - interval '24 hours')::int AS nao_resolvidas_atual
+         count(*) FILTER (WHERE coalesce(a.iniciado_em, a.criado_em) >= now() - interval '24 hours')::int AS conversas_atual,
+         count(*) FILTER (WHERE coalesce(a.iniciado_em, a.criado_em) <  now() - interval '24 hours')::int AS conversas_anterior,
+         count(*) FILTER (WHERE reembolso_pedido AND coalesce(a.iniciado_em, a.criado_em) >= now() - interval '24 hours')::int AS reembolsos_atual,
+         count(*) FILTER (WHERE reembolso_pedido AND coalesce(a.iniciado_em, a.criado_em) <  now() - interval '24 hours')::int AS reembolsos_anterior,
+         count(*) FILTER (WHERE resolvido = false AND coalesce(a.iniciado_em, a.criado_em) >= now() - interval '24 hours')::int AS nao_resolvidas_atual
        FROM chat_atendimentos a
-       WHERE criado_em >= now() - interval '48 hours'
+       WHERE coalesce(a.iniciado_em, a.criado_em) >= now() - interval '48 hours'
          AND ${recorte(1, 2)}`,
       [produto, plataforma],
     );
@@ -603,13 +606,14 @@ export default async function rotasMetricas(app) {
     const motivosNovos = await query(
       `SELECT motivo, count(*)::int AS total
        FROM chat_atendimentos a
-       WHERE criado_em >= now() - interval '24 hours' AND motivo IS NOT NULL
+       WHERE coalesce(a.iniciado_em, a.criado_em) >= now() - interval '24 hours'
+         AND motivo IS NOT NULL
          AND ${recorte(1, 2)}
          AND NOT EXISTS (
            SELECT 1 FROM chat_atendimentos b
            WHERE b.motivo = a.motivo
-             AND b.criado_em >= now() - interval '8 days'
-             AND b.criado_em <  now() - interval '24 hours')
+             AND coalesce(b.iniciado_em, b.criado_em) >= now() - interval '8 days'
+             AND coalesce(b.iniciado_em, b.criado_em) <  now() - interval '24 hours')
        GROUP BY motivo ORDER BY total DESC LIMIT 5`,
       [produto, plataforma],
     );

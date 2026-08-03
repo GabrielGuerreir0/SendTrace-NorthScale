@@ -27,7 +27,7 @@ import { fatiar, ErroHttp } from '../comum.js';
 
 const COLUNAS = `id, transacao_id, email, resumo, desfecho, risco_chargeback,
   motivo, resolvido, reembolso_pedido, reembolso_evitado, csat, duracao_s,
-  etapa_regua, criado_em`;
+  iniciado_em, etapa_regua, criado_em`;
 
 /** O pedido dono de uma transação — nome, e-mail, produto e etapa vêm dele. */
 async function pedidoDaTransacao(transacaoId) {
@@ -163,12 +163,15 @@ export default async function rotasAtendimentos(app) {
      * estiveram em risco.
      */
     const reembolsoPedido = req.body.reembolso_pedido === true;
+    const iniciadoEm = req.body.iniciado_em && !Number.isNaN(Date.parse(req.body.iniciado_em))
+      ? new Date(req.body.iniciado_em)
+      : null;
     const { rows } = await query(
       `INSERT INTO chat_atendimentos
          (transacao_id, email, resumo, desfecho, risco_chargeback,
           motivo, resolvido, reembolso_pedido, reembolso_evitado, csat,
-          duracao_s, etapa_regua)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          duracao_s, iniciado_em, etapa_regua)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING ${COLUNAS}`,
       [
         transacao, email, resumo, req.body.desfecho ?? null, req.body.risco_chargeback === true,
@@ -178,6 +181,7 @@ export default async function rotasAtendimentos(app) {
         reembolsoPedido ? req.body.reembolso_evitado === true : null,
         Number.isInteger(req.body.csat) ? req.body.csat : null,
         Number.isInteger(req.body.duracao_s) ? Math.max(0, req.body.duracao_s) : null,
+        iniciadoEm,
         pedido?.etapa_atual ?? null,
       ],
     );
@@ -276,6 +280,52 @@ export default async function rotasAtendimentos(app) {
       throw new ErroHttp(404, 'Nenhum atendimento nas últimas 24h para receber a nota.');
     }
     return rows[0];
+  });
+
+  /*
+   * O vocabulário VIVO de motivos — os assuntos que já existem, com volume.
+   *
+   * É o que o bot lê antes de classificar uma conversa nova: assunto igual ou
+   * muito próximo de um existente REUTILIZA aquele nome (as conversas se
+   * mesclam na mesma linha do dashboard); assunto realmente diferente ganha
+   * nome novo e vira linha própria. Sem este catálogo, cada conversa
+   * inventaria uma grafia e o ranking viraria poeira de motivos únicos.
+   */
+  app.get('/api/atendimentos/motivos/', {
+    schema: {
+      tags: ['Suporte'],
+      summary: 'Os motivos de contato já registrados, do mais comum ao mais raro',
+      description: 'O vocabulário vivo: o bot reutiliza estes nomes ao classificar '
+        + 'conversas de assunto igual ou próximo, e só cria nome novo quando o '
+        + 'assunto é realmente diferente.',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: { limite: { type: 'integer', default: 60, maximum: 200 } },
+      },
+      response: {
+        200: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              motivo: { type: 'string' },
+              total: { type: 'integer' },
+            },
+          },
+        },
+      },
+    },
+    onRequest: [app.exigirSessao],
+  }, async (req) => {
+    const { rows } = await query(
+      `SELECT motivo, count(*)::int AS total
+       FROM chat_atendimentos
+       WHERE motivo IS NOT NULL
+       GROUP BY motivo ORDER BY total DESC, motivo LIMIT $1`,
+      [Math.min(200, Number(req.query.limite) || 60)],
+    );
+    return rows;
   });
 
   /*

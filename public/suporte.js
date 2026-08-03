@@ -126,8 +126,8 @@ function renderKpis(s) {
       icone: '↩', tom: 'bom', rotulo: 'Refund save rate',
       valor: pct(k.refund_save_rate),
       nota: k.reembolso_pedidos
-        ? `${n(k.reembolso_evitados)} de ${n(k.reembolso_pedidos)} reembolsos revertidos`
-        : 'nenhum pedido de reembolso na janela',
+        ? `${n(k.reembolso_evitados)} de ${n(k.reembolso_pedidos)} saídas (reembolso/cancelamento) revertidas`
+        : 'nenhum pedido de reembolso ou cancelamento na janela',
     }),
     tile({
       icone: '✕', tom: 'ruim', rotulo: 'Não resolvidas',

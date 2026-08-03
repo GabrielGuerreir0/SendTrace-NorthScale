@@ -87,6 +87,7 @@ export const Atendimento = {
     reembolso_evitado: { type: ['boolean', 'null'], description: 'Dos que pediram: a IA reverteu? Nulo quando não houve pedido.' },
     csat: { type: ['integer', 'null'], minimum: 1, maximum: 5, description: 'Nota de satisfação (1–5 estrelas). Nulo = não avaliou.' },
     duracao_s: { type: ['integer', 'null'], minimum: 0, description: 'Duração da conversa em segundos.' },
+    iniciado_em: { type: ['string', 'null'], format: 'date-time', description: 'Quando a conversa COMEÇOU. É por isto que o filtro de tempo do dashboard recorta.' },
     etapa_regua: { type: ['integer', 'null'], readOnly: true, description: 'Etapa da régua do pedido no momento do contato — resolvida pela API.' },
     criado_em: { ...dataHora, readOnly: true },
   },
