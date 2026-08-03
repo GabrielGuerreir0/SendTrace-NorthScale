@@ -104,6 +104,11 @@ services:
       PORT: 4300
       NODE_ENV: production
 
+      # O endereço público do painel — é o link que sai nos convites por
+      # e-mail. Sem ele o painel adivinharia pelo cabeçalho Host, que também
+      # funciona atrás do Caddy; fixar tira a adivinhação.
+      PAINEL_URL: ${PAINEL_URL:-https://sendtrace.thenorthscales.com}
+
       # De onde vêm a régua, a fila E o login. Não há conta de serviço: cada
       # pessoa entra com a própria conta da API. O padrão é a API DESTE
       # compose, pelo nome do container e pela rede interna; preencha API_URL
@@ -128,11 +133,12 @@ services:
       - banco
 
     ports:
-      # Pública enquanto não há domínio + proxy: é como o time acessa o
-      # painel hoje. Em HTTP o cookie de sessão viaja em claro — quando o
-      # Caddy entrar, isto volta para 127.0.0.1 e só o proxy publica 80/443
-      # (mudança feita aqui no repo, commit e deploy — nunca no servidor).
-      - "4300:4300"
+      # Só no loopback do host: o acesso do time agora entra pelo proxy em
+      # https://sendtrace.thenorthscales.com (serviço `proxy` abaixo). O bind
+      # local continua existindo para o healthcheck do deploy e para depurar
+      # por SSH. Em HTTPS o cookie de sessão sai com Secure — o painel detecta
+      # pelo X-Forwarded-Proto que o Caddy manda.
+      - "127.0.0.1:4300:4300"
 
     init: true
     read_only: true
@@ -154,6 +160,47 @@ services:
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
+
+  # ── o proxy: HTTPS do domínio na frente do painel ─────────────────────────
+  proxy:
+    # `caddy reverse-proxy` dispensa Caddyfile: com --from ele publica o
+    # domínio em 443 com certificado automático (Let's Encrypt) e redireciona
+    # o 80 para HTTPS. O deploy só envia o compose ao VPS, então uma
+    # configuração sem arquivo extra é uma peça a menos para dessincronizar.
+    image: caddy:2-alpine
+    container_name: sendtrace-proxy
+    command: caddy reverse-proxy --from ${PAINEL_DOMINIO:-sendtrace.thenorthscales.com} --to sendtrace-painel:4300
+    restart: unless-stopped
+
+    depends_on:
+      painel:
+        condition: service_healthy
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    networks:
+      - banco
+
+    volumes:
+      # Certificados e estado do ACME. SEM este volume, cada recriação do
+      # container pediria certificado novo — e o Let's Encrypt bloqueia por
+      # limite de emissões depois de poucas tentativas.
+      - caddy_data:/data
+      - caddy_config:/config
+
+    init: true
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  caddy_data:
+  caddy_config:
 
 networks:
   banco:

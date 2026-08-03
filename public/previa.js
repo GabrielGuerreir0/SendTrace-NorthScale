@@ -2,25 +2,24 @@
  * Pré-visualização de uma mensagem: o e-mail como o cliente vai ver, ou o SMS
  * como chega no celular.
  *
- * O banco guarda só o CORPO de cada e-mail — a moldura (cabeçalho da marca,
- * botão, bloco de suporte, assinatura, rodapé) é idêntica nas 17 mensagens e é
- * remontada aqui. Guardá-la 17 vezes criaria 17 lugares para desatualizar.
+ * O banco guarda só o CORPO de cada e-mail — a moldura (botão, bloco de
+ * suporte, assinatura, rodapé) é idêntica nas 17 mensagens e é remontada aqui.
+ * Guardá-la 17 vezes criaria 17 lugares para desatualizar.
  *
  * O HTML entra num iframe com `sandbox` VAZIO: sem script, sem formulário, sem
  * acesso à página que o hospeda. É conteúdo que veio do banco — mesmo sendo o
  * seu próprio banco, renderizá-lo direto no DOM do painel transformaria
  * qualquer `UPDATE` numa porta de XSS.
  */
-/* Espelha o CFG e as COR do nó de Code do n8n. Se você mudar o link do
-   assistente ou a cor da marca lá, mude aqui — senão a pré-visualização mente
-   sobre o que está sendo enviado. */
+/* Espelha o CFG e as COR do nó de Code do n8n — a VERSÃO NEUTRA: sem nome de
+   empresa, sem wordmark/logo e sem site próprio; o único ponto de contato é o
+   e-mail de suporte, e o destino ASSISTENTE virou um mailto para ele. Se mudar
+   o link ou a cor lá, mude aqui — senão a pré-visualização mente sobre o que
+   está sendo enviado. */
 const MARCA = {
-  empresa: 'North Scale',
   suporte: 'support@northsupplements.online',
   ebook: 'https://drive.google.com/uc?export=download&id=18DkKudndjAVQ9WOwPvCTItN1ZfJxyZva',
-  assistente: 'https://support.thenorthscales.com/',
   azul: '#415fe5',
-  preto: '#0c0c0c',
   texto: '#1f2430',
   cinza: '#6b7280',
   cinzaBg: '#f7f8fa',
@@ -32,33 +31,29 @@ const esc = (s) => String(s ?? '')
 
 /** Reproduz a moldura() do n8n. */
 function moldar(corpo, botao, destino, produto, email, telefone) {
-  const link = destino === 'EBOOK' ? MARCA.ebook : MARCA.assistente;
-  const cta = botao
-    ? `<p style="margin:28px 0"><a href="${esc(link)}" style="display:inline-block;padding:14px 26px;`
-      + `background:${MARCA.azul};color:#fff;border-radius:8px;text-decoration:none;font-weight:700">`
-      + `${esc(botao)}</a></p>`
-    : '';
+  const link = destino === 'EBOOK' ? MARCA.ebook : `mailto:${MARCA.suporte}`;
+  // O n8n sempre desenha o botão: mensagem sem rótulo sai com o padrão dele.
+  const rotulo = botao || 'Questions? Talk to us →';
+  const cta = `<p style="margin:28px 0"><a href="${esc(link)}" style="display:inline-block;padding:14px 26px;`
+    + `background:${MARCA.azul};color:#ffffff;border-radius:8px;text-decoration:none;font-weight:700">`
+    + `${esc(rotulo)}</a></p>`;
 
   return `<!doctype html><html><head><meta charset="utf-8">`
     + `<meta name="viewport" content="width=device-width,initial-scale=1">`
     + `<base target="_blank"></head><body style="margin:0">`
     + `<div style="background:#eef0f4;padding:24px 12px">`
     + `<div style="max-width:600px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:16px;line-height:1.6;color:${MARCA.texto}">`
-    + `<div style="background:${MARCA.preto};border-radius:10px 10px 0 0;padding:20px 24px;text-align:center">`
-    + `<span style="font-family:Arial Black,Arial,sans-serif;font-size:19px;font-weight:900;letter-spacing:.18em;color:#fff">`
-    + `NORTH <span style="color:${MARCA.azul};letter-spacing:0">&#9650;</span> SCALE</span></div>`
-    + `<div style="background:#fff;border-radius:0 0 10px 10px;padding:32px 28px">`
+    + `<div style="background:#ffffff;border-radius:10px;padding:32px 28px">`
     + corpo
     + cta
     + `<p style="background:${MARCA.cinzaBg};border-radius:8px;padding:13px 18px;font-size:14px;color:#555">`
     + `<b>Need assistance? Our Support Team is here to help:</b><br>`
     + `<span style="color:${MARCA.cinza};font-size:13px">(Mon&ndash;Fri, 9am to 6pm EST)</span><br>`
     + `&#128231; Email: <a href="mailto:${MARCA.suporte}" style="color:${MARCA.azul};text-decoration:none">${MARCA.suporte}</a></p>`
-    + `<p style="margin-top:20px">With care,<br><b>&mdash; The ${esc(produto)} Team at ${esc(MARCA.empresa)}</b></p>`
+    + `<p style="margin-top:20px">With care,<br><b>&mdash; The ${esc(produto)} Team</b></p>`
     + `</div>`
     + `<div style="padding:18px 24px;text-align:center;font-size:12px;color:#9aa0ab;line-height:1.6">`
-    + `<p style="margin:0"><b style="color:#6b7280;letter-spacing:.12em">NORTH &#9650; SCALE</b></p>`
-    + `<p style="margin:6px 0 0">You're receiving this email because you made a purchase on our platform.</p>`
+    + `<p style="margin:0">You're receiving this email because you made a purchase on our platform.</p>`
     + `<p style="margin:6px 0 0">${esc(email)}${telefone ? ` | ${esc(telefone)}` : ''}</p></div>`
     + `</div></div></body></html>`;
 }
@@ -70,7 +65,7 @@ function molarSms(texto) {
     + `font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif">`
     + `<div style="max-width:330px;margin:0 auto">`
     + `<p style="margin:0 0 10px;text-align:center;font-size:11px;color:#8b8f98">`
-    + `Mensagem de texto &middot; ${esc(MARCA.empresa)}</p>`
+    + `Mensagem de texto</p>`
     + `<div style="background:#fff;border-radius:18px 18px 18px 5px;padding:13px 16px;`
     + `font-size:15px;line-height:1.45;color:#111;box-shadow:0 1px 2px rgba(0,0,0,.12)">`
     + `${esc(texto)}</div></div></body></html>`;
@@ -197,7 +192,7 @@ export function criarPrevia({
     nota.hidden = false;
     nota.textContent = `Marcadores preenchidos com "${amostra?.nome ?? '—'}" e `
       + `"${amostra?.produto ?? '—'}" — o pior caso de tamanho da sua fila. `
-      + (eEmail ? 'Cabeçalho, botão e rodapé são montados como o robô faz.' : '');
+      + (eEmail ? 'Botão, bloco de suporte e rodapé são montados como o robô faz.' : '');
 
     modos.hidden = false;
     if (editor) {
