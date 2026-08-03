@@ -432,10 +432,27 @@
       <header class="cartao-cabeca">
         <div>
           <h2>Principais motivos de contato</h2>
-          <p class="cartao-sub">O que mais leva clientes ao chat — classificado pela IA ao encerrar cada conversa.</p>
+          <p class="cartao-sub">
+            Classificado pela <b>primeira mensagem do cliente</b>, ajustado pelo rumo da
+            conversa — frases diferentes sobre o mesmo assunto caem no mesmo motivo.
+          </p>
         </div>
       </header>
-      <ol class="sup-ranking" id="sup-motivos"><li class="vazio-suave">carregando…</li></ol>
+      <div class="sup-tabela-envolve">
+        <table class="sup-tabela">
+          <thead>
+            <tr>
+              <th scope="col">Motivo</th>
+              <th scope="col" class="num">Conversas</th>
+              <th scope="col" class="num">% do total</th>
+              <th scope="col" class="num">Resolvidas pela IA</th>
+            </tr>
+          </thead>
+          <tbody id="sup-motivos">
+            <tr><td colspan="4" class="vazio-suave">carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <section class="cartao">

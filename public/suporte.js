@@ -184,24 +184,63 @@ function itemRanking({ rotulo, total, max, sub }) {
   return li;
 }
 
+/**
+ * A tabela de motivos. O % é sobre as conversas CLASSIFICADAS (a soma da
+ * própria tabela): as sem motivo — anteriores ao classificador — estão
+ * contadas à parte no rodapé, e diluí-las aqui faria os percentuais somarem
+ * menos que 100 sem explicação.
+ */
 function renderMotivos(s) {
   const lista = s.motivos ?? [];
-  const el = $('sup-motivos');
+  const corpo = $('sup-motivos');
   if (!lista.length) {
-    const li = document.createElement('li');
-    li.className = 'vazio-suave';
-    li.textContent = 'Nenhuma conversa classificada por motivo ainda — o bot passa a '
-      + 'classificar ao encerrar cada conversa.';
-    el.replaceChildren(li);
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 4;
+    td.className = 'vazio-suave';
+    td.textContent = 'Nenhuma conversa classificada por motivo ainda — a classificação '
+      + 'acontece no encerramento de cada conversa.';
+    tr.append(td);
+    corpo.replaceChildren(tr);
     return;
   }
+
+  const totalClassificadas = lista.reduce((a, m) => a + m.total, 0);
   const max = Math.max(...lista.map((m) => m.total));
-  el.replaceChildren(...lista.map((m) => itemRanking({
-    rotulo: m.label ?? m.motivo,
-    total: m.total,
-    max,
-    sub: m.total ? `${n(m.resolvidos)} resolvida${m.resolvidos === 1 ? '' : 's'} pela IA` : null,
-  })));
+
+  corpo.replaceChildren(...lista.map((m) => {
+    const tr = document.createElement('tr');
+
+    const tdMotivo = document.createElement('td');
+    tdMotivo.className = 'sup-tabela-motivo';
+    const rotulo = document.createElement('span');
+    rotulo.textContent = m.label ?? m.motivo;
+    // A barra é reforço visual da coluna de conversas — o número está na
+    // célula ao lado; ninguém precisa ler comprimento de barra.
+    const barra = document.createElement('span');
+    barra.className = 'sup-item-barra';
+    const cheio = document.createElement('span');
+    cheio.style.width = `${max > 0 ? Math.max(2, (m.total / max) * 100) : 0}%`;
+    barra.append(cheio);
+    tdMotivo.append(rotulo, barra);
+
+    const tdTotal = document.createElement('td');
+    tdTotal.className = 'num';
+    tdTotal.textContent = n(m.total);
+
+    const tdPct = document.createElement('td');
+    tdPct.className = 'num';
+    tdPct.textContent = totalClassificadas
+      ? `${(Math.round((m.total / totalClassificadas) * 1000) / 10).toString().replace('.', ',')}%`
+      : '—';
+
+    const tdRes = document.createElement('td');
+    tdRes.className = 'num';
+    tdRes.textContent = `${n(m.resolvidos)} (${m.total ? Math.round((m.resolvidos / m.total) * 100) : 0}%)`;
+
+    tr.append(tdMotivo, tdTotal, tdPct, tdRes);
+    return tr;
+  }));
 }
 
 function renderPerguntas(s) {
