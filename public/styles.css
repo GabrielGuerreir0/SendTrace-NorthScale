@@ -367,23 +367,30 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
   background-color: var(--superficie-2);
   background-image: radial-gradient(circle at 1px 1px, var(--pontos) 1px, transparent 0);
   background-size: 22px 22px;
-  padding: 24px 24px 18px;
+  padding: 40px 30px 34px;
   /* A fita é UMA linha, como no n8n: quando não cabe, rola na horizontal —
-     nunca amontoa nem esconde nós. */
+     e o fundo aceita pegar-e-arrastar, então a barra fica discreta. */
   overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: thin;
   display: flex;
-  min-height: 190px;
+  min-height: 340px;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
 }
+.canvas-area[data-arrastando="sim"] { cursor: grabbing; }
+.canvas-area[data-arrastando="sim"] * { cursor: grabbing !important; }
 
 .rg { margin: auto; }                    /* centra quando cabe; rola quando não */
 .rg .vazio-suave { padding: 30px 0; }
 .rg-fita { display: flex; align-items: flex-start; width: max-content; padding: 0 4px; }
 
-/* Todos os blocos reservam a mesma altura de cabeçalho (26px) para os
-   quadrados ficarem alinhados pelo centro, tenham eles cabeçalho ou não. */
+/* O quadrado da etapa acrescenta 11px de moldura acima do cabeçalho (26px);
+   os blocos soltos (início, espera, fim) compensam com padding-top 37px para
+   todos os quadrados ficarem alinhados pelo centro. */
 .rg-no {
   display: flex; flex-direction: column; align-items: center; gap: 7px;
-  width: 100px; flex: none; padding-top: 26px; outline: none;
+  width: 100px; flex: none; padding-top: 37px; outline: none;
 }
 .rg-etapa-nos .rg-no { padding-top: 0; }
 
@@ -448,8 +455,15 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
 }
 .rg-no[data-derivou="sim"] .rg-sub { color: var(--tinta-2); font-weight: 560; }
 
-/* ── etapa: cabeçalho + par [e-mail]—[SMS] ── */
-.rg-etapa { display: flex; flex-direction: column; flex: none; }
+/* ── etapa: cabeçalho + par [e-mail]—[SMS], num quadro bem sutil que diz
+   "estes dois nós disparam juntos" sem competir com os próprios nós ── */
+.rg-etapa {
+  display: flex; flex-direction: column; flex: none;
+  padding: 11px 14px 13px;
+  border: 1px solid color-mix(in srgb, var(--tinta) 8%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--superficie) 42%, transparent);
+}
 .rg-etapa[data-inativa="sim"] .rg-etapa-nos { opacity: .55; }
 .rg-etapa-cab {
   height: 26px; display: flex; align-items: flex-start; justify-content: center;
@@ -479,11 +493,11 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
 .rg-qtd[data-tom="final"]    .rg-qtd-ponto { background: var(--st-finalizado); }
 
 /* ── conectores: a linha fina do n8n, animada quando há tráfego ──
-   margin-top = cabeçalho (26) + metade do quadrado (26). A curta vive dentro
-   da fileira de nós da etapa, que já começa depois do cabeçalho. */
+   margin-top = moldura da etapa (11) + cabeçalho (26) + metade do quadrado
+   (26). A curta vive dentro da fileira de nós, que já começa depois disso. */
 .rg-liga {
   flex: none; width: 40px; height: 2px; border-radius: 1px;
-  background: var(--trilho); position: relative; margin-top: 52px;
+  background: var(--trilho); position: relative; margin-top: 63px;
 }
 .rg-liga--curta { width: 26px; margin-top: 26px; }
 .rg-liga::after {

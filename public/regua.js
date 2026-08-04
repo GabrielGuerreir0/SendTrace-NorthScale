@@ -10,8 +10,8 @@
  *     que abre a mensagem para ver e editar).
  *
  * Feito em HTML, não em SVG: o conteúdo é texto de tamanho variável, e em HTML
- * ele quebra sozinho, é focável e é lido por leitor de tela. O canvas continua
- * travado — sem arrastar, sem zoom; quando não cabe, rola na horizontal.
+ * ele quebra sozinho, é focável e é lido por leitor de tela. Sem zoom, mas o
+ * fundo aceita pegar-e-arrastar (como no n8n) além da rolagem normal.
  */
 import { n, relativo, dataHora, duracaoH, truncar } from './format.js';
 // Medidor compartilhado com o editor e com o servidor: uma regra de SMS só.
@@ -122,9 +122,60 @@ function rotuloEspera(origem, destino) {
   };
 }
 
+/**
+ * Pegar-e-arrastar no fundo do canvas, como no n8n. O arrasto só começa depois
+ * de 5px de movimento — antes disso o gesto ainda pode ser um clique num nó.
+ * Depois que vira arrasto, o clique que o navegador dispara ao soltar é
+ * engolido na fase de captura, senão soltar em cima de um nó abriria a
+ * mensagem sem ninguém ter pedido.
+ */
+function ligarArrasto(alvo, aoComecar) {
+  let apertado = false;
+  let arrastou = false;
+  let x0 = 0; let y0 = 0; let sx = 0; let sy = 0;
+
+  alvo.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0) return;
+    apertado = true;
+    arrastou = false;
+    x0 = ev.clientX; y0 = ev.clientY;
+    sx = alvo.scrollLeft; sy = alvo.scrollTop;
+  });
+
+  alvo.addEventListener('pointermove', (ev) => {
+    if (!apertado) return;
+    const dx = ev.clientX - x0;
+    const dy = ev.clientY - y0;
+    if (!arrastou) {
+      if (Math.hypot(dx, dy) < 5) return;
+      arrastou = true;
+      alvo.setPointerCapture(ev.pointerId);   // os nós param de receber o hover
+      alvo.dataset.arrastando = 'sim';
+      aoComecar?.();
+    }
+    alvo.scrollLeft = sx - dx;
+    alvo.scrollTop = sy - dy;
+  });
+
+  const soltar = () => {
+    apertado = false;
+    delete alvo.dataset.arrastando;
+  };
+  alvo.addEventListener('pointerup', soltar);
+  alvo.addEventListener('pointercancel', soltar);
+
+  alvo.addEventListener('click', (ev) => {
+    if (!arrastou) return;
+    arrastou = false;
+    ev.preventDefault();
+    ev.stopPropagation();
+  }, true);
+}
+
 export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem } = {}) {
   const raiz = el('div', 'rg');
   container.appendChild(raiz);
+  ligarArrasto(container, () => tooltip?.esconder());
 
   let amostra = { ...AMOSTRA_PADRAO };
   let canaisMeta = CANAIS_META;
