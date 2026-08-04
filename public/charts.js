@@ -16,57 +16,6 @@ export function svgEl(tag, attrs = {}, parent = null) {
 
 export const limpar = (el) => { while (el.firstChild) el.removeChild(el.firstChild); };
 
-/**
- * SVG não quebra linha sozinho. Quebra o texto em tspans medindo de verdade
- * com getComputedTextLength, com reticências quando não cabe.
- *
- * Se o SVG estiver oculto a medição devolve 0 — nesse caso caímos numa
- * estimativa por caractere em vez de entrar em laço infinito.
- */
-export function envolverTexto(textEl, texto, larguraMax, maxLinhas = 2, alturaLinha = 15) {
-  limpar(textEl);
-  if (!texto) return;
-
-  const x = textEl.getAttribute('x') ?? 0;
-  const medidor = svgEl('tspan', {}, textEl);
-
-  const medir = (s) => {
-    medidor.textContent = s;
-    const w = medidor.getComputedTextLength?.() ?? 0;
-    return w > 0 ? w : s.length * 5.4;   // fallback quando não há layout
-  };
-
-  const palavras = String(texto).split(/\s+/).filter(Boolean);
-  const linhas = [];
-  let atual = '';
-
-  for (const p of palavras) {
-    const tentativa = atual ? `${atual} ${p}` : p;
-    if (atual && medir(tentativa) > larguraMax) {
-      linhas.push(atual);
-      atual = p;
-      if (linhas.length === maxLinhas) break;
-    } else {
-      atual = tentativa;
-    }
-  }
-  if (linhas.length < maxLinhas && atual) linhas.push(atual);
-
-  // Sobrou texto: encurta a última linha até a reticência caber.
-  const usadas = linhas.join(' ').split(/\s+/).length;
-  if (usadas < palavras.length && linhas.length) {
-    let ultima = `${linhas[linhas.length - 1]}…`;
-    while (ultima.length > 2 && medir(ultima) > larguraMax) {
-      ultima = `${ultima.slice(0, -2)}…`;
-    }
-    linhas[linhas.length - 1] = ultima;
-  }
-
-  limpar(textEl);
-  linhas.forEach((linha, i) => {
-    svgEl('tspan', { x, dy: i === 0 ? 0 : alturaLinha, text: linha }, textEl);
-  });
-}
 
 /**
  * Barra com a ponta arredondada (4px) e a base quadrada, ancorada na linha
@@ -92,74 +41,6 @@ export function escalaTopo(max) {
   return { topo, ticks };
 }
 
-/* ─────────────────────────  ANEL (parte-do-todo)  ───────────────────────── */
-
-/**
- * Anel de estados de uma etapa. Os segmentos são mutuamente exclusivos e somam
- * o total, então isto é uma leitura parte-do-todo honesta.
- * A separação entre segmentos é um vão de 2px que revela a trilha — nunca um
- * contorno desenhado em volta da marca.
- */
-export function desenharAnel(g, segmentos, { r = 18, sw = 6, vao = 2 } = {}) {
-  limpar(g);
-  const C = 2 * Math.PI * r;
-  const total = segmentos.reduce((a, s) => a + s.valor, 0);
-
-  svgEl('circle', {
-    class: 'anel-trilha', cx: 0, cy: 0, r,
-    fill: 'none', 'stroke-width': sw,
-  }, g);
-
-  if (total <= 0) return;
-
-  const visiveis = segmentos.filter((s) => s.valor > 0);
-  let acumulado = 0;
-  for (const seg of visiveis) {
-    const comp = (seg.valor / total) * C;
-    // Com um único segmento não há vizinho de quem se separar: anel fechado.
-    const vaoReal = visiveis.length > 1 ? Math.min(vao, comp * 0.5) : 0;
-    const desenho = Math.max(comp - vaoReal, 0.6);
-    svgEl('circle', {
-      cx: 0, cy: 0, r, fill: 'none',
-      stroke: seg.cor, 'stroke-width': sw, 'stroke-linecap': 'butt',
-      'stroke-dasharray': `${desenho} ${C - desenho}`,
-      'stroke-dashoffset': -acumulado,
-    }, g);
-    acumulado += comp;
-  }
-}
-
-/* ──────────────────  MICRO-HISTOGRAMA (dentro do nó)  ────────────────── */
-
-/**
- * Onda de disparos da etapa nas próximas 48h, em 12 baldes de 4h.
- * Série única: uma cor só, com ênfase no primeiro balde não-vazio — que é o
- * próximo lote a disparar. Nunca um degradê por valor (isso duplicaria a
- * altura da barra num segundo canal sem acrescentar informação).
- */
-export function desenharMicroBarras(g, valores, { w = 208, h = 26, vao = 2 } = {}) {
-  limpar(g);
-  const nb = valores.length;
-  const larg = (w - (nb - 1) * vao) / nb;
-  const max = Math.max(...valores, 1);
-  const proximo = valores.findIndex((v) => v > 0);
-
-  // Linha de base: sempre visível, para as barras terem de onde crescer.
-  svgEl('line', { class: 'micro-base', x1: 0, y1: h, x2: w, y2: h }, g);
-
-  valores.forEach((v, i) => {
-    const x = i * (larg + vao);
-    const altura = v > 0 ? Math.max((v / max) * (h - 3), 2.5) : 0;
-    if (altura <= 0) {
-      svgEl('rect', { class: 'micro-vazio', x, y: h - 1.5, width: larg, height: 1.5, rx: 0.75 }, g);
-      return;
-    }
-    svgEl('path', {
-      class: i === proximo ? 'micro-barra micro-barra--proxima' : 'micro-barra',
-      d: barPath(x, h - altura, larg, altura, 2),
-    }, g);
-  });
-}
 
 /* ───────────────────────────  GRÁFICO DE COLUNAS  ─────────────────────── */
 

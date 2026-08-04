@@ -1,5 +1,4 @@
-import { criarFluxo, CORES_ESTADO, CANAIS_META, definirCanais } from './flow.js';
-import { criarTrilha } from './mensagens.js';
+import { criarRegua, CORES_ESTADO, CANAIS_META, definirCanais } from './regua.js';
 import { criarPrevia } from './previa.js';
 // Mesmas regras que o servidor aplica ao salvar — avisam enquanto se digita.
 import { validarMensagem, medirSms } from './copy.js';
@@ -109,10 +108,10 @@ const estado = {
 let geracaoPedidos = 0;
 let geracaoSnapshot = 0;
 
-const fluxo = criarFluxo($('canvas-area'), {
+const regua = criarRegua($('canvas-area'), {
   tooltip,
   aoClicarEtapa(item) {
-    // 'na_regua' = tudo que não é finalizado. O número que o nó mostra é
+    // 'na_regua' = tudo que não é finalizado. O número que o contador mostra é
     // `na_etapa`, que exclui os finalizados que pararam ali; filtrar só por
     // etapa traria esses de volta e a tabela contradiria o número clicado.
     $('f-etapa').value = item.terminal ? '' : String(item.etapa);
@@ -123,6 +122,12 @@ const fluxo = criarFluxo($('canvas-area'), {
     carregarPedidos();
     document.querySelector('.tabela-envolve').scrollIntoView({ behavior: 'smooth', block: 'center' });
   },
+  // Clicar num nó de mensagem abre a janela de pré-visualização/edição —
+  // `previa` é declarada mais abaixo, mas o clique só acontece bem depois.
+  aoAbrirMensagem: (m, etapa, amostra) => previa.abrir(m, etapa, amostra, {
+    // Editar a copy muda o que sai para os clientes; o servidor também exige.
+    podeEditar: Boolean(estado.usuario?.admin),
+  }),
 });
 
 /* ── editor de copy, acoplado à janela de pré-visualização ── */
@@ -234,18 +239,11 @@ $('previa-editar').addEventListener('submit', async (ev) => {
     previa.marcarSalvo(r.dados.mensagem);
     editor.carregar(previa.rascunhoAtual(), editor.etapa);
     $('ed-estado').textContent = 'salvo — vale no próximo disparo';
-    // A trilha atrás da janela precisa refletir o texto novo.
+    // O fluxo atrás da janela precisa refletir o texto novo.
     carregarSnapshot({ silencioso: true });
   } catch {
     /* 401 já redirecionou */
   }
-});
-
-const trilha = criarTrilha($('trilha'), {
-  aoAbrirMensagem: (m, etapa, amostra) => previa.abrir(m, etapa, amostra, {
-    // Editar a copy muda o que sai para os clientes; o servidor também exige.
-    podeEditar: Boolean(estado.usuario?.admin),
-  }),
 });
 
 /* ═══════════════════════════  renderização  ═════════════════════════ */
@@ -983,8 +981,14 @@ async function carregarSnapshot({ silencioso = false } = {}) {
     renderFiltrosEtapa(s);
     renderFiltroProduto(s);
     renderFiltroPlataforma(s);
-    fluxo.atualizar(s.etapas, s.totais);
-    trilha.atualizar(s.etapas, s.canais ?? CANAIS_META, s.destinos, s.linha, s.piorCasoSms);
+    regua.atualizar({
+      etapas: s.etapas,
+      totais: s.totais,
+      canais: s.canais ?? CANAIS_META,
+      destinos: s.destinos,
+      linha: s.linha,
+      piorCaso: s.piorCasoSms,
+    });
     renderLinha(s);
     redesenharGraficos();
 
@@ -1632,7 +1636,7 @@ $('pr-apagar').addEventListener('click', async () => {
 /**
  * Duas coisas diferentes que a interface precisa distinguir:
  *
- *   EXIBINDO — qual linha de copy está desenhada na trilha agora
+ *   EXIBINDO — qual linha de copy está desenhada no fluxo agora
  *   ATIVA    — qual linha o n8n está de fato usando nos envios
  *
  * Clicar numa aba só troca o que você VÊ. Ativar é um segundo passo, com
@@ -1655,7 +1659,7 @@ function renderLinha(s) {
    * A lista sai de `resumo`, que o servidor monta lendo painel_linhas_copy.
    *
    * Dropdown e não abas: com muitas linhas as abas quebram em várias fileiras
-   * e empurram a trilha para baixo. O que as abas mostravam de graça — qual
+   * e empurram o fluxo para baixo. O que as abas mostravam de graça — qual
    * está no ar, quais estão incompletas — não se perde: vai no rótulo de cada
    * opção, e o selo "no ar" ao lado fica visível mesmo quando você seleciona
    * outra.
@@ -1881,7 +1885,7 @@ $('form-linha').addEventListener('submit', async (ev) => {
     await carregarSnapshot({ silencioso: true });
     carregarPedidos();
     if (!editando) {
-      document.querySelector('.cartao--trilha')
+      document.querySelector('.cartao--canvas')
         .scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   } catch {

@@ -532,48 +532,17 @@
     <div class="kpis" id="kpis"></div>
   </section>
 
-  <!-- ── linha 2: o canvas ── -->
+  <!-- ── linha 2: o fluxo da régua — números E copy num canvas só ── -->
   <section class="cartao cartao--canvas">
     <header class="cartao-cabeca">
       <div>
         <h2>Fluxo de envio de mensagens</h2>
         <p class="cartao-sub">
-          Cada nó é uma mensagem da régua: o canal, o texto que sai e quantos clientes
-          estão parados nela agora. A etiqueta na conexão é a espera até a próxima.
+          O passo a passo da régua, como no n8n: toda etapa dispara <b>e-mail e SMS ao
+          mesmo tempo</b>, e o relógio laranja é a espera até a próxima mensagem.
         </p>
       </div>
       <div class="legenda" id="legenda" role="list" aria-label="Legenda dos estados"></div>
-    </header>
-
-    <div class="canvas-area" id="canvas-area"></div>
-
-    <div class="canvas-vazio" id="canvas-vazio" hidden>
-      <p class="canvas-vazio-tit">A régua está vazia</p>
-      <p>Nenhum pedido em <code>disparos_pos_venda</code> ainda. Os nós já estão montados
-      e vão se preencher sozinhos assim que o primeiro disparo entrar na fila.</p>
-    </div>
-
-    <footer class="canvas-rodape">
-      <span id="rodape-etapas">—</span>
-      <span class="ponto" aria-hidden="true">·</span>
-      <span>canvas travado: sem arrastar, sem zoom — a régua sempre cabe na tela</span>
-    </footer>
-  </section>
-
-  <!-- ── linha 2b: a copy de cada etapa, nos dois canais ── -->
-  <section class="cartao cartao--trilha">
-    <header class="cartao-cabeca">
-      <div>
-        <h2>Etapas de comunicação</h2>
-        <p class="cartao-sub">
-          O que cada etapa envia. Toda etapa dispara <b>e-mail e SMS ao mesmo tempo</b> —
-          o e-mail alcança quem tem endereço, o SMS quem tem telefone.
-        </p>
-      </div>
-      <p class="trilha-dica">
-        <b>Duplo clique</b> numa mensagem abre como o cliente recebe.<br>
-        Vem de <code>mensagens_regua</code>. Edite por SQL — o painel só lê.
-      </p>
     </header>
 
     <!-- ── seletor de linha: escolhe o que é EXIBIDO; ativar é um passo à parte ── -->
@@ -607,7 +576,22 @@
       <p class="linha-intuito" id="linha-intuito" hidden></p>
     </div>
 
-    <div class="trilha" id="trilha"></div>
+    <div class="canvas-area" id="canvas-area"></div>
+
+    <div class="canvas-vazio" id="canvas-vazio" hidden>
+      <p class="canvas-vazio-tit">A régua está vazia</p>
+      <p>Nenhum pedido em <code>disparos_pos_venda</code> ainda. Os nós já estão montados
+      e vão se preencher sozinhos assim que o primeiro disparo entrar na fila.</p>
+    </div>
+
+    <footer class="canvas-rodape">
+      <span id="rodape-etapas">—</span>
+      <span class="ponto" aria-hidden="true">·</span>
+      <span>clique numa mensagem para ver e editar o que o cliente recebe · o contador
+      de cada etapa filtra a tabela</span>
+      <span class="ponto" aria-hidden="true">·</span>
+      <span>canvas travado: sem arrastar, sem zoom</span>
+    </footer>
   </section>
 
   <!-- ── filtros que valem para os DOIS gráficos temporais ── -->
