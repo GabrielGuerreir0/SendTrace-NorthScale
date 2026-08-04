@@ -181,6 +181,10 @@ export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem 
   let canaisMeta = CANAIS_META;
   let destinos = {};
   let linhaExibindo = null;
+  // De qual produto é a copy desenhada: '*' é o padrão. Com um produto
+  // escolhido, cada nó resolve a cascata (produto → '*') e diz de onde veio.
+  let produtoCopy = '*';
+  let produtoMeta = null;
 
   const preencher = (t) =>
     String(t ?? '').replace(/\{(nome|produto|uso)\}/g, (_, k) => amostra[k] ?? `{${k}}`);
@@ -205,10 +209,18 @@ export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem 
     }).join('');
   }
 
-  function ttEtapa(d, m, meta) {
+  function ttEtapa(d, m, meta, herdada = false) {
+    // Com um produto escolhido, o tooltip diz DE ONDE veio o texto — é a
+    // resposta à pergunta "se eu editar isto, mudo um produto ou todos?".
+    const origem = produtoCopy === '*'
+      ? ''
+      : (herdada
+        ? ' · <b>herdada do padrão</b>'
+        : ` · <b>própria do ${esc(produtoMeta?.nome ?? produtoCopy)}</b>`);
     const cab = `<strong>Etapa ${d.etapa} · ${esc(d.nome)}</strong>`
       + `<span class="tt-sub">${esc(meta.label)}`
       + `${m ? (m.ativo === false ? ' · <b>desativada</b>' : '') : ' · <b>não cadastrada</b>'}`
+      + origem
       + `${d.ativo === false ? ' · etapa <b>desativada</b>' : ''}</span>`;
 
     let copy = '';
@@ -236,7 +248,9 @@ export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem 
       + `<span class="tt-linha"><span class="tt-chave">Próximo disparo</span><b>${d.proximo_em ? relativo(d.proximo_em) : '—'}</b></span>`
       + (d.proximo_em ? `<span class="tt-linha"><span class="tt-chave"></span><b class="tt-fraco">${dataHora(d.proximo_em)}</b></span>` : '')
       + `<span class="tt-linha"><span class="tt-chave">Já finalizados aqui</span><b>${n(d.finalizado)}</b></span>`
-      + `<span class="tt-dica">${m ? 'Clique para ver e editar a mensagem' : 'Clique para escrever a mensagem'}</span>`;
+      + `<span class="tt-dica">${produtoCopy !== '*' && herdada
+        ? `Clique para criar a versão do ${esc(produtoMeta?.nome ?? produtoCopy)}`
+        : m ? 'Clique para ver e editar a mensagem' : 'Clique para escrever a mensagem'}</span>`;
   }
 
   function ttEspera(origem, esp) {
@@ -302,10 +316,25 @@ export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem 
     return l;
   }
 
+  /**
+   * A cascata de copy de um canal da etapa, do jeito que o robô procura:
+   * primeiro a mensagem do produto escolhido, senão a do padrão '*'.
+   * Uma mensagem de produto DESATIVADA volta a cair no padrão — desativar é
+   * exatamente o gesto de "voltar ao padrão", sem apagar o texto.
+   */
+  function resolverCopy(d, canal) {
+    const doCanal = (d.mensagens ?? []).filter((x) => x.canal === canal);
+    const padrao = doCanal.find((x) => String(x.produto ?? '*') === '*') ?? null;
+    if (produtoCopy === '*') return { efetiva: padrao, propria: null, padrao, herdada: false };
+    const propria = doCanal.find((x) => String(x.produto ?? '*') === produtoCopy) ?? null;
+    const ativa = propria && propria.ativo !== false ? propria : null;
+    return { efetiva: ativa ?? padrao, propria, padrao, herdada: !ativa };
+  }
+
   /** Nó de mensagem (e-mail ou SMS) de uma etapa — com a copy no sub-rótulo. */
   function noMensagem(d, canal) {
     const meta = canaisMeta[canal] ?? { label: canal, glifo: 'interrogacao' };
-    const m = (d.mensagens ?? []).find((x) => x.canal === canal) ?? null;
+    const { efetiva: m, propria, padrao, herdada } = resolverCopy(d, canal);
 
     let sub;
     let alertaSms = false;
@@ -335,22 +364,55 @@ export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem 
     if (m?.ativo === false) bloco.dataset.ativo = 'nao';
     if (alertaSms) bloco.dataset.alerta = 'sim';
 
+    /*
+     * O indicador de herança — sem ele a tela fica ambígua de um jeito
+     * perigoso: a pessoa edita um texto sem saber se mexeu na copy de UM
+     * produto ou na de todos. Só aparece com um produto escolhido.
+     */
+    if (produtoCopy !== '*') {
+      const selo = el('span', 'rg-copy-selo', herdada ? 'padrão' : 'própria');
+      selo.dataset.origem = herdada ? 'padrao' : 'propria';
+      selo.title = herdada
+        ? `Esta etapa usa o texto padrão — clique no nó para criar a versão do ${produtoMeta?.nome ?? produtoCopy}`
+        : `Texto exclusivo do ${produtoMeta?.nome ?? produtoCopy}`;
+      bloco.appendChild(selo);
+    }
+
     if (aoAbrirMensagem) {
       bloco.title = m
-        ? 'Clique para ver a mensagem como o cliente recebe — e editá-la'
+        ? (produtoCopy !== '*' && herdada
+          ? `Abre o texto padrão como ponto de partida para a versão do ${produtoMeta?.nome ?? produtoCopy}`
+          : 'Clique para ver a mensagem como o cliente recebe — e editá-la')
         : `Criar a mensagem de ${meta.label} desta etapa`;
-      // Molde vazio com a identidade certa: o editor grava por (etapa, canal,
-      // linha), então basta isso para o UPSERT criar o registro.
-      const alvo = m ?? {
-        etapa: d.etapa, canal, linha: linhaExibindo,
-        assunto: null, corpo_html: null, botao: null, destino: null,
-        texto: '', ativo: true, novo: true,
-      };
+
+      const alvo = alvoDoEditor(d, canal, { propria, padrao });
       acionavel(bloco, () => aoAbrirMensagem(alvo, d, amostra));
     }
 
-    ligarTooltip(bloco, () => ttEtapa(d, m, meta));
+    ligarTooltip(bloco, () => ttEtapa(d, m, meta, herdada));
     return bloco;
+  }
+
+  /**
+   * O que o clique no nó abre no editor, respeitando o produto escolhido:
+   *  - no padrão: a mensagem '*' (ou um molde vazio dela);
+   *  - produto com versão própria ativa: a própria;
+   *  - versão própria desativada: ela mesma, já reativada no rascunho —
+   *    salvar volta a valer;
+   *  - sem versão própria: um molde do produto PRÉ-PREENCHIDO com o texto do
+   *    padrão — criar a versão começa do texto que o cliente recebe hoje.
+   */
+  function alvoDoEditor(d, canal, { propria, padrao }) {
+    const molde = (produto, base) => ({
+      etapa: d.etapa, canal, linha: linhaExibindo, produto,
+      assunto: base?.assunto ?? null, corpo_html: base?.corpo_html ?? null,
+      botao: base?.botao ?? null, destino: base?.destino ?? null,
+      texto: base?.texto ?? '', ativo: true, novo: true,
+    });
+    if (produtoCopy === '*') return padrao ?? molde('*', null);
+    if (propria && propria.ativo !== false) return propria;
+    if (propria) return { ...propria, ativo: true };
+    return molde(produtoCopy, padrao);
   }
 
   /**
@@ -402,15 +464,23 @@ export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem 
   }
 
   /* ── montagem ── */
-  function atualizar({ etapas, totais, canais, destinos: dest, linha, piorCaso }) {
+  function atualizar({ etapas, totais, canais, destinos: dest, linha, piorCaso, copyProduto, catalogo }) {
     if (canais) canaisMeta = canais;
     destinos = dest ?? destinos;
     linhaExibindo = linha?.exibindo ?? linhaExibindo;
-    // Sem fila ainda, cai na amostra padrão: melhor um exemplo confortável que
-    // um marcador cru.
+    produtoCopy = copyProduto ?? '*';
+    produtoMeta = produtoCopy === '*'
+      ? null
+      : (catalogo ?? []).find((p) => p.slug === produtoCopy) ?? null;
+    /*
+     * A amostra dos marcadores {nome}/{produto}. No padrão continua o pior
+     * caso real da fila (é ele que decide se o SMS vira dois segmentos). Com
+     * um produto escolhido, o {produto} é o NOME DELE — mostrar "Memopryl"
+     * na copy do NeuroMind Pro seria mentir sobre o que o cliente recebe.
+     */
     amostra = {
       nome: piorCaso?.nome || AMOSTRA_PADRAO.nome,
-      produto: piorCaso?.produto || AMOSTRA_PADRAO.produto,
+      produto: produtoMeta?.nome || piorCaso?.produto || AMOSTRA_PADRAO.produto,
       uso: AMOSTRA_PADRAO.uso,
     };
 

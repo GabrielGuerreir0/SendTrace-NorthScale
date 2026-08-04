@@ -348,6 +348,10 @@ export default async function rotasMetricas(app) {
     // CROSS JOIN com a lista fixa de canais + EXISTS, em vez de JOIN direto na
     // mensagens_regua: com três linhas por (etapa, canal), o JOIN multiplicaria
     // cada pedido por três e TODAS as contagens sairiam infladas.
+    //
+    // O EXISTS casa só com `produto = '*'`: "a régua está completa" é uma
+    // pergunta sobre o PADRÃO — a cascata garante que todo produto tem para
+    // onde cair, então copy por produto não muda a cobertura.
     const canais = await query(
       `SELECT c.canal,
               count(*)::int                                   AS total,
@@ -360,7 +364,7 @@ export default async function rotasMetricas(app) {
          AND ${DO_PRODUTO(1, 'd.')} AND ${DA_PLATAFORMA(3, 'd.')}
          AND EXISTS (SELECT 1 FROM mensagens_regua m
                       WHERE m.etapa = d.etapa_atual AND m.canal = c.canal
-                        AND m.ativo AND m.linha = $2::text)
+                        AND m.ativo AND m.linha = $2::text AND m.produto = '*')
        GROUP BY c.canal ORDER BY total DESC, c.canal`,
       [produto, linha, plataforma],
     );
@@ -369,7 +373,8 @@ export default async function rotasMetricas(app) {
       `SELECT
          count(*) FILTER (WHERE NOT EXISTS (
            SELECT 1 FROM mensagens_regua m
-            WHERE m.etapa = d.etapa_atual AND m.ativo AND m.linha = $2::text))::int AS sem_mensagem,
+            WHERE m.etapa = d.etapa_atual AND m.ativo AND m.linha = $2::text
+              AND m.produto = '*'))::int AS sem_mensagem,
          count(*) FILTER (WHERE d.ultimo_erro IS NOT NULL
                             AND ${CANAL_DO_ERRO('d')} IS NULL)::int AS erro_sem_canal
        FROM disparos_pos_venda d

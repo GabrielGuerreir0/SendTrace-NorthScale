@@ -449,6 +449,21 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
 /* SMS que estoura segmento: cor + o próprio texto no sub-rótulo, nunca só cor. */
 .rg-no[data-alerta="sim"] .rg-sub { color: var(--st-travado); font-weight: 560; }
 
+/* De onde vem a copy quando um produto está escolhido: "própria" (texto
+   exclusivo do produto) ou "padrão" (herdada do '*'). Palavra + cor, nunca
+   só cor. */
+.rg-copy-selo {
+  font-size: 8.5px; font-weight: 640; letter-spacing: .05em; text-transform: uppercase;
+  padding: 1px 7px; border-radius: 999px;
+  border: 1px solid var(--borda); background: var(--superficie);
+  color: var(--tinta-fraca);
+}
+.rg-copy-selo[data-origem="propria"] {
+  color: var(--tinta);
+  border-color: color-mix(in srgb, var(--cor) 45%, transparent);
+  background: color-mix(in srgb, var(--cor) 13%, var(--superficie));
+}
+
 /* Espera fora do configurado (deriva > 25%): o "real X" aparece embaixo. */
 .rg-no[data-derivou="sim"] .rg-tile {
   border-color: color-mix(in srgb, var(--st-atrasado) 62%, transparent);

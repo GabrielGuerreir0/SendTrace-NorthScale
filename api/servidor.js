@@ -31,6 +31,7 @@ import rotasFila from './rotas/fila.js';
 import rotasRegua from './rotas/regua.js';
 import rotasMetricas from './rotas/metricas.js';
 import rotasProdutos from './rotas/produtos.js';
+import rotasCatalogo from './rotas/catalogo.js';
 import rotasAtendimentos from './rotas/atendimentos.js';
 
 const PORTA = Number(process.env.API_PORT) || 4400;
@@ -215,6 +216,7 @@ await app.register(swagger, {
       { name: 'Usuários', description: 'Contas do painel. Qualquer conta lê a própria; só administradores listam, criam e alteram.' },
       { name: 'Métricas', description: 'Perguntas agregadas, respondidas pelo banco.' },
       { name: 'Produtos', description: 'Readmes de produto — o conhecimento que a IA de suporte recebe.' },
+      { name: 'Catálogo', description: "O catálogo canônico de produtos (slug, nomes, e-book, suporte) e os aliases. '*' é o padrão da cascata de copy." },
       { name: 'Suporte', description: 'Histórico de atendimentos do chatbot — a memória do suporte por cliente.' },
       { name: 'Saúde', description: 'A API está de pé?' },
     ],
@@ -327,6 +329,7 @@ await app.register(rotasFila);
 await app.register(rotasRegua);
 await app.register(rotasMetricas);
 await app.register(rotasProdutos);
+await app.register(rotasCatalogo);
 await app.register(rotasAtendimentos);
 
 /* ═══════════════════════════════  subida  ══════════════════════════════ */

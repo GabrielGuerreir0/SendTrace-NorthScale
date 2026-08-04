@@ -150,11 +150,19 @@ export const EtapaRegua = {
 export const MensagemRegua = {
   $id: 'MensagemRegua',
   type: 'object',
-  description: 'O QUE cada etapa diz, por canal. A chave é (etapa, canal, linha).',
+  description: 'O QUE cada etapa diz, por canal. A chave é (etapa, canal, linha, produto). '
+    + "O robô procura a copy do produto do lead e, se não houver, cai na do produto '*'.",
   properties: {
     etapa: { type: 'integer' },
     canal: { type: 'string', enum: ['email', 'sms'] },
     linha: { type: 'string', maxLength: 4, description: 'Qual variação de copy.' },
+    // Se `produto` não estiver AQUI, a coluna existe no banco, a query traz o
+    // valor e o fast-json-stringify o REMOVE da resposta em silêncio.
+    produto: {
+      type: 'string', maxLength: 40, default: '*',
+      pattern: '^(\\*|[a-z0-9]{2,40})$',
+      description: "Slug do produto dono desta copy. '*' é o padrão, herdado por todo produto sem copy própria.",
+    },
     assunto: texto(300),
     texto: { type: 'string', description: 'Corpo do SMS; no e-mail, a descrição interna.' },
     botao: texto(120),
@@ -216,6 +224,44 @@ export const ConfigDisparo = {
     valor: { type: 'string' },
   },
   required: ['chave', 'valor'],
+};
+
+/* ─────────────────────  catálogo canônico de produtos  ─────────────────── */
+
+export const ProdutoCatalogo = {
+  $id: 'ProdutoCatalogo',
+  type: 'object',
+  description: "O catálogo canônico: um slug por produto, mais a linha '*' (o padrão). "
+    + 'É daqui que saem o nome de exibição, o link do e-book e o e-mail de suporte '
+    + 'usados na copy de cada produto.',
+  properties: {
+    slug: {
+      type: 'string', maxLength: 40, pattern: '^(\\*|[a-z0-9]{2,40})$',
+      description: "Nome normalizado, sem espaço nem pontuação: 'neuromindpro'. '*' é o único fora do padrão.",
+    },
+    nome: { type: 'string', maxLength: 300, description: 'Nome de exibição.' },
+    nome_sms: { ...texto(60), description: 'Versão curta para SMS — cada caractere custa.' },
+    forma: texto(60),
+    uso: texto(200),
+    link_ebook: { ...texto(500), description: 'Destino do botão EBOOK nos e-mails deste produto.' },
+    email_suporte: { ...texto(200), description: 'Remetente/contato de suporte usado na moldura do e-mail.' },
+    ativo: { type: 'boolean', default: true },
+    atualizado_em: { ...dataHora, readOnly: true },
+  },
+  required: ['slug', 'nome'],
+};
+
+export const ProdutoAlias = {
+  $id: 'ProdutoAlias',
+  type: 'object',
+  description: 'Exceção de nomenclatura que a normalização automática não pega: '
+    + 'liga um nome cru da plataforma ao slug canônico.',
+  properties: {
+    alias: { type: 'string', maxLength: 300 },
+    produto_slug: { type: 'string', maxLength: 40 },
+    criado_em: { ...dataHora, readOnly: true },
+  },
+  required: ['alias', 'produto_slug'],
 };
 
 /* ──────────────────────────────  acesso  ──────────────────────────── */
@@ -361,7 +407,7 @@ export const ContagemStatus = {
 /** Todos, na ordem em que o Swagger vai listá-los. */
 export const TODOS = [
   DisparoPosVenda, DisparoEntrada, ProdutoReadme, Atendimento, PerguntaSemResposta,
-  EtapaRegua, MensagemRegua, PainelLinhaCopy,
+  EtapaRegua, MensagemRegua, PainelLinhaCopy, ProdutoCatalogo, ProdutoAlias,
   PainelLinhaMensagens, PainelLinhaHistorico, ConfigDisparo, PainelUsuario,
   Credenciais, ParTokens, PedidoRefresh, Erro,
   ContagemPorEstado, ResumoEtapa, Produto, Balde, EntradaDia, ContagemStatus,

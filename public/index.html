@@ -266,6 +266,9 @@
       <div class="editar-acoes">
         <button class="btn btn-forte" id="ed-salvar" type="submit">Salvar</button>
         <button class="btn btn-fantasma" id="ed-reverter" type="button">Desfazer alterações</button>
+        <!-- Só em mensagem de produto: desativa a versão própria (o texto fica
+             guardado) e a etapa volta a enviar o padrão. -->
+        <button class="btn btn-fantasma" id="ed-padrao" type="button" hidden>Voltar ao padrão</button>
         <span class="editar-estado" id="ed-estado"></span>
       </div>
     </form>
@@ -551,6 +554,16 @@
         <label class="campo linha-seletor">
           <span>Linha de copy</span>
           <select id="linha-select"></select>
+        </label>
+
+        <!-- NÃO é o #sel-produto do topo: aquele recorta a FILA ("só os pedidos
+             deste produto"); este diz DE QUAL PRODUTO é a copy exibida e
+             editada no fluxo. Misturar os dois num controle só é o acidente
+             óbvio — filtrar a fila e achar que trocou a copy. -->
+        <label class="campo linha-seletor" id="campo-copy-produto" hidden>
+          <span>Copy do produto</span>
+          <select id="copy-produto-select"
+                  title="De qual produto é a copy desenhada no fluxo. Produtos sem copy própria herdam o padrão."></select>
         </label>
 
         <!-- Qual está no ar, INDEPENDENTE do que está selecionado. Num dropdown

@@ -82,6 +82,9 @@ const estado = {
   // enquanto alguém confere outra versão antes de ativá-la.
   linhaExibindo: null,
   linhaAtiva: null,
+  // De qual produto é a copy exibida no fluxo. '*' = padrão. NÃO confundir com
+  // `produto` (abaixo), que recorta a FILA — são perguntas diferentes.
+  copyProduto: '*',
   snapshot: null,
   demo: false,
   // De minuto em minuto. Precisa casar com o <option selected> do seletor: se
@@ -124,11 +127,39 @@ const regua = criarRegua($('canvas-area'), {
   },
   // Clicar num nó de mensagem abre a janela de pré-visualização/edição —
   // `previa` é declarada mais abaixo, mas o clique só acontece bem depois.
-  aoAbrirMensagem: (m, etapa, amostra) => previa.abrir(m, etapa, amostra, {
-    // Editar a copy muda o que sai para os clientes; o servidor também exige.
-    podeEditar: Boolean(estado.usuario?.admin),
-  }),
+  aoAbrirMensagem: (m, etapa, amostra) => {
+    // Copy de produto usa a moldura DELE (e-book e suporte do catálogo) —
+    // senão a prévia mostraria o link do padrão num e-mail que sai diferente.
+    const meta = m.produto && m.produto !== '*'
+      ? (estado.snapshot?.catalogoProdutos ?? []).find((p) => p.slug === m.produto)
+      : null;
+    previa.abrir(m, etapa, amostra, {
+      // Editar a copy muda o que sai para os clientes; o servidor também exige.
+      podeEditar: Boolean(estado.usuario?.admin),
+      produtoNome: meta?.nome ?? (m.produto && m.produto !== '*' ? m.produto : null),
+      marca: meta ? {
+        ...(meta.link_ebook ? { ebook: meta.link_ebook } : {}),
+        ...(meta.email_suporte ? { suporte: meta.email_suporte } : {}),
+      } : null,
+    });
+    // "Voltar ao padrão" só faz sentido numa versão de produto que já existe.
+    $('ed-padrao').hidden = !(estado.usuario?.admin && m.produto && m.produto !== '*' && !m.novo);
+  },
 });
+
+/** Redesenha só o fluxo, com a copy do produto escolhido — sem ir à rede. */
+function pintarRegua(s) {
+  regua.atualizar({
+    etapas: s.etapas,
+    totais: s.totais,
+    canais: s.canais ?? CANAIS_META,
+    destinos: s.destinos,
+    linha: s.linha,
+    piorCaso: s.piorCasoSms,
+    copyProduto: estado.copyProduto,
+    catalogo: s.catalogoProdutos,
+  });
+}
 
 /* ── editor de copy, acoplado à janela de pré-visualização ── */
 
@@ -224,7 +255,9 @@ $('previa-editar').addEventListener('submit', async (ev) => {
   $('ed-salvar').disabled = true;
   $('ed-estado').textContent = 'salvando…';
   try {
-    const r = await api(`/api/mensagem/${m.linha}/${m.etapa ?? editor.etapa.etapa}/${m.canal}`, {
+    // O segmento do produto diz DE QUEM é a copy gravada: sem ele, vale '*'.
+    const r = await api(`/api/mensagem/${m.linha}/${m.etapa ?? editor.etapa.etapa}/${m.canal}`
+      + `/${encodeURIComponent(m.produto ?? '*')}`, {
       metodo: 'PUT',
       corpo: {
         assunto: m.assunto, corpo_html: m.corpo_html, botao: m.botao,
@@ -244,6 +277,89 @@ $('previa-editar').addEventListener('submit', async (ev) => {
   } catch {
     /* 401 já redirecionou */
   }
+});
+
+/*
+ * "Voltar ao padrão" = desativar a versão do produto, sem apagar o texto.
+ * O robô filtra `ativo` no SELECT, então a etapa volta a cair no '*' sozinha —
+ * e reativar depois é só salvar a versão de novo.
+ */
+$('ed-padrao').addEventListener('click', async () => {
+  const m = previa.rascunhoAtual();
+  if (!m || !m.produto || m.produto === '*') return;
+
+  const nome = (estado.snapshot?.catalogoProdutos ?? [])
+    .find((p) => p.slug === m.produto)?.nome ?? m.produto;
+  if (!confirm(`Voltar ao padrão?\n\nA versão do ${nome} é desativada (o texto fica guardado) `
+    + 'e esta etapa volta a enviar o texto padrão para os clientes dele.')) return;
+
+  $('ed-padrao').disabled = true;
+  $('ed-estado').textContent = 'voltando ao padrão…';
+  try {
+    const r = await api(`/api/mensagem/${m.linha}/${m.etapa ?? editor.etapa.etapa}/${m.canal}`
+      + `/${encodeURIComponent(m.produto)}`, {
+      metodo: 'PUT',
+      corpo: {
+        assunto: m.assunto, corpo_html: m.corpo_html, botao: m.botao,
+        destino: m.destino || null, texto: m.texto, ativo: false,
+      },
+    });
+    if (!r.ok) {
+      $('ed-estado').textContent = r.dados.erro ?? 'não foi possível voltar ao padrão';
+      return;
+    }
+    $('janela-previa').close();
+    carregarSnapshot({ silencioso: true });
+  } catch {
+    /* 401 já redirecionou */
+  } finally {
+    $('ed-padrao').disabled = false;
+  }
+});
+
+/* ── seletor "copy do produto" ── */
+
+function renderCopyProduto(s) {
+  const campo = $('campo-copy-produto');
+  const sel = $('copy-produto-select');
+  const catalogo = s.catalogoProdutos ?? [];
+
+  // Sem catálogo (rota ainda não no ar, ou modo demo), o painel funciona como
+  // antes: só o padrão, e o controle nem aparece.
+  campo.hidden = !catalogo.length;
+  if (!catalogo.length) { estado.copyProduto = '*'; return; }
+
+  // Não reconstruir com o dropdown aberto — o refresh fecharia na mão do usuário.
+  if (document.activeElement === sel) return;
+
+  // Quantos textos próprios cada produto tem, para o rótulo dizer de graça
+  // quem já foi personalizado.
+  const proprias = new Map();
+  for (const e of s.etapas ?? []) {
+    for (const m of e.mensagens ?? []) {
+      const p = String(m.produto ?? '*');
+      if (p !== '*' && m.ativo !== false) proprias.set(p, (proprias.get(p) ?? 0) + 1);
+    }
+  }
+
+  sel.replaceChildren(
+    Object.assign(document.createElement('option'), {
+      value: '*', textContent: 'Padrão (todos os produtos)',
+    }),
+    ...catalogo.map((p) => Object.assign(document.createElement('option'), {
+      value: p.slug,
+      textContent: p.nome + (proprias.get(p.slug) ? ` — ${proprias.get(p.slug)} próprias` : ''),
+    })),
+  );
+  if (![...sel.options].some((o) => o.value === estado.copyProduto)) estado.copyProduto = '*';
+  sel.value = estado.copyProduto;
+}
+
+$('copy-produto-select').addEventListener('change', (ev) => {
+  estado.copyProduto = ev.target.value || '*';
+  // As mensagens de todos os produtos já vieram no snapshot: trocar a visão
+  // é só redesenhar, sem ir à rede.
+  if (estado.snapshot) pintarRegua(estado.snapshot);
 });
 
 /* ═══════════════════════════  renderização  ═════════════════════════ */
@@ -981,14 +1097,8 @@ async function carregarSnapshot({ silencioso = false } = {}) {
     renderFiltrosEtapa(s);
     renderFiltroProduto(s);
     renderFiltroPlataforma(s);
-    regua.atualizar({
-      etapas: s.etapas,
-      totais: s.totais,
-      canais: s.canais ?? CANAIS_META,
-      destinos: s.destinos,
-      linha: s.linha,
-      piorCaso: s.piorCasoSms,
-    });
+    renderCopyProduto(s);
+    pintarRegua(s);
     renderLinha(s);
     redesenharGraficos();
 

@@ -15,6 +15,7 @@ import {
   statusBruto, alertas, listarPedidos,
   reguaDefinicao, cadenciaObservada, porCanal, semMensagem, resumoLinhas, piorCasoSms, errosSemCanal, mensagem, salvarMensagem, criarLinha, apagarLinha, editarLinha, etapasDaRegua,
   produtosDaFila, plataformasDaFila, fonteDados, suporteResumo, suporteConversas,
+  catalogoProdutos,
 } from './dados.js';
 import {
   apiConfigurada, enderecoApi, saude as saudeApi, ErroApi,
@@ -291,7 +292,8 @@ async function snapshot(filtros = {}) {
   const plataforma = filtros.plataforma ?? null;
 
   const [regua, rollup, onda, horaria, entradas, statuses, problemas, cadencia,
-    canais, orfaos, linhas, piorSms, errosOrfaos, produtos, plataformas, fonte] = await Promise.all([
+    canais, orfaos, linhas, piorSms, errosOrfaos, produtos, plataformas, fonte,
+    catalogo] = await Promise.all([
     reguaDefinicao(linha), etapasRollup(produto, plataforma), ondaPorEtapa(produto, plataforma),
     ondaHoraria(doFiltro), entradasPorDia(doFiltro), statusBruto(produto, plataforma),
     alertas(produto, plataforma), cadenciaObservada(produto, plataforma),
@@ -300,6 +302,9 @@ async function snapshot(filtros = {}) {
     // O catálogo de produtos obedece à plataforma: com uma escolhida, o
     // seletor só oferece o que ela vende. O de plataformas continua completo.
     produtosDaFila(plataforma), plataformasDaFila(), fonteDados(),
+    // O catálogo CANÔNICO (tabela produtos): alimenta o seletor "copy do
+    // produto" e a moldura da prévia. Diferente do de cima, que deriva da fila.
+    catalogoProdutos(),
   ]);
 
   const reguaOk = regua !== null;
@@ -365,6 +370,9 @@ async function snapshot(filtros = {}) {
     // Os catálogos dos seletores do topo, sempre completos — é deles que se escolhe.
     produtos,
     plataformas,
+    // O catálogo canônico (tabela `produtos`, sem o '*'): é dele que sai o
+    // seletor "de qual produto é a copy" e os dados da moldura por produto.
+    catalogoProdutos: catalogo,
     /*
      * De onde vieram estes números.
      *
@@ -868,14 +876,19 @@ async function atender(req, res, url, sessao) {
   }
 
   /* ── edição de copy ── */
-  // /api/mensagem/:linha/:etapa/:canal
-  const rotaMsg = /^\/api\/mensagem\/(\d{1,4})\/(\d{1,2})\/(email|sms)$/.exec(url.pathname);
+  // /api/mensagem/:linha/:etapa/:canal[/:produto] — sem o produto, vale o
+  // padrão '*': é o formato antigo, que continua funcionando.
+  const rotaMsg = /^\/api\/mensagem\/(\d{1,4})\/(\d{1,2})\/(email|sms)(?:\/([^/]+))?$/.exec(url.pathname);
   if (rotaMsg) {
-    const [, linhaM, etapaM, canalM] = rotaMsg;
+    const [, linhaM, etapaM, canalM, produtoBruto] = rotaMsg;
     const etapaNum = Number(etapaM);
+    const produtoM = produtoBruto === undefined ? '*' : decodeURIComponent(produtoBruto);
+    if (!/^(\*|[a-z0-9]{2,40})$/.test(produtoM)) {
+      return json(res, 400, { erro: "Produto inválido: use o slug canônico (ex.: neuromindpro) ou '*'." });
+    }
 
     if (req.method === 'GET') {
-      const m = await mensagem(linhaM, etapaNum, canalM);
+      const m = await mensagem(linhaM, etapaNum, canalM, produtoM);
       if (!m) return json(res, 404, { erro: 'Mensagem não encontrada.' });
       return json(res, 200, { mensagem: m, ...validarMensagem(m) });
     }
@@ -887,7 +900,7 @@ async function atender(req, res, url, sessao) {
       }
       const corpo = await lerJson(req, 128 * 1024);
       const proposta = {
-        linha: linhaM, etapa: etapaNum, canal: canalM,
+        linha: linhaM, etapa: etapaNum, canal: canalM, produto: produtoM,
         assunto: corpo.assunto, corpo_html: corpo.corpo_html,
         botao: corpo.botao, destino: corpo.destino || null,
         texto: corpo.texto, ativo: corpo.ativo,

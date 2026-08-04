@@ -13,16 +13,28 @@ import {
 } from '../esquemas.js';
 import { registrarCrud, ErroHttp, fatiar, montarOrdem } from '../comum.js';
 
-const COLUNAS_MSG = `etapa, canal, linha, assunto, texto, botao, destino,
+const COLUNAS_MSG = `etapa, canal, linha, produto, assunto, texto, botao, destino,
   corpo_html, ativo, atualizado_em`;
 
-/** A PK composta viaja como um texto só: `etapa:canal:linha`. */
+const SLUG_PRODUTO = /^(\*|[a-z0-9]{2,40})$/;
+
+/**
+ * A PK composta viaja como um texto só: `etapa:canal:linha:produto`.
+ *
+ * O formato antigo de 3 partes continua aceito e significa `produto = '*'` —
+ * é o que deixa BFF e front antigos funcionarem durante a transição, em vez de
+ * exigir que API e painel subam no mesmo segundo.
+ */
 function partirChave(bruto) {
-  const [etapa, canal, linha] = String(bruto).split(':');
-  if (!/^\d+$/.test(etapa ?? '') || !['email', 'sms'].includes(canal) || !linha) {
-    throw new ErroHttp(400, 'Chave inválida. O formato é etapa:canal:linha — por exemplo 1:email:1.');
+  const partes = String(bruto).split(':');
+  const [etapa, canal, linha, produto] = partes;
+  if (partes.length < 3 || partes.length > 4
+      || !/^\d+$/.test(etapa ?? '') || !['email', 'sms'].includes(canal) || !linha
+      || (produto !== undefined && !SLUG_PRODUTO.test(produto))) {
+    throw new ErroHttp(400, 'Chave inválida. O formato é etapa:canal:linha:produto — '
+      + "por exemplo 1:email:1:neuromindpro. Sem o produto, vale o padrão '*'.");
   }
-  return { etapa: Number(etapa), canal, linha };
+  return { etapa: Number(etapa), canal, linha, produto: produto ?? '*' };
 }
 
 export default async function rotasRegua(app) {
@@ -48,8 +60,9 @@ export default async function rotasRegua(app) {
     schema: {
       tags: ['Régua'],
       summary: 'Lista a copy da régua',
-      description: 'Toda etapa tem uma mensagem por canal e por linha. '
-        + 'Filtre por `linha` para ver uma variação inteira.',
+      description: 'Toda etapa tem uma mensagem por canal, linha e produto. '
+        + "Filtre por `linha` para ver uma variação inteira; `produto='*'` é o padrão "
+        + 'que os produtos sem copy própria herdam.',
       security: [{ bearerAuth: [] }],
       querystring: {
         type: 'object',
@@ -58,10 +71,11 @@ export default async function rotasRegua(app) {
           etapa: { type: 'integer' },
           canal: { type: 'string', enum: ['email', 'sms'] },
           linha: { type: 'string' },
+          produto: { type: 'string', description: "Slug do produto, ou '*' para o padrão." },
           ativo: { type: 'boolean' },
           destino: { type: 'string', enum: ['EBOOK', 'ASSISTENTE'] },
           search: { type: 'string', description: 'Procura em: assunto, texto, corpo_html.' },
-          ordering: { type: 'string', description: 'Aceita: etapa, canal, linha, atualizado_em.' },
+          ordering: { type: 'string', description: 'Aceita: etapa, canal, linha, produto, atualizado_em.' },
         },
       },
       response: { 200: paginado('MensagemRegua') },
@@ -70,7 +84,9 @@ export default async function rotasRegua(app) {
   }, async (req) => {
     const valores = [];
     const partes = [];
-    for (const campo of ['etapa', 'canal', 'linha', 'ativo', 'destino']) {
+    // `produto` PRECISA estar nesta lista: filtro fora dela é ignorado em
+    // silêncio, e o cliente receberia a copy de todos os produtos misturada.
+    for (const campo of ['etapa', 'canal', 'linha', 'produto', 'ativo', 'destino']) {
       if (req.query[campo] === undefined) continue;
       valores.push(campo === 'etapa' ? Number(req.query[campo]) : req.query[campo]);
       partes.push(`${campo} = $${valores.length}`);
@@ -85,7 +101,8 @@ export default async function rotasRegua(app) {
     const cont = await query(`SELECT count(*)::int AS n FROM mensagens_regua ${onde}`, valores);
     const { limit, offset, envelope } = fatiar(req, cont.rows[0].n);
     const ordem = montarOrdem(
-      req.query.ordering, ['etapa', 'canal', 'linha', 'atualizado_em'], 'etapa ASC, canal ASC, linha ASC',
+      req.query.ordering, ['etapa', 'canal', 'linha', 'produto', 'atualizado_em'],
+      'etapa ASC, canal ASC, linha ASC, produto ASC',
     );
     const { rows } = await query(
       `SELECT ${COLUNAS_MSG} FROM mensagens_regua ${onde} ORDER BY ${ordem}
@@ -98,18 +115,22 @@ export default async function rotasRegua(app) {
   app.get('/api/mensagens/:pk/', {
     schema: {
       tags: ['Régua'],
-      summary: 'Lê uma mensagem pela chave etapa:canal:linha',
+      summary: 'Lê uma mensagem pela chave etapa:canal:linha:produto',
       security: [{ bearerAuth: [] }],
-      params: { type: 'object', properties: { pk: { type: 'string', examples: ['1:email:1'] } }, required: ['pk'] },
+      params: {
+        type: 'object',
+        properties: { pk: { type: 'string', examples: ['1:email:1:*', '1:email:1:neuromindpro'] } },
+        required: ['pk'],
+      },
       response: { 200: { $ref: 'MensagemRegua#' }, 404: { $ref: 'Erro#' } },
     },
     onRequest: [app.exigirSessao],
   }, async (req) => {
-    const { etapa, canal, linha } = partirChave(req.params.pk);
+    const { etapa, canal, linha, produto } = partirChave(req.params.pk);
     const { rows } = await query(
       `SELECT ${COLUNAS_MSG} FROM mensagens_regua
-        WHERE etapa = $1 AND canal = $2 AND linha = $3`,
-      [etapa, canal, linha],
+        WHERE etapa = $1 AND canal = $2 AND linha = $3 AND produto = $4`,
+      [etapa, canal, linha, produto],
     );
     if (!rows[0]) throw new ErroHttp(404, 'Mensagem não encontrada.');
     return rows[0];
@@ -127,22 +148,28 @@ export default async function rotasRegua(app) {
     const etapa = alvo?.etapa ?? c.etapa;
     const canal = alvo?.canal ?? c.canal;
     const linha = String(alvo?.linha ?? c.linha);
+    // Quem ainda chama com a chave de 3 partes (ou sem o campo no corpo) grava
+    // o padrão — é exatamente o comportamento de antes da migração.
+    const produto = alvo?.produto ?? c.produto ?? '*';
     if (etapa === undefined || !canal || !linha) {
       throw new ErroHttp(400, 'Informe etapa, canal e linha.');
+    }
+    if (!SLUG_PRODUTO.test(produto)) {
+      throw new ErroHttp(400, "Produto inválido: use o slug canônico (ex.: neuromindpro) ou '*'.");
     }
 
     const eEmail = canal === 'email';
     const { rows } = await query(
       `INSERT INTO mensagens_regua
-         (etapa, canal, linha, assunto, corpo_html, botao, destino, texto, ativo, atualizado_em)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
-       ON CONFLICT (etapa, canal, linha) DO UPDATE SET
+         (etapa, canal, linha, produto, assunto, corpo_html, botao, destino, texto, ativo, atualizado_em)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+       ON CONFLICT (etapa, canal, linha, produto) DO UPDATE SET
          assunto = EXCLUDED.assunto, corpo_html = EXCLUDED.corpo_html,
          botao = EXCLUDED.botao, destino = EXCLUDED.destino,
          texto = EXCLUDED.texto, ativo = EXCLUDED.ativo, atualizado_em = now()
        RETURNING ${COLUNAS_MSG}`,
       [
-        etapa, canal, linha,
+        etapa, canal, linha, produto,
         // No SMS estes campos não existem: gravar string vazia deixaria lixo
         // que depois conta como "preenchido" em qualquer verificação.
         eEmail ? (c.assunto ?? null) : null,
@@ -192,10 +219,10 @@ export default async function rotasRegua(app) {
     },
     onRequest: [app.exigirAdmin],
   }, async (req, resposta) => {
-    const { etapa, canal, linha } = partirChave(req.params.pk);
+    const { etapa, canal, linha, produto } = partirChave(req.params.pk);
     const r = await query(
-      'DELETE FROM mensagens_regua WHERE etapa = $1 AND canal = $2 AND linha = $3',
-      [etapa, canal, linha],
+      'DELETE FROM mensagens_regua WHERE etapa = $1 AND canal = $2 AND linha = $3 AND produto = $4',
+      [etapa, canal, linha, produto],
     );
     if (!r.rowCount) throw new ErroHttp(404, 'Mensagem não encontrada.');
     resposta.code(204);
@@ -262,12 +289,15 @@ export default async function rotasRegua(app) {
         // em vez de escolher uma precedência por você.
         [nova, nome, intuito, ordem ?? (Number(nova) || 0)],
       );
+      // `produto` PRECISA vir junto no clone. Sem ele, toda a copy por produto
+      // da linha de origem colapsaria em '*' — e o DO NOTHING engoliria as
+      // colisões sem avisar: 200 na hora, copy perdida descoberta semanas depois.
       const r = await cliente.query(
         `INSERT INTO mensagens_regua
-           (etapa, canal, linha, assunto, corpo_html, botao, destino, texto, ativo, atualizado_em)
-         SELECT etapa, canal, $1::text, assunto, corpo_html, botao, destino, texto, ativo, now()
+           (etapa, canal, linha, produto, assunto, corpo_html, botao, destino, texto, ativo, atualizado_em)
+         SELECT etapa, canal, $1::text, produto, assunto, corpo_html, botao, destino, texto, ativo, now()
          FROM mensagens_regua WHERE linha = $2::text
-         ON CONFLICT (etapa, canal, linha) DO NOTHING`,
+         ON CONFLICT (etapa, canal, linha, produto) DO NOTHING`,
         [nova, origem],
       );
       await cliente.query('COMMIT');
@@ -333,7 +363,9 @@ export default async function rotasRegua(app) {
       summary: 'Registra qual linha passou a valer',
       description: 'Grava `config_disparos.linha_ativa` E o registro de autoria, '
         + 'numa transação — meio caminho aqui deixaria o painel afirmando uma '
-        + 'campanha que o robô não está usando.',
+        + 'campanha que o robô não está usando. Recusa linha incompleta: a conta '
+        + "é sobre o produto '*' (o padrão), porque a cascata garante que todo "
+        + 'produto tem para onde cair.',
       security: [{ bearerAuth: [] }],
       body: {
         type: 'object',
@@ -350,6 +382,27 @@ export default async function rotasRegua(app) {
     const linha = String(req.body.linha);
     const existe = await query('SELECT 1 FROM painel_linhas_copy WHERE linha = $1', [linha]);
     if (!existe.rowCount) throw new ErroHttp(400, `A linha ${linha} não está cadastrada.`);
+
+    /*
+     * Antes, quem garantia a completude era só o webhook do n8n — chamar esta
+     * rota direto punha no ar uma linha incompleta. A conta usa `produto = '*'`
+     * de propósito: exigir copy de TODO produto em TODA etapa faria meia dúzia
+     * de mensagens de um produto travarem a troca de linha do painel inteiro.
+     */
+    const faltas = await query(
+      `SELECT count(*)::int AS faltam
+       FROM etapas_regua e
+       CROSS JOIN (VALUES ('email'), ('sms')) AS c(canal)
+       WHERE e.ativo
+         AND NOT EXISTS (SELECT 1 FROM mensagens_regua m
+                          WHERE m.etapa = e.etapa AND m.canal = c.canal
+                            AND m.linha = $1 AND m.produto = '*' AND m.ativo)`,
+      [linha],
+    );
+    if (faltas.rows[0].faltam > 0) {
+      throw new ErroHttp(400, `A linha ${linha} está incompleta: faltam `
+        + `${faltas.rows[0].faltam} mensagens padrão ('*') para as etapas ativas.`);
+    }
 
     const cliente = await pool.connect();
     try {

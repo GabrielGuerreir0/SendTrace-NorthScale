@@ -205,6 +205,10 @@ export async function reguaDefinicao(linha = '1') {
     if (!porEtapa.has(m.etapa)) porEtapa.set(m.etapa, []);
     porEtapa.get(m.etapa).push({
       canal: m.canal,
+      // Com a copy por produto, uma etapa pode ter VÁRIAS mensagens por canal:
+      // a do '*' (padrão) e as dos produtos com texto próprio. O front resolve
+      // a cascata — por isso o produto viaja junto de cada mensagem.
+      produto: String(m.produto ?? '*'),
       assunto: m.assunto,
       texto: m.texto,
       botao: m.botao,
@@ -224,7 +228,10 @@ export async function reguaDefinicao(linha = '1') {
       espera_h: num(e.espera_h),
       offset_h: num(e.offset_h),
       mensagens: (porEtapa.get(Number(e.etapa)) ?? [])
-        .sort((a, b) => String(a.canal).localeCompare(String(b.canal))),
+        // Canal primeiro; no empate, o '*' antes dos produtos — é a ordem em
+        // que a cascata procura.
+        .sort((a, b) => String(a.canal).localeCompare(String(b.canal))
+          || (a.produto === '*' ? -1 : b.produto === '*' ? 1 : a.produto.localeCompare(b.produto))),
     }))
     .sort((a, b) => a.etapa - b.etapa);
 }
@@ -257,12 +264,19 @@ export async function resumoLinhas() {
 
   const contar = (linha) => {
     const minhas = ativas.filter((m) => String(m.linha) === String(linha));
+    /*
+     * A completude que libera o botão "ativar" conta SÓ o padrão ('*'): a
+     * cascata garante que todo produto tem para onde cair, então copy parcial
+     * de um produto não pode travar a troca de linha do painel inteiro com a
+     * mensagem enganosa "linha incompleta".
+     */
+    const padrao = minhas.filter((m) => String(m.produto ?? '*') === '*');
     return {
       mensagens: minhas.length,
-      etapas: new Set(minhas.map((m) => m.etapa)).size,
-      emails_prontos: minhas.filter((m) => m.canal === 'email'
+      etapas: new Set(padrao.map((m) => m.etapa)).size,
+      emails_prontos: padrao.filter((m) => m.canal === 'email'
         && preenchido(m.assunto) && preenchido(m.corpo_html)).length,
-      sms_prontos: minhas.filter((m) => m.canal === 'sms' && preenchido(m.texto)).length,
+      sms_prontos: padrao.filter((m) => m.canal === 'sms' && preenchido(m.texto)).length,
     };
   };
 
@@ -292,14 +306,15 @@ export async function resumoLinhas() {
 
 /* ── edição de copy ── */
 
-/** A PK das mensagens na API é composta: `etapa:canal:linha`. */
-const chaveMensagem = (linha, etapa, canal) => `${etapa}:${canal}:${linha}`;
+/** A PK das mensagens na API é composta: `etapa:canal:linha:produto`. */
+const chaveMensagem = (linha, etapa, canal, produto = '*') =>
+  `${etapa}:${canal}:${linha}:${encodeURIComponent(produto)}`;
 
 /** Uma mensagem específica, com tudo que o editor precisa. */
-export async function mensagem(linha, etapa, canal) {
+export async function mensagem(linha, etapa, canal, produto = '*') {
   let m;
   try {
-    m = await obter(`/api/mensagens/${chaveMensagem(linha, etapa, canal)}/`);
+    m = await obter(`/api/mensagens/${chaveMensagem(linha, etapa, canal, produto)}/`);
   } catch (err) {
     if (err instanceof ErroApi && err.status === 404) return null;
     throw err;
@@ -310,6 +325,7 @@ export async function mensagem(linha, etapa, canal) {
     etapa: Number(m.etapa),
     canal: m.canal,
     linha: String(m.linha),
+    produto: String(m.produto ?? '*'),
     assunto: m.assunto,
     corpo_html: m.corpo_html,
     botao: m.botao,
@@ -328,13 +344,15 @@ export async function mensagem(linha, etapa, canal) {
  * do robô define.
  */
 export async function salvarMensagem({
-  linha, etapa, canal, assunto, corpo_html: corpo, botao, destino, texto, ativo,
+  linha, etapa, canal, produto, assunto, corpo_html: corpo, botao, destino, texto, ativo,
 }) {
   const eEmail = canal === 'email';
+  const slug = String(produto ?? '*');
   const corpoReq = {
     etapa: Number(etapa),
     canal,
     linha: String(linha),
+    produto: slug,
     // No SMS estes campos não existem: gravar string vazia deixaria lixo que
     // depois conta como "preenchido" em qualquer verificação.
     assunto: eEmail ? (assunto ?? null) : null,
@@ -347,12 +365,17 @@ export async function salvarMensagem({
 
   let salva;
   try {
-    salva = await substituir(`/api/mensagens/${chaveMensagem(linha, etapa, canal)}/`, corpoReq);
+    salva = await substituir(`/api/mensagens/${chaveMensagem(linha, etapa, canal, slug)}/`, corpoReq);
   } catch (err) {
     if (err instanceof ErroApi && err.status === 404) salva = await criar('/api/mensagens/', corpoReq);
     else throw err;
   }
-  return { ...salva, etapa: Number(salva.etapa), linha: String(salva.linha) };
+  return {
+    ...salva,
+    etapa: Number(salva.etapa),
+    linha: String(salva.linha),
+    produto: String(salva.produto ?? slug),
+  };
 }
 
 /* ── linhas de copy ── */
@@ -380,12 +403,15 @@ export async function criarLinha({ linha, nome, intuito, ordem, copiarDe }) {
     if (copiarDe) {
       const origem = await mensagensDe(copiarDe);
       for (const m of origem) {
+        // O produto viaja junto no clone: sem ele, a copy por produto da linha
+        // de origem colapsaria toda em '*' e se perderia em silêncio.
+        const produto = String(m.produto ?? '*');
         await criar('/api/mensagens/', {
-          etapa: m.etapa, canal: m.canal, linha: alvo,
+          etapa: m.etapa, canal: m.canal, linha: alvo, produto,
           assunto: m.assunto, corpo_html: m.corpo_html, botao: m.botao,
           destino: m.destino, texto: m.texto, ativo: m.ativo,
         });
-        feitas.push(chaveMensagem(alvo, m.etapa, m.canal));
+        feitas.push(chaveMensagem(alvo, m.etapa, m.canal, produto));
         copiadas += 1;
       }
     }
@@ -437,7 +463,8 @@ export async function apagarLinha(linha) {
 
   const minhas = await mensagensDe(alvo);
   for (const m of minhas) {
-    await apagar(`/api/mensagens/${chaveMensagem(alvo, m.etapa, m.canal)}/`).catch(() => {});
+    await apagar(`/api/mensagens/${chaveMensagem(alvo, m.etapa, m.canal, String(m.produto ?? '*'))}/`)
+      .catch(() => {});
   }
 
   try {
@@ -447,6 +474,31 @@ export async function apagarLinha(linha) {
     throw err;
   }
   return { ok: true };
+}
+
+/**
+ * O catálogo canônico de produtos — o que alimenta o seletor "copy do produto"
+ * e a moldura da pré-visualização (link do e-book, e-mail de suporte).
+ *
+ * Fail-soft de propósito: se a rota ainda não existir na API no ar (deploy em
+ * fases), o painel segue funcionando só com o padrão, em vez de cair inteiro.
+ */
+export async function catalogoProdutos() {
+  try {
+    const { itens } = await listarTudo('/api/produtos/', { ativo: 'true' });
+    return itens
+      .filter((p) => p.slug !== '*')
+      .map((p) => ({
+        slug: String(p.slug),
+        nome: p.nome,
+        nome_sms: p.nome_sms ?? null,
+        link_ebook: p.link_ebook ?? null,
+        email_suporte: p.email_suporte ?? null,
+      }))
+      .sort((a, b) => String(a.nome).localeCompare(String(b.nome)));
+  } catch {
+    return [];
+  }
 }
 
 /** Qual linha o robô está usando, direto de config_disparos via API. */

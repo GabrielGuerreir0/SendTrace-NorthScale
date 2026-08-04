@@ -13,9 +13,12 @@
  */
 /* Espelha o CFG e as COR do nó de Code do n8n — a VERSÃO NEUTRA: sem nome de
    empresa, sem wordmark/logo e sem site próprio; o único ponto de contato é o
-   e-mail de suporte, e o destino ASSISTENTE virou um mailto para ele. Se mudar
-   o link ou a cor lá, mude aqui — senão a pré-visualização mente sobre o que
-   está sendo enviado. */
+   e-mail de suporte, e o destino ASSISTENTE virou um mailto para ele.
+
+   Estes são os valores do PADRÃO ('*'). Para copy de produto, o link do e-book
+   e o e-mail de suporte vêm do catálogo (`produtos.link_ebook` /
+   `produtos.email_suporte`) e entram por `abrir(..., { marca })` — senão a
+   pré-visualização mentiria sobre o que aquele produto envia. */
 const MARCA = {
   suporte: 'support@northsupplements.online',
   ebook: 'https://drive.google.com/uc?export=download&id=18DkKudndjAVQ9WOwPvCTItN1ZfJxyZva',
@@ -29,9 +32,9 @@ const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-/** Reproduz a moldura() do n8n. */
-function moldar(corpo, botao, destino, produto, email, telefone) {
-  const link = destino === 'EBOOK' ? MARCA.ebook : `mailto:${MARCA.suporte}`;
+/** Reproduz a moldura() do n8n. `marca` traz o e-book/suporte do produto. */
+function moldar(corpo, botao, destino, produto, email, telefone, marca = MARCA) {
+  const link = destino === 'EBOOK' ? marca.ebook : `mailto:${marca.suporte}`;
   // O n8n sempre desenha o botão: mensagem sem rótulo sai com o padrão dele.
   const rotulo = botao || 'Questions? Talk to us →';
   const cta = `<p style="margin:28px 0"><a href="${esc(link)}" style="display:inline-block;padding:14px 26px;`
@@ -49,7 +52,7 @@ function moldar(corpo, botao, destino, produto, email, telefone) {
     + `<p style="background:${MARCA.cinzaBg};border-radius:8px;padding:13px 18px;font-size:14px;color:#555">`
     + `<b>Need assistance? Our Support Team is here to help:</b><br>`
     + `<span style="color:${MARCA.cinza};font-size:13px">(Mon&ndash;Fri, 9am to 6pm EST)</span><br>`
-    + `&#128231; Email: <a href="mailto:${MARCA.suporte}" style="color:${MARCA.azul};text-decoration:none">${MARCA.suporte}</a></p>`
+    + `&#128231; Email: <a href="mailto:${esc(marca.suporte)}" style="color:${MARCA.azul};text-decoration:none">${esc(marca.suporte)}</a></p>`
     + `<p style="margin-top:20px">With care,<br><b>&mdash; The ${esc(produto)} Team</b></p>`
     + `</div>`
     + `<div style="padding:18px 24px;text-align:center;font-size:12px;color:#9aa0ab;line-height:1.6">`
@@ -86,6 +89,9 @@ export function criarPrevia({
   let rascunho = null;
   let contexto = null;   // { etapa, amostra }
   let modo = 'render';
+  // A moldura do e-mail desta abertura: o padrão, ou a do produto (e-book e
+  // suporte próprios) quando a mensagem pertence a um.
+  let marcaAtiva = MARCA;
 
   /**
    * Descarta o iframe atual, se houver.
@@ -123,6 +129,7 @@ export function criarPrevia({
       preencher(rascunho.corpo_html), preencher(rascunho.botao), rascunho.destino,
       contexto?.amostra?.produto ?? 'your order',
       'cliente@exemplo.com', '+1 555 000 0000',
+      marcaAtiva,
     );
   }
 
@@ -177,17 +184,24 @@ export function criarPrevia({
   }
 
   /**
-   * @param m       a mensagem (canal, assunto, botao, destino, corpo_html…)
-   * @param etapa   a etapa a que ela pertence, para o cabeçalho
-   * @param amostra nome/produto usados no lugar dos marcadores
+   * @param m           a mensagem (canal, assunto, botao, destino, corpo_html…)
+   * @param etapa       a etapa a que ela pertence, para o cabeçalho
+   * @param amostra     nome/produto usados no lugar dos marcadores
+   * @param marca       e-book/suporte do produto, para a moldura não mentir
+   * @param produtoNome nome de exibição do produto dono da copy
    */
-  function abrir(m, etapa, amostra, { podeEditar = false } = {}) {
+  function abrir(m, etapa, amostra, { podeEditar = false, marca = null, produtoNome = null } = {}) {
     original = { ...m };
     rascunho = { ...m };
     contexto = { etapa, amostra };
+    marcaAtiva = marca ? { ...MARCA, ...marca } : MARCA;
 
     const eEmail = m.canal === 'email';
-    sub.textContent = `Etapa ${etapa.etapa} · ${etapa.nome} · linha ${m.linha}`;
+    // De quem é esta copy — a resposta a "se eu salvar, mudo um produto ou todos?".
+    const dono = m.produto && m.produto !== '*'
+      ? `copy do ${produtoNome ?? m.produto}`
+      : 'copy padrão (todos os produtos)';
+    sub.textContent = `Etapa ${etapa.etapa} · ${etapa.nome} · linha ${m.linha} · ${dono}`;
 
     nota.hidden = false;
     nota.textContent = `Marcadores preenchidos com "${amostra?.nome ?? '—'}" e `
