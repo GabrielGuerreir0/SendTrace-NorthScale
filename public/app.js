@@ -128,19 +128,29 @@ const regua = criarRegua($('canvas-area'), {
   // Clicar num nó de mensagem abre a janela de pré-visualização/edição —
   // `previa` é declarada mais abaixo, mas o clique só acontece bem depois.
   aoAbrirMensagem: (m, etapa, amostra) => {
-    // Copy de produto usa a moldura DELE (e-book e suporte do catálogo) —
-    // senão a prévia mostraria o link do padrão num e-mail que sai diferente.
+    /*
+     * A moldura do e-mail (link do e-book, e-mail de suporte) segue a MESMA
+     * cascata da copy: primeiro os valores do produto, senão os do padrão
+     * '*' — nunca os dois hardcoded do `previa.js`, que são só o último
+     * degrau caso a API ainda não tenha a linha '*' cadastrada (deploy em
+     * fases). Sem a cascata, a prévia de um produto sem e-book próprio
+     * mostraria um link que não é nem o dele nem o que o cliente recebe.
+     */
     const meta = m.produto && m.produto !== '*'
       ? (estado.snapshot?.catalogoProdutos ?? []).find((p) => p.slug === m.produto)
       : null;
+    const padrao = estado.snapshot?.catalogoPadrao ?? null;
+    const marca = {
+      ...(meta?.link_ebook || padrao?.link_ebook
+        ? { ebook: meta?.link_ebook || padrao?.link_ebook } : {}),
+      ...(meta?.email_suporte || padrao?.email_suporte
+        ? { suporte: meta?.email_suporte || padrao?.email_suporte } : {}),
+    };
     previa.abrir(m, etapa, amostra, {
       // Editar a copy muda o que sai para os clientes; o servidor também exige.
       podeEditar: Boolean(estado.usuario?.admin),
       produtoNome: meta?.nome ?? (m.produto && m.produto !== '*' ? m.produto : null),
-      marca: meta ? {
-        ...(meta.link_ebook ? { ebook: meta.link_ebook } : {}),
-        ...(meta.email_suporte ? { suporte: meta.email_suporte } : {}),
-      } : null,
+      marca: Object.keys(marca).length ? marca : null,
     });
     // "Voltar ao padrão" só faz sentido numa versão de produto que já existe.
     $('ed-padrao').hidden = !(estado.usuario?.admin && m.produto && m.produto !== '*' && !m.novo);
@@ -189,7 +199,37 @@ const editor = {
     $('ed-descricao').value = eEmail ? (m.texto ?? '') : '';
     $('ed-sms').value = eEmail ? '' : (m.texto ?? '');
 
+    editor.avisarSeForPadrao(m, etapa);
     editor.aoMudarRascunho(m, m);
+  },
+
+  /**
+   * O acidente mais provável do editor: mexer no texto PADRÃO ('*') achando
+   * que é a versão de um produto. Só dispara quando existe produto que ainda
+   * herda esta etapa+canal — se todos já têm versão própria, editar aqui não
+   * afeta mais ninguém além de quem está de fato vendo o padrão.
+   */
+  avisarSeForPadrao(m, etapa) {
+    const aviso = $('ed-aviso-padrao');
+    const ehPadrao = !m.produto || m.produto === '*';
+    if (!ehPadrao) { aviso.hidden = true; return; }
+
+    const catalogo = estado.snapshot?.catalogoProdutos ?? [];
+    const etapaSnap = (estado.snapshot?.etapas ?? []).find((e) => e.etapa === etapa.etapa);
+    const proprios = new Set(
+      (etapaSnap?.mensagens ?? [])
+        .filter((x) => x.canal === m.canal && x.ativo !== false && String(x.produto ?? '*') !== '*')
+        .map((x) => String(x.produto)),
+    );
+    const herdam = catalogo.filter((p) => !proprios.has(p.slug));
+
+    if (!herdam.length) { aviso.hidden = true; return; }
+    const nomes = herdam.length <= 3
+      ? herdam.map((p) => p.nome).join(', ')
+      : `${herdam.slice(0, 2).map((p) => p.nome).join(', ')} e mais ${herdam.length - 2}`;
+    aviso.textContent = `⚠ Este texto vale para ${herdam.length} produto${herdam.length > 1 ? 's' : ''} `
+      + `(${nomes}). Alterando aqui, todos eles mudam.`;
+    aviso.hidden = false;
   },
 
   /** Reage a cada tecla: mede o SMS e mostra os avisos das regras de copy. */
@@ -342,11 +382,25 @@ function renderCopyProduto(s) {
     }
   }
 
+  /*
+   * Volume de leads por produto, para o de maior peso (NeuroMind Pro, hoje a
+   * maioria da base) aparecer primeiro em vez de perdido no meio alfabético.
+   * `s.produtos` traz o nome já normalizado pela mesma regra que gerou o
+   * `slug` (código de oferta e embalagem fora) — comparar as duas formas
+   * "sem espaço nem pontuação" é o mesmo critério que o slug já usa.
+   */
+  const chave = (texto) => String(texto ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const volumePorNome = new Map((s.produtos ?? []).map((p) => [chave(p.produto), p.total]));
+  const volumeDe = (p) => volumePorNome.get(p.slug) ?? volumePorNome.get(chave(p.nome)) ?? 0;
+
+  const ordenado = [...catalogo].sort((a, b) => volumeDe(b) - volumeDe(a)
+    || a.nome.localeCompare(b.nome));
+
   sel.replaceChildren(
     Object.assign(document.createElement('option'), {
       value: '*', textContent: 'Padrão (todos os produtos)',
     }),
-    ...catalogo.map((p) => Object.assign(document.createElement('option'), {
+    ...ordenado.map((p) => Object.assign(document.createElement('option'), {
       value: p.slug,
       textContent: p.nome + (proprias.get(p.slug) ? ` — ${proprias.get(p.slug)} próprias` : ''),
     })),

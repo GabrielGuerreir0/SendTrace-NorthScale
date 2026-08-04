@@ -372,7 +372,11 @@ async function snapshot(filtros = {}) {
     plataformas,
     // O catálogo canônico (tabela `produtos`, sem o '*'): é dele que sai o
     // seletor "de qual produto é a copy" e os dados da moldura por produto.
-    catalogoProdutos: catalogo,
+    catalogoProdutos: catalogo.itens,
+    // A linha '*' do catálogo — os defaults globais (e-book/suporte) que todo
+    // produto sem os próprios herda. Separado do array acima de propósito: não
+    // é uma opção de "editar copy deste produto", é a base da cascata.
+    catalogoPadrao: catalogo.padrao,
     /*
      * De onde vieram estes números.
      *
@@ -899,6 +903,19 @@ async function atender(req, res, url, sessao) {
         return json(res, 403, { erro: 'Só administradores editam a copy.' });
       }
       const corpo = await lerJson(req, 128 * 1024);
+      /*
+       * O produto é da URL, sempre — nunca do corpo. Um `produto` no corpo que
+       * diverge da URL não pode ser silenciosamente descartado: foi assim que
+       * uma copy pensada para um produto acabou gravada no padrão '*', com
+       * resposta 200 e nenhum aviso. Divergência vira 400 explícito.
+       */
+      if (corpo.produto !== undefined && String(corpo.produto) !== produtoM) {
+        return json(res, 400, {
+          erro: `O corpo diz produto '${corpo.produto}' mas a URL diz '${produtoM}'. `
+            + 'O produto vai na URL (/api/mensagem/.../{produto}) — remova-o do corpo '
+            + 'ou corrija a URL.',
+        });
+      }
       const proposta = {
         linha: linhaM, etapa: etapaNum, canal: canalM, produto: produtoM,
         assunto: corpo.assunto, corpo_html: corpo.corpo_html,

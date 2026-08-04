@@ -476,28 +476,41 @@ export async function apagarLinha(linha) {
   return { ok: true };
 }
 
+const metaProduto = (p) => ({
+  slug: String(p.slug),
+  nome: p.nome,
+  nome_sms: p.nome_sms ?? null,
+  link_ebook: p.link_ebook ?? null,
+  email_suporte: p.email_suporte ?? null,
+});
+
 /**
  * O catálogo canônico de produtos — o que alimenta o seletor "copy do produto"
  * e a moldura da pré-visualização (link do e-book, e-mail de suporte).
  *
+ * Devolve `itens` (sem o `'*'`, que não é uma opção de "editar copy deste
+ * produto") e `padrao` À PARTE: é a linha que guarda os DEFAULTS GLOBAIS —
+ * hoje a única com `link_ebook`/`email_suporte` preenchidos. A moldura da
+ * prévia cai nela quando um produto não tem os próprios (a mesma cascata da
+ * copy, aplicada aos metadados).
+ *
  * Fail-soft de propósito: se a rota ainda não existir na API no ar (deploy em
- * fases), o painel segue funcionando só com o padrão, em vez de cair inteiro.
+ * fases), o painel segue funcionando só com o padrão embutido, em vez de cair
+ * inteiro.
  */
 export async function catalogoProdutos() {
   try {
-    const { itens } = await listarTudo('/api/produtos/', { ativo: 'true' });
-    return itens
-      .filter((p) => p.slug !== '*')
-      .map((p) => ({
-        slug: String(p.slug),
-        nome: p.nome,
-        nome_sms: p.nome_sms ?? null,
-        link_ebook: p.link_ebook ?? null,
-        email_suporte: p.email_suporte ?? null,
-      }))
-      .sort((a, b) => String(a.nome).localeCompare(String(b.nome)));
+    const { itens: brutos } = await listarTudo('/api/produtos/', { ativo: 'true' });
+    const padraoBruto = brutos.find((p) => p.slug === '*');
+    return {
+      itens: brutos
+        .filter((p) => p.slug !== '*')
+        .map(metaProduto)
+        .sort((a, b) => String(a.nome).localeCompare(String(b.nome))),
+      padrao: padraoBruto ? metaProduto(padraoBruto) : null,
+    };
   } catch {
-    return [];
+    return { itens: [], padrao: null };
   }
 }
 

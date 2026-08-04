@@ -42,10 +42,14 @@ const GLIFOS = {
 };
 
 /* Os marcadores {nome}/{produto} viram um exemplo concreto — senão o nó
-   exibiria chave de template em vez de mensagem. O exemplo é o PIOR CASO REAL
-   da fila (maior nome, maior produto): uma amostra confortável faria o painel
-   dizer "1 segmento" para SMS que saem em dois e custam o dobro. */
-const AMOSTRA_PADRAO = { nome: 'Ana', produto: 'Memopryl', uso: 'as directed' };
+   exibiria chave de template em vez de mensagem. No padrão, o exemplo é o
+   PIOR CASO REAL da fila (maior nome, maior produto): uma amostra confortável
+   faria o painel dizer "1 segmento" para SMS que saem em dois e custam o
+   dobro. Com um produto escolhido, o {produto} passa a ser o NOME DELE — e no
+   SMS, o `nome_sms` quando existir: "Horse Boost Gelatin" (19 car.) e
+   "MindTrex" (8 car.) fazem a MESMA copy caber em 1 segmento num produto e
+   estourar para 2 no outro, então medir pelo nome errado mente sobre o custo. */
+const AMOSTRA_PADRAO = { nome: 'Ana', produto: 'product', uso: 'as directed' };
 
 const el = (tag, classe, texto) => {
   const e = document.createElement(tag);
@@ -186,8 +190,14 @@ export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem 
   let produtoCopy = '*';
   let produtoMeta = null;
 
-  const preencher = (t) =>
-    String(t ?? '').replace(/\{(nome|produto|uso)\}/g, (_, k) => amostra[k] ?? `{${k}}`);
+  // Ciente do canal: no SMS, {produto} usa o nome CURTO (nome_sms) quando
+  // existir — é o que decide se a mesma copy cabe em 1 segmento ou estoura
+  // para 2, e o nome longo do e-mail mentiria sobre esse custo.
+  const preencher = (t, canal) =>
+    String(t ?? '').replace(/\{(nome|produto|uso)\}/g, (_, k) => {
+      if (k === 'produto' && canal === 'sms' && amostra.produto_sms) return amostra.produto_sms;
+      return amostra[k] ?? `{${k}}`;
+    });
 
   /* ── tooltip: liga o mesmo conteúdo ao hover e ao foco de teclado ── */
   function ligarTooltip(no, html) {
@@ -225,14 +235,14 @@ export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem 
 
     let copy = '';
     if (m) {
-      const linha = preencher(m.assunto || m.texto);
+      const linha = preencher(m.assunto || m.texto, m.canal);
       if (linha) copy += `<span class="tt-copy"><i>${esc(meta.label)}</i>${esc(linha)}</span>`;
       if (m.canal === 'email' && m.botao) {
-        copy += `<span class="tt-linha"><span class="tt-chave">Botão</span><b>${esc(preencher(m.botao))}`
+        copy += `<span class="tt-linha"><span class="tt-chave">Botão</span><b>${esc(preencher(m.botao, m.canal))}`
           + `${m.destino ? ` → ${esc(destinos?.[m.destino] ?? m.destino)}` : ''}</b></span>`;
       }
       if (m.canal === 'sms') {
-        const med = medirSms(preencher(m.texto));
+        const med = medirSms(preencher(m.texto, m.canal));
         copy += `<span class="tt-linha"><span class="tt-chave">Tamanho</span><b>`
           + `${n(med.unidades)}/${med.limite} · ${med.segmentos === 1 ? '1 segmento' : `${med.segmentos} segmentos · custa o dobro`}`
           + `${med.unicode ? ' · fora do GSM-7' : ''}</b></span>`;
@@ -341,9 +351,9 @@ export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem 
     if (!m) sub = 'não cadastrada';
     else if (m.ativo === false) sub = 'desativada';
     else {
-      sub = truncar(preencher(m.assunto || m.texto || ''), 34) || '—';
+      sub = truncar(preencher(m.assunto || m.texto || '', canal), 34) || '—';
       if (canal === 'sms' && m.texto) {
-        const med = medirSms(preencher(m.texto));
+        const med = medirSms(preencher(m.texto, canal));
         alertaSms = med.segmentos > 1 || med.unicode;
         if (alertaSms) sub = `${med.segmentos} segmentos · ${sub}`;
       }
@@ -363,6 +373,9 @@ export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem 
     }
     if (m?.ativo === false) bloco.dataset.ativo = 'nao';
     if (alertaSms) bloco.dataset.alerta = 'sim';
+    // Forma além de cor: herdado é tracejado, próprio é sólido — a mesma
+    // regra de acessibilidade do resto do painel.
+    if (produtoCopy !== '*') bloco.dataset.heranca = herdada ? 'herdada' : 'propria';
 
     /*
      * O indicador de herança — sem ele a tela fica ambígua de um jeito
@@ -481,6 +494,9 @@ export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem 
     amostra = {
       nome: piorCaso?.nome || AMOSTRA_PADRAO.nome,
       produto: produtoMeta?.nome || piorCaso?.produto || AMOSTRA_PADRAO.produto,
+      // No SMS, o nome CURTO quando o produto tiver um — é o que decide se a
+      // mesma copy cabe em 1 segmento ou estoura para 2.
+      produto_sms: produtoMeta?.nome_sms || produtoMeta?.nome || piorCaso?.produto || AMOSTRA_PADRAO.produto,
       uso: AMOSTRA_PADRAO.uso,
     };
 

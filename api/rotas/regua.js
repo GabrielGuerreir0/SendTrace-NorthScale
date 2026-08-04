@@ -154,32 +154,55 @@ export default async function rotasRegua(app) {
     if (etapa === undefined || !canal || !linha) {
       throw new ErroHttp(400, 'Informe etapa, canal e linha.');
     }
+    /*
+     * Corpo dizendo um produto e URL dizendo outro NÃO pode ser ignorado: foi
+     * exatamente assim que uma copy de produto sobrescreveu o padrão em
+     * silêncio, com resposta 200. Divergência é erro visível, nunca escolha.
+     */
+    if (alvo && c.produto !== undefined && String(c.produto) !== alvo.produto) {
+      throw new ErroHttp(400, `O corpo diz produto '${c.produto}' mas a URL diz `
+        + `'${alvo.produto}'. O produto vai na CHAVE (etapa:canal:linha:produto) — `
+        + 'remova-o do corpo ou corrija a chave.');
+    }
     if (!SLUG_PRODUTO.test(produto)) {
       throw new ErroHttp(400, "Produto inválido: use o slug canônico (ex.: neuromindpro) ou '*'.");
     }
 
     const eEmail = canal === 'email';
-    const { rows } = await query(
-      `INSERT INTO mensagens_regua
-         (etapa, canal, linha, produto, assunto, corpo_html, botao, destino, texto, ativo, atualizado_em)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
-       ON CONFLICT (etapa, canal, linha, produto) DO UPDATE SET
-         assunto = EXCLUDED.assunto, corpo_html = EXCLUDED.corpo_html,
-         botao = EXCLUDED.botao, destino = EXCLUDED.destino,
-         texto = EXCLUDED.texto, ativo = EXCLUDED.ativo, atualizado_em = now()
-       RETURNING ${COLUNAS_MSG}`,
-      [
-        etapa, canal, linha, produto,
-        // No SMS estes campos não existem: gravar string vazia deixaria lixo
-        // que depois conta como "preenchido" em qualquer verificação.
-        eEmail ? (c.assunto ?? null) : null,
-        eEmail ? (c.corpo_html ?? null) : null,
-        eEmail ? (c.botao ?? null) : null,
-        eEmail ? (c.destino ?? null) : null,
-        c.texto ?? '',
-        c.ativo !== false,
-      ],
-    );
+    let rows;
+    try {
+      // ON CONSTRAINT em vez de lista de colunas: casa com a PK seja qual for
+      // a composição dela — a lista quebraria de novo na próxima migração.
+      ({ rows } = await query(
+        `INSERT INTO mensagens_regua
+           (etapa, canal, linha, produto, assunto, corpo_html, botao, destino, texto, ativo, atualizado_em)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+         ON CONFLICT ON CONSTRAINT mensagens_regua_pkey DO UPDATE SET
+           assunto = EXCLUDED.assunto, corpo_html = EXCLUDED.corpo_html,
+           botao = EXCLUDED.botao, destino = EXCLUDED.destino,
+           texto = EXCLUDED.texto, ativo = EXCLUDED.ativo, atualizado_em = now()
+         RETURNING ${COLUNAS_MSG}`,
+        [
+          etapa, canal, linha, produto,
+          // No SMS estes campos não existem: gravar string vazia deixaria lixo
+          // que depois conta como "preenchido" em qualquer verificação.
+          eEmail ? (c.assunto ?? null) : null,
+          eEmail ? (c.corpo_html ?? null) : null,
+          eEmail ? (c.botao ?? null) : null,
+          eEmail ? (c.destino ?? null) : null,
+          c.texto ?? '',
+          c.ativo !== false,
+        ],
+      ));
+    } catch (err) {
+      // A FK do banco já barra produto fora do catálogo, mas 500 genérico não
+      // diz o que corrigir. 23503 = foreign_key_violation.
+      if (err.code === '23503') {
+        throw new ErroHttp(400, `O produto '${produto}' não está no catálogo `
+          + '(/api/produtos/). Cadastre-o antes de escrever copy para ele.');
+      }
+      throw err;
+    }
     resposta.code(req.method === 'POST' ? 201 : 200);
     return rows[0];
   };

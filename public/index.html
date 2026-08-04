@@ -220,6 +220,10 @@
 
     <!-- ── edição da copy ── -->
     <form class="previa-editar" id="previa-editar" hidden>
+      <!-- Só aparece editando o texto PADRÃO ('*') quando algum produto ainda
+           o herda — é o acidente mais provável do editor: mexer achando que é
+           de um produto e mudar a copy de todos os outros junto. -->
+      <p class="editar-aviso-padrao" id="ed-aviso-padrao" hidden></p>
       <div class="editar-campos" id="editar-campos-email">
         <label class="campo campo--bloco">
           <span>Assunto do e-mail</span>

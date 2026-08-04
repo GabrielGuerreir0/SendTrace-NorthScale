@@ -464,6 +464,12 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
   background: color-mix(in srgb, var(--cor) 13%, var(--superficie));
 }
 
+/* O MESMO sinal do selo, repetido na FORMA do quadrado — nunca só a cor
+   decide "próprio × herdado". Herdado: contorno tracejado, como o nó vazio.
+   Próprio: contorno sólido reforçado, para não se confundir com o padrão. */
+.rg-no[data-heranca="herdada"] .rg-tile { border-style: dashed; }
+.rg-no[data-heranca="propria"] .rg-tile { border-width: 1.5px; }
+
 /* Espera fora do configurado (deriva > 25%): o "real X" aparece embaixo. */
 .rg-no[data-derivou="sim"] .rg-tile {
   border-color: color-mix(in srgb, var(--st-atrasado) 62%, transparent);
@@ -1015,6 +1021,16 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
   border-left: 3px solid var(--st-travado); color: var(--tinta);
 }
 .editar-avisos[data-tom="aviso"] {
+  background: color-mix(in srgb, var(--st-atrasado) 13%, transparent);
+  border-left: 3px solid var(--st-atrasado); color: var(--tinta);
+}
+
+/* O acidente mais provável do editor de copy: mexer no texto padrão achando
+   que é o de um produto. Mesmo tom do aviso de campo (âmbar), mas fixo no
+   topo do formulário — precisa ser visto ANTES de editar, não só ao salvar. */
+.editar-aviso-padrao {
+  margin: 0 0 4px; padding: 10px 12px; border-radius: 9px;
+  font-size: 12px; line-height: 1.55; font-weight: 560;
   background: color-mix(in srgb, var(--st-atrasado) 13%, transparent);
   border-left: 3px solid var(--st-atrasado); color: var(--tinta);
 }
