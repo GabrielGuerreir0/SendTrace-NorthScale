@@ -27,6 +27,24 @@ export const CORES_ESTADO = {
 };
 
 const SEGMENTOS = ['em_dia', 'atrasado', 'processando', 'travado'];
+const ROTULO_ESTADO = {
+  em_dia: 'Em dia', atrasado: 'Atrasado', processando: 'Processando', travado: 'Travado',
+};
+
+/**
+ * Qual dos quatro estados vivos tem mais pedidos NESTA etapa agora — é a cor
+ * que a bolinha do número usa. Sem pedido nenhum, não há "predominante": a
+ * bolinha fica neutra em vez de sortear uma cor que não significa nada.
+ */
+function estadoDominante(d) {
+  let melhor = null;
+  let max = 0;
+  for (const k of SEGMENTOS) {
+    const v = d[k] || 0;
+    if (v > max) { max = v; melhor = k; }
+  }
+  return melhor;
+}
 
 /* Glifos em traço num quadro de 16×16, desenhados em branco dentro do quadrado
    colorido do nó. O canal nunca é comunicado por cor sozinha — o nó tem sempre
@@ -213,10 +231,8 @@ export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem 
 
   /** As linhas de estado (em dia / atrasado / …) que todo tooltip de etapa tem. */
   function ttEstados(d) {
-    return SEGMENTOS.map((k) => {
-      const rot = { em_dia: 'Em dia', atrasado: 'Atrasado', processando: 'Processando', travado: 'Travado' }[k];
-      return `<span class="tt-linha"><span class="tt-chave"><i class="tt-ponto" style="background:${CORES_ESTADO[k]}"></i>${rot}</span><b>${n(d[k])}</b></span>`;
-    }).join('');
+    return SEGMENTOS.map((k) =>
+      `<span class="tt-linha"><span class="tt-chave"><i class="tt-ponto" style="background:${CORES_ESTADO[k]}"></i>${ROTULO_ESTADO[k]}</span><b>${n(d[k])}</b></span>`).join('');
   }
 
   function ttEtapa(d, m, meta, herdada = false) {
@@ -429,16 +445,29 @@ export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem 
   }
 
   /**
-   * Uma etapa: o par [e-mail]—[SMS] com o cabeçalho por cima — número, nome,
-   * quantos pedidos estão parados aqui e o alerta mais urgente. O contador é
-   * um botão: é ele que filtra a tabela, como o clique no nó antigo fazia.
+   * Uma etapa: o par [e-mail]—[SMS] com o cabeçalho por cima — o número da
+   * etapa (numa bolinha colorida pelo estado com MAIS pedidos ali agora),
+   * o nome, quantos pedidos estão parados aqui e o alerta mais urgente.
+   * O contador é um botão: é ele que filtra a tabela, como o clique no nó
+   * antigo fazia.
    */
   function blocoEtapa(d) {
     const sec = el('section', 'rg-etapa');
     if (d.ativo === false) sec.dataset.inativa = 'sim';
 
     const cab = el('header', 'rg-etapa-cab');
-    cab.appendChild(el('span', 'rg-etapa-rot', `ETAPA ${d.etapa} · ${truncar(d.nome ?? '', 22)}`));
+
+    const dominante = estadoDominante(d);
+    const idx = el('span', 'rg-etapa-idx', String(d.etapa));
+    if (dominante) {
+      idx.style.setProperty('--cor-dominante', CORES_ESTADO[dominante]);
+      idx.title = `Etapa ${d.etapa} — maior volume agora: ${ROTULO_ESTADO[dominante]} (${n(d[dominante])})`;
+    } else {
+      idx.dataset.vazio = 'sim';
+      idx.title = `Etapa ${d.etapa} — nenhum pedido aqui agora`;
+    }
+    cab.appendChild(idx);
+    cab.appendChild(el('span', 'rg-etapa-rot', truncar(d.nome ?? '', 22)));
 
     const al = linhaAlerta(d);
     const qtd = el('button', 'rg-qtd');
