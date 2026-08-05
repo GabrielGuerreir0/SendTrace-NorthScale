@@ -82,6 +82,7 @@
     </div>
     <button class="btn" id="btn-usuarios" hidden>Usuários</button>
     <button class="btn" id="btn-produtos" hidden>Produtos IA</button>
+    <button class="btn" id="btn-tempos" hidden>Tempos</button>
     <button class="btn btn-fantasma" id="btn-sair">Sair</button>
   </div>
 </header>
@@ -325,6 +326,26 @@
     </form>
 
     <ul class="lista-usuarios" id="lista-usuarios"></ul>
+  </div>
+</dialog>
+
+<!-- ── tempo entre etapas da régua (só administradores) ── -->
+<dialog class="janela" id="janela-tempos" aria-labelledby="janela-tempos-tit">
+  <header class="janela-cabeca">
+    <div>
+      <h2 id="janela-tempos-tit">Tempos da régua</h2>
+      <p class="cartao-sub">Quanto tempo o robô espera depois de cada etapa antes de
+      disparar a próxima. Vale a partir do próximo avanço — não remarca disparos já
+      agendados.</p>
+    </div>
+    <button class="btn btn-icone" id="fechar-tempos" title="Fechar">
+      <span aria-hidden="true">✕</span><span class="sr">Fechar</span>
+    </button>
+  </header>
+
+  <div class="janela-corpo">
+    <p class="janela-msg" id="tempos-msg" hidden></p>
+    <ul class="lista-tempos" id="lista-tempos"></ul>
   </div>
 </dialog>
 

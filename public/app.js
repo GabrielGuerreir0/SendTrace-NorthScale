@@ -4,6 +4,7 @@ import { criarPrevia } from './previa.js';
 import { validarMensagem, medirSms } from './copy.js';
 import { desenharColunas, svgEl } from './charts.js';
 import { n, nc, relativo, dataHora, dia, hora, truncar, duracaoH } from './format.js';
+import { paraEsperaH, deEsperaH } from './tempo.js';
 import { snapshotDemo, pedidosDemo } from './demo.js';
 // A aba principal (Suporte IA) vive em módulo próprio; importá-lo também liga
 // os botões de aba. Aqui só acoplamos o carregamento aos ciclos do painel.
@@ -1428,6 +1429,7 @@ function renderUsuario(u) {
   $('usuario-chip').hidden = false;
   $('btn-usuarios').hidden = !u.admin;
   $('btn-produtos').hidden = !u.admin;
+  $('btn-tempos').hidden = !u.admin;
 }
 
 $('btn-sair').addEventListener('click', async () => {
@@ -1625,6 +1627,140 @@ $('form-novo').addEventListener('submit', async (ev) => {
     if (lista.ok) renderUsuarios(lista.dados);
   } catch { /* 401 já redirecionou */ }
 });
+
+/* ── tempo entre etapas da régua (administradores) ── */
+
+const janelaTempos = $('janela-tempos');
+
+function msgTempos(texto, tom = 'erro') {
+  const el = $('tempos-msg');
+  el.textContent = texto;
+  el.dataset.tom = tom;
+  el.hidden = false;
+}
+
+const UNIDADES_TEMPO = [
+  ['minutos', 'minutos'],
+  ['horas', 'horas'],
+  ['dias', 'dias'],
+];
+
+function renderTempos(etapas) {
+  $('lista-tempos').replaceChildren(...etapas.map((e) => {
+    const li = document.createElement('li');
+    li.className = 'tempo-linha';
+    li.dataset.editavel = e.editavel ? 'sim' : 'nao';
+
+    const rot = document.createElement('div');
+    rot.className = 'tempo-rotulo';
+    rot.textContent = `Etapa ${e.etapa}${e.nome ? ` · ${e.nome}` : ''}`;
+    li.appendChild(rot);
+
+    if (!e.editavel) {
+      const nota = document.createElement('div');
+      nota.className = 'tempo-nota';
+      nota.textContent = e.ativo === false
+        ? 'Etapa inativa — ainda não edita pelo painel'
+        : 'Última etapa — sem espera';
+      li.appendChild(nota);
+      return li;
+    }
+
+    const { valor, unidade } = deEsperaH(e.espera_h);
+
+    const controles = document.createElement('div');
+    controles.className = 'tempo-controles';
+
+    const campoValor = document.createElement('label');
+    campoValor.className = 'campo tempo-campo-valor';
+    campoValor.append(Object.assign(document.createElement('span'), {
+      className: 'sr', textContent: `Tempo até a próxima etapa depois da etapa ${e.etapa}`,
+    }));
+    const numero = document.createElement('input');
+    numero.type = 'number';
+    numero.min = '0';
+    numero.step = 'any';
+    numero.value = valor ?? '';
+    numero.className = 'tempo-valor';
+    campoValor.appendChild(numero);
+
+    const campoUnidade = document.createElement('label');
+    campoUnidade.className = 'campo';
+    campoUnidade.append(Object.assign(document.createElement('span'), {
+      className: 'sr', textContent: 'Unidade do tempo',
+    }));
+    const sel = document.createElement('select');
+    sel.className = 'tempo-unidade';
+    for (const [val, rotuloOpt] of UNIDADES_TEMPO) {
+      const opt = document.createElement('option');
+      opt.value = val;
+      opt.textContent = rotuloOpt;
+      if (val === unidade) opt.selected = true;
+      sel.appendChild(opt);
+    }
+    campoUnidade.appendChild(sel);
+
+    const preview = document.createElement('span');
+    preview.className = 'tempo-preview';
+
+    const atualizarPreview = () => {
+      try {
+        const h = paraEsperaH(numero.value, sel.value);
+        preview.textContent = `= ${duracaoH(h)} no banco`;
+        preview.dataset.tom = '';
+      } catch (err) {
+        preview.textContent = err.message;
+        preview.dataset.tom = 'erro';
+      }
+    };
+    numero.addEventListener('input', atualizarPreview);
+    sel.addEventListener('change', atualizarPreview);
+    atualizarPreview();
+
+    const salvar = document.createElement('button');
+    salvar.type = 'button';
+    salvar.className = 'btn btn-forte';
+    salvar.textContent = 'Salvar';
+    salvar.addEventListener('click', async () => {
+      salvar.disabled = true;
+      $('tempos-msg').hidden = true;
+      try {
+        const r = await api(`/api/etapas/${e.etapa}`, {
+          metodo: 'PATCH',
+          corpo: { valor: numero.value, unidade: sel.value },
+        });
+        if (!r.ok) { msgTempos(r.dados.erro ?? 'Não foi possível salvar.'); return; }
+        renderTempos(r.dados.etapas);
+        msgTempos(
+          'Tempo salvo. Vale a partir do próximo avanço da régua — não remarca disparos já agendados.',
+          'ok',
+        );
+        await carregarSnapshot({ silencioso: true });
+      } catch {
+        /* 401 já redirecionou */
+      } finally {
+        salvar.disabled = false;
+      }
+    });
+
+    controles.append(campoValor, campoUnidade, preview, salvar);
+    li.appendChild(controles);
+    return li;
+  }));
+}
+
+async function abrirTempos() {
+  $('tempos-msg').hidden = true;
+  try {
+    const r = await api('/api/etapas');
+    if (!r.ok) return msgTempos(r.dados.erro ?? 'Não foi possível carregar.');
+    renderTempos(r.dados.etapas);
+    janelaTempos.showModal();
+  } catch { /* 401 já redirecionou */ }
+}
+
+$('btn-tempos').addEventListener('click', abrirTempos);
+$('fechar-tempos').addEventListener('click', () => janelaTempos.close());
 
 /* ═══════════════  atendimento do cliente (resumo do chatbot)  ═══════ */
 

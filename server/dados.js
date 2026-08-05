@@ -246,6 +246,91 @@ export async function etapasDaRegua() {
     .sort((a, b) => a.etapa - b.etapa);
 }
 
+/* ── tempo entre etapas ── */
+
+/**
+ * A régua para a tela de edição de tempo: mesma lista de `etapasDaRegua`,
+ * mas com `editavel` — falso para uma etapa inativa (ainda não entrou na
+ * régua) e para a ÚLTIMA etapa ativa da cadeia, cujo `espera_h` fica `NULL`
+ * de propósito: não existe próxima etapa para esperar.
+ */
+export async function etapasTempos() {
+  const { itens } = await etapasCache();
+  const ordenadas = itens
+    .map((e) => ({
+      etapa: Number(e.etapa),
+      nome: e.nome,
+      descricao: e.descricao,
+      ativo: e.ativo,
+      espera_h: num(e.espera_h),
+      offset_h: num(e.offset_h),
+    }))
+    .sort((a, b) => a.etapa - b.etapa);
+
+  const ativas = ordenadas.filter((e) => e.ativo !== false);
+  const ultimaAtiva = ativas.length ? ativas[ativas.length - 1].etapa : null;
+
+  return ordenadas.map((e) => ({
+    ...e,
+    editavel: e.ativo !== false && e.etapa !== ultimaAtiva,
+  }));
+}
+
+/**
+ * Reconstrói `offset_h` das etapas ativas depois que uma delas muda de
+ * `espera_h`. A primeira ativa fica FIXA como âncora — hoje é a etapa 0, com
+ * `offset_h = 0.5`, porque o recibo ainda mora fora da régua, na etapa -1
+ * inativa. A partir dela: `offset_h(próxima) = offset_h(atual) + espera_h(atual)`.
+ * Só grava as etapas cujo valor calculado realmente mudou.
+ */
+async function recalcularOffsets(itens) {
+  const ativas = itens
+    .filter((e) => e.ativo !== false && Number(e.etapa) >= 0)
+    .sort((a, b) => Number(a.etapa) - Number(b.etapa));
+
+  let acumulado = num(ativas[0]?.offset_h) ?? 0;
+  for (let i = 1; i < ativas.length; i += 1) {
+    acumulado += num(ativas[i - 1].espera_h) ?? 0;
+    if (num(ativas[i].offset_h) !== acumulado) {
+      await remendar(`/api/etapas/${ativas[i].etapa}/`, { offset_h: acumulado });
+    }
+  }
+}
+
+/**
+ * Grava o novo `espera_h` de uma etapa (já convertido para horas) e recalcula
+ * a cadeia de `offset_h` que depende dele.
+ *
+ * Devolve `null` se a etapa não existe (→ 404 na rota), `{ok:false, erro}`
+ * se ela não é editável (→ 400), ou `{ok:true, etapa, etapas}` com a régua
+ * inteira já atualizada.
+ */
+export async function salvarTempoEtapa(etapaNum, esperaH) {
+  const { itens } = await etapasCache();
+  const alvo = itens.find((e) => Number(e.etapa) === etapaNum);
+  if (!alvo) return null;
+
+  const ativas = itens.filter((e) => e.ativo !== false).map((e) => Number(e.etapa)).sort((a, b) => a - b);
+  const ultimaAtiva = ativas[ativas.length - 1];
+
+  if (alvo.ativo === false) {
+    return { ok: false, erro: 'Esta etapa está inativa — ainda não é editável pelo painel.' };
+  }
+  if (etapaNum === ultimaAtiva) {
+    return { ok: false, erro: 'A última etapa da régua não tem espera: não existe uma próxima etapa.' };
+  }
+
+  await remendar(`/api/etapas/${etapaNum}/`, { espera_h: esperaH });
+
+  const atualizados = itens.map((e) => (
+    Number(e.etapa) === etapaNum ? { ...e, espera_h: esperaH } : e
+  ));
+  await recalcularOffsets(atualizados);
+
+  const etapas = await etapasTempos();
+  return { ok: true, etapa: etapas.find((e) => e.etapa === etapaNum), etapas };
+}
+
 /**
  * Nome, propósito e volume de copy de cada linha — alimenta o seletor.
  *

@@ -14,6 +14,7 @@ import {
   etapasRollup, ondaPorEtapa, ondaHoraria, entradasPorDia,
   statusBruto, alertas, listarPedidos,
   reguaDefinicao, cadenciaObservada, porCanal, semMensagem, resumoLinhas, piorCasoSms, errosSemCanal, mensagem, salvarMensagem, criarLinha, apagarLinha, editarLinha, etapasDaRegua,
+  etapasTempos, salvarTempoEtapa,
   produtosDaFila, plataformasDaFila, fonteDados, suporteResumo, suporteConversas,
   catalogoProdutos,
 } from './dados.js';
@@ -33,6 +34,7 @@ import {
 // Mesma validação que a tela usa — um arquivo só, servido ao navegador e
 // importado aqui. Validar só no front seria conselho, não garantia.
 import { validarMensagem } from '../public/copy.js';
+import { paraEsperaH, TETO_HORAS_ESPERA } from '../public/tempo.js';
 import { versao } from './versao.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -970,6 +972,40 @@ async function atender(req, res, url, sessao) {
       });
     }
     return json(res, 405, { erro: 'método não permitido' });
+  }
+
+  /* ── tempo entre etapas da régua ── */
+  if (url.pathname === '/api/etapas') {
+    if (req.method !== 'GET') return json(res, 405, { erro: 'método não permitido' });
+    return json(res, 200, { etapas: await etapasTempos() });
+  }
+
+  const rotaEtapa = /^\/api\/etapas\/(-?\d{1,2})$/.exec(url.pathname);
+  if (rotaEtapa) {
+    if (req.method !== 'PATCH') return json(res, 405, { erro: 'método não permitido' });
+    // Mudar o tempo entre etapas muda quando o robô dispara a próxima
+    // mensagem — fica com quem administra, como o resto da régua.
+    if (!usuario.admin) {
+      return json(res, 403, { erro: 'Só administradores alteram o tempo entre etapas.' });
+    }
+
+    const corpo = await lerJson(req);
+    let esperaH;
+    try {
+      esperaH = corpo.valor !== undefined
+        ? paraEsperaH(corpo.valor, corpo.unidade)
+        : Number(corpo.espera_h);
+    } catch (err) {
+      return json(res, 400, { erro: err.message });
+    }
+    if (!Number.isFinite(esperaH) || esperaH < 0 || esperaH > TETO_HORAS_ESPERA) {
+      return json(res, 400, { erro: `O tempo precisa estar entre 0 e ${TETO_HORAS_ESPERA} horas.` });
+    }
+
+    const r = await salvarTempoEtapa(Number(rotaEtapa[1]), esperaH);
+    if (r === null) return json(res, 404, { erro: 'Etapa não encontrada.' });
+    if (!r.ok) return json(res, 400, { erro: r.erro });
+    return json(res, 200, r);
   }
 
   if (url.pathname === '/api/snapshot') {

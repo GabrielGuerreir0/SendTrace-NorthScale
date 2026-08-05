@@ -1131,6 +1131,22 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
   background: color-mix(in srgb, var(--st-em-dia) 16%, transparent);
 }
 
+.lista-tempos { list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 8px; }
+.tempo-linha {
+  display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center;
+  padding: 11px 13px; border: 1px solid var(--borda); border-radius: 11px;
+  background: var(--superficie-2);
+}
+.tempo-linha[data-editavel="nao"] { opacity: .55; }
+.tempo-rotulo { font-size: 12.5px; font-weight: 560; }
+.tempo-nota { grid-column: 1 / -1; font-size: 11px; color: var(--tinta-fraca); }
+.tempo-controles { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.tempo-campo-valor { width: 68px; flex: 0 0 auto; }
+.tempo-valor { width: 100%; }
+.tempo-preview { font-size: 10.5px; color: var(--tinta-fraca); white-space: nowrap; }
+.tempo-preview[data-tom="erro"] { color: var(--st-travado); }
+
 .janela-msg { margin: 0 0 14px; padding: 10px 12px; border-radius: 9px;
   font-size: 12px; line-height: 1.55; }
 .janela-msg[data-tom="erro"] {
