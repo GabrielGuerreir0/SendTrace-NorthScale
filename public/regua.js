@@ -194,7 +194,7 @@ function ligarArrasto(alvo, aoComecar) {
   }, true);
 }
 
-export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem } = {}) {
+export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem, aoAbrirTempo } = {}) {
   const raiz = el('div', 'rg');
   container.appendChild(raiz);
   ligarArrasto(container, () => tooltip?.esconder());
@@ -502,6 +502,9 @@ export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem 
     });
     if (esp?.derivou) bloco.dataset.derivou = 'sim';
     if (esp) ligarTooltip(bloco, () => ttEspera(origem, esp));
+    // Clicar no relógio abre a edição do tempo desta espera — mesmo alvo do
+    // botão "Tempos", só que já apontado para a etapa certa.
+    if (aoAbrirTempo) acionavel(bloco, () => aoAbrirTempo(origem, destino));
     return bloco;
   }
 

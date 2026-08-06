@@ -156,6 +156,12 @@ const regua = criarRegua($('canvas-area'), {
     // "Voltar ao padrão" só faz sentido numa versão de produto que já existe.
     $('ed-padrao').hidden = !(estado.usuario?.admin && m.produto && m.produto !== '*' && !m.novo);
   },
+  // Clicar no relógio do fluxo abre a MESMA janela do botão "Tempos", já
+  // apontada para a etapa clicada — sem admin, o relógio não abre nada.
+  aoAbrirTempo: (origem) => {
+    if (!estado.usuario?.admin) return;
+    abrirTempos(origem.etapa);
+  },
 });
 
 /** Redesenha só o fluxo, com a copy do produto escolhido — sem ir à rede. */
@@ -1650,6 +1656,7 @@ function renderTempos(etapas) {
     const li = document.createElement('li');
     li.className = 'tempo-linha';
     li.dataset.editavel = e.editavel ? 'sim' : 'nao';
+    li.dataset.etapa = String(e.etapa);
 
     const rot = document.createElement('div');
     rot.className = 'tempo-rotulo';
@@ -1749,17 +1756,24 @@ function renderTempos(etapas) {
   }));
 }
 
-async function abrirTempos() {
+/** `focar`: etapa para rolar até e focar assim que a janela abrir — usada
+ *  pelo clique no relógio do fluxo; o botão "Tempos" chama sem argumento. */
+async function abrirTempos(focar) {
   $('tempos-msg').hidden = true;
   try {
     const r = await api('/api/etapas');
     if (!r.ok) return msgTempos(r.dados.erro ?? 'Não foi possível carregar.');
     renderTempos(r.dados.etapas);
     janelaTempos.showModal();
+    if (focar != null) {
+      const li = $('lista-tempos').querySelector(`[data-etapa="${focar}"]`);
+      li?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      li?.querySelector('.tempo-valor')?.focus();
+    }
   } catch { /* 401 já redirecionou */ }
 }
 
-$('btn-tempos').addEventListener('click', abrirTempos);
+$('btn-tempos').addEventListener('click', () => abrirTempos());
 $('fechar-tempos').addEventListener('click', () => janelaTempos.close());
 
 /* ═══════════════  atendimento do cliente (resumo do chatbot)  ═══════ */
