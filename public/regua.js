@@ -98,12 +98,20 @@ function nivelFluxo(prestes) {
 }
 
 /**
+ * A etapa -1 (o recibo) é `ativo: false` no banco de propósito — é a âncora
+ * fixa que fica fora da régua, não uma etapa desligada por alguém. Ela não
+ * deve levar o visual "desativada": as outras usam essa marca para dizer
+ * "o robô pula isto", o que não é verdade para o recibo.
+ */
+const desativadaMesmo = (d) => d.ativo === false && d.etapa !== -1;
+
+/**
  * A linha de destaque da etapa. Mostra UMA coisa: a mais urgente. Um número em
  * cada estado dentro de cada nó viraria ruído — a leitura completa vive no
  * tooltip, na legenda e na tabela lá embaixo.
  */
 function linhaAlerta(d) {
-  if (d.ativo === false) return { icone: '○', txt: 'etapa desativada na régua', tom: 'neutro' };
+  if (desativadaMesmo(d)) return { icone: '○', txt: 'etapa desativada na régua', tom: 'neutro' };
   if (d.travado > 0) return { icone: '■', txt: `${n(d.travado)} travado${d.travado > 1 ? 's' : ''}`, tom: 'travado' };
   if (d.atrasado > 0) return { icone: '▲', txt: `${n(d.atrasado)} atrasado${d.atrasado > 1 ? 's' : ''}`, tom: 'atrasado' };
   if (d.com_erro > 0) return { icone: '▲', txt: `${n(d.com_erro)} com erro`, tom: 'travado' };
@@ -247,7 +255,7 @@ export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem,
       + `<span class="tt-sub">${esc(meta.label)}`
       + `${m ? (m.ativo === false ? ' · <b>desativada</b>' : '') : ' · <b>não cadastrada</b>'}`
       + origem
-      + `${d.ativo === false ? ' · etapa <b>desativada</b>' : ''}</span>`;
+      + `${desativadaMesmo(d) ? ' · etapa <b>desativada</b>' : ''}</span>`;
 
     let copy = '';
     if (m) {
@@ -453,7 +461,7 @@ export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem,
    */
   function blocoEtapa(d) {
     const sec = el('section', 'rg-etapa');
-    if (d.ativo === false) sec.dataset.inativa = 'sim';
+    if (desativadaMesmo(d)) sec.dataset.inativa = 'sim';
 
     const cab = el('header', 'rg-etapa-cab');
 
@@ -532,7 +540,13 @@ export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem,
       uso: AMOSTRA_PADRAO.uso,
     };
 
-    const vivas = (etapas ?? []).filter((e) => !e.terminal);
+    // Uma etapa `autoDetectada` (existe na fila, não em `etapas_regua`) é um
+    // alerta de dado preso, não um passo real da régua. Sem pedido nenhum
+    // circulando ali (`na_etapa` conta só os estados vivos), ela é ruído puro
+    // — nó vazio com "+" que ninguém vai preencher. Com pedido de verdade
+    // preso, continua aparecendo: é exatamente o caso que esse alerta existe
+    // para não esconder.
+    const vivas = (etapas ?? []).filter((e) => !e.terminal && !(e.autoDetectada && !e.na_etapa));
     if (!vivas.length) {
       raiz.replaceChildren(el('p', 'vazio-suave', 'Nenhuma etapa cadastrada na régua.'));
       return;
