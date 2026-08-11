@@ -1,0 +1,531 @@
+/**
+ * Central de E-mail IA — Tela 2: Mais Detalhes / Dashboard. Visão analítica
+ * completa — todos os cortes e séries históricas do §4. Usa o MESMO endpoint
+ * GET /api/dados da Tela 1, só que consumindo mais chaves do JSON.
+ *
+ * Um clique numa barra/KPI clicável recorta PRATICAMENTE TODOS os cartões da
+ * página — não só o que foi clicado (§4.1) — refazendo a consulta inteira
+ * com o filtro aplicado.
+ */
+import {
+  $, api, debounce, tooltip, kpiCard, barraHorizontal, renderTabela, paginar,
+  montarPaginacao, baixarCsv, chipTicket, chipSentimento, chipUrgencia, chipSituacaoPedido,
+  rotularCategoria, rotularMotivo, rotularArea, rotularResponsavel, rotularPagamento, rotularPlataforma,
+} from './emailComum.js';
+import { n, dataHora, truncar } from './format.js';
+import { desenharColunas } from './charts.js';
+
+/* ═══════════════════════════════  estado  ═══════════════════════════════ */
+
+let dados = null;
+let busca = '';
+/** { tipo: 'cat'|'sent'|'urg'|'pede'|'area'|'resp'|'pgto'|'plat', valor, rotulo } | null */
+let filtroAtivo = null;
+let paginaTickets = 1;
+const PT_POR_PAGINA = 10;
+
+function qsCompleto() {
+  const p = new URLSearchParams();
+  const dias = $('dt-periodo').value;
+  if (dias) p.set('dias', dias);
+  if (busca) { p.set('q', busca); p.set('tq', busca); }
+  if (filtroAtivo) p.set(filtroAtivo.tipo, filtroAtivo.valor);
+  return p;
+}
+
+function aplicarFiltro(tipo, valor, rotulo) {
+  filtroAtivo = (filtroAtivo?.tipo === tipo && filtroAtivo?.valor === valor) ? null : { tipo, valor, rotulo };
+  renderChipFiltro();
+  carregarDados();
+}
+
+function renderChipFiltro() {
+  const chip = $('dt-filtro-chip');
+  chip.hidden = !filtroAtivo;
+  $('dt-filtro-rotulo').textContent = filtroAtivo ? `filtrando: ${filtroAtivo.rotulo}` : '';
+}
+
+$('dt-filtro-limpar').addEventListener('click', () => { filtroAtivo = null; renderChipFiltro(); carregarDados(); });
+
+/* ═══════════════════════════════  KPIs principais  ═══════════════════════ */
+
+function renderKpis() {
+  const k = dados?.kpis ?? {};
+  const dc = dados?.devolucao_conf ?? {};
+  $('dt-kpis').replaceChildren(
+    kpiCard({
+      icone: '✉', tom: 'neutro', rotulo: 'E-mails no período', valor: n(k.total_emails ?? 0),
+      nota: `${n(k.clientes_unicos ?? 0)} clientes únicos`,
+    }),
+    kpiCard({
+      icone: '◔', tom: 'neutro', rotulo: 'Aguardando resposta', valor: n(k.pendentes ?? 0),
+      nota: 'precisam de resposta humana/IA',
+      ativo: filtroAtivo?.tipo === 'pede', onClick: () => aplicarFiltro('pede', 'true', 'aguardando resposta'),
+    }),
+    kpiCard({
+      icone: '▲', tom: (k.urgencia_alta ?? 0) > 0 ? 'travado' : 'neutro', rotulo: 'Urgência alta',
+      valor: n(k.urgencia_alta ?? 0), nota: 'pedem resposta com urgência alta',
+      ativo: filtroAtivo?.tipo === 'urg', onClick: () => aplicarFiltro('urg', 'alta', 'urgência alta'),
+    }),
+    kpiCard({
+      icone: '↩', tom: 'atrasado', rotulo: 'Devoluções / trocas', valor: n(k.devolucoes ?? 0),
+      nota: `${n(k.clientes_devolucao ?? 0)} clientes`,
+      ativo: filtroAtivo?.tipo === 'cat', onClick: () => aplicarFiltro('cat', 'devolucao,troca', 'devolução/troca'),
+    }),
+    kpiCard({
+      icone: '✓', tom: 'neutro', rotulo: 'Devoluções confirmadas',
+      valor: dc.pediram ? `${n(dc.cancelados ?? 0)} de ${n(dc.pediram)}` : '—',
+      nota: 'pedido já cancelado na fila',
+    }),
+    kpiCard({
+      icone: '⚠', tom: (k.cobranca_indevida ?? 0) > 0 ? 'travado' : 'neutro', rotulo: 'Cobrança indevida',
+      valor: n(k.cobranca_indevida ?? 0), nota: 'compra não reconhecida / cobrança duplicada ou maior',
+      ativo: filtroAtivo?.tipo === 'pgto' && filtroAtivo?.valor?.includes('compra_nao_reconhecida'),
+      onClick: () => aplicarFiltro('pgto', 'compra_nao_reconhecida,cobranca_duplicada,cobranca_valor_maior', 'cobrança indevida'),
+    }),
+    kpiCard({
+      icone: '☹', tom: 'atrasado', rotulo: 'Sentimento negativo', valor: k.pct_negativo !== null && k.pct_negativo !== undefined ? `${k.pct_negativo}%` : '—',
+      nota: 'negativo + muito negativo',
+      ativo: filtroAtivo?.tipo === 'sent', onClick: () => aplicarFiltro('sent', 'negativo,muito_negativo', 'sentimento negativo'),
+    }),
+    kpiCard({ icone: '📷', tom: 'neutro', rotulo: 'Fotos com defeito', valor: n(k.fotos_defeito ?? 0), nota: 'anexos com defeito identificado' }),
+    kpiCard({
+      icone: '🖼', tom: 'neutro', rotulo: 'Anexos no banco', valor: n(k.anexos ?? 0),
+      nota: (k.com_erro ?? 0) > 0 ? `⚠ ${n(k.com_erro)} e-mail(is) com erro de análise` : 'nenhum erro de análise',
+    }),
+  );
+}
+
+/* ═══════════════════════════════  tickets (compacto)  ═══════════════════ */
+
+function renderTicketsCompacto() {
+  const k = dados?.tickets_kpis ?? {};
+  $('dt-tickets-kpis').replaceChildren(
+    kpiCard({ icone: '●', tom: 'travado', rotulo: 'Não iniciados', valor: n(k.nao_iniciado ?? 0) }),
+    kpiCard({ icone: '●', tom: 'atrasado', rotulo: 'Em aberto', valor: n(k.em_aberto ?? 0) }),
+    kpiCard({ icone: '●', tom: 'finalizado', rotulo: 'Resolvidos', valor: n(k.resolvido ?? 0) }),
+  );
+
+  const linhas = dados?.tickets ?? [];
+  const { pagina, totalPaginas, fatia } = paginar(linhas, paginaTickets, PT_POR_PAGINA);
+  paginaTickets = pagina;
+
+  renderTabela($('dt-tickets-corpo'), fatia, [
+    { render: (t) => chipTicket(t.status) },
+    { render: (t) => t.nome || t.remetente_email },
+    { classe: 'num', render: (t) => n(t.qtd_emails) },
+    { classe: 'num', render: (t) => n(t.pedidos_unicos) },
+    { render: (t) => (t.ultimo_email_em ? new Date(t.ultimo_email_em).toLocaleDateString('pt-BR') : '—') },
+    {
+      render: (t) => {
+        const b = document.createElement('button');
+        b.className = 'btn';
+        b.type = 'button';
+        b.textContent = t.status === 'nao_iniciado' ? 'Iniciar' : t.status === 'em_aberto' ? 'Resolver' : 'Reabrir';
+        const proximo = t.status === 'nao_iniciado' ? 'em_aberto' : t.status === 'em_aberto' ? 'resolvido' : 'nao_iniciado';
+        b.addEventListener('click', async () => {
+          b.disabled = true;
+          await api('/api/ticket', { metodo: 'POST', corpo: { email: t.remetente_email, status: proximo } });
+          await carregarDados();
+        });
+        return b;
+      },
+    },
+  ], { vazio: 'Nenhum ticket no período.' });
+
+  montarPaginacao($('dt-tickets-paginacao'), { pagina: paginaTickets, totalPaginas, total: linhas.length, rotuloItem: 'ticket' }, (p) => {
+    paginaTickets = p;
+    renderTicketsCompacto();
+  });
+
+  barraHorizontal($('dt-plataformas'), dados?.plataformas ?? [], 'plataforma_origem', {
+    rotular: rotularPlataforma, onClick: (v) => aplicarFiltro('plat', v, `plataforma ${rotularPlataforma(v)}`),
+    vazio: 'Nenhum e-mail de plataforma no período.',
+  });
+}
+
+/* ═══════════════════════  motivos / categorias / sentimentos  ═══════════════ */
+
+function renderBarrasSimples() {
+  barraHorizontal($('dt-motivos'), dados?.motivos ?? [], 'motivo_devolucao', { rotular: rotularMotivo, vazio: 'Sem devoluções/trocas classificadas por motivo.' });
+  barraHorizontal($('dt-categorias'), dados?.categorias ?? [], 'categoria', { rotular: rotularCategoria });
+  barraHorizontal($('dt-sentimentos'), dados?.sentimentos ?? [], 'sentimento', {
+    rotular: (v) => ({ positivo: 'Positivo', neutro: 'Neutro', negativo: 'Negativo', muito_negativo: 'Muito negativo' }[v] ?? v),
+  });
+}
+
+/* ═══════════════════════════════  e-mails por dia  ═══════════════════════ */
+
+function renderEvolucao() {
+  const linhas = dados?.evolucao ?? [];
+  const serie = linhas.map((l) => ({
+    chave: l.dia, valor: l.total, sub: `${n(l.devolucoes)} devolução/troca`,
+    rotulo: new Date(`${l.dia}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
+  }));
+  desenharColunas($('dt-evolucao'), serie, {
+    altura: 190, tooltip, unidade: 'e-mails', textoVazio: 'Nenhum e-mail no período',
+    rotuloEixoX: (d, i) => (i % Math.max(1, Math.ceil(serie.length / 12)) === 0 ? d.rotulo : ''),
+  });
+}
+
+/* ═══════════════════  estudo de devoluções e reembolsos  ═══════════════════ */
+
+function renderEstudoDevolucoes() {
+  barraHorizontal($('dt-areas'), dados?.areas ?? [], 'area_problema', {
+    rotular: rotularArea, onClick: (v) => aplicarFiltro('area', v, `área “${rotularArea(v)}”`),
+  });
+  barraHorizontal($('dt-responsaveis'), dados?.responsaveis ?? [], 'responsavel', {
+    rotular: rotularResponsavel, onClick: (v) => aplicarFiltro('resp', v, `responsável “${rotularResponsavel(v)}”`),
+  });
+  barraHorizontal($('dt-pagamento'), dados?.pagamento ?? [], 'problema_pagamento', {
+    rotular: rotularPagamento, onClick: (v) => aplicarFiltro('pgto', v, `pagamento “${rotularPagamento(v)}”`),
+  });
+
+  renderTabela($('dt-taxa-mensal'), dados?.taxa_mensal ?? [], [
+    { render: (l) => l.mes },
+    { classe: 'num', render: (l) => n(l.total) },
+    { classe: 'num', render: (l) => n(l.devolucoes) },
+    { classe: 'num', render: (l) => (l.pct === null ? '—' : `${String(l.pct).replace('.', ',')}%`) },
+  ], { vazio: 'Sem dados nos últimos 12 meses.' });
+
+  const motivosMes = dados?.motivos_mes ?? [];
+  const totalPorMotivo = new Map();
+  for (const l of motivosMes) totalPorMotivo.set(l.motivo_devolucao, (totalPorMotivo.get(l.motivo_devolucao) ?? 0) + l.total);
+  const top5 = [...totalPorMotivo.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([m]) => m);
+  const meses = [...new Set(motivosMes.map((l) => l.mes))].sort();
+  const cabecalho = $('dt-motivos-mes-cab');
+  cabecalho.replaceChildren(
+    Object.assign(document.createElement('th'), { textContent: 'Motivo', scope: 'col' }),
+    ...meses.map((m) => Object.assign(document.createElement('th'), { textContent: m, scope: 'col', className: 'num' })),
+  );
+  const porCelula = new Map(motivosMes.map((l) => [`${l.motivo_devolucao}|${l.mes}`, l.total]));
+  renderTabela($('dt-motivos-mes'), top5.map((motivo) => ({ motivo, meses })), [
+    { render: (l) => rotularMotivo(l.motivo) },
+    ...meses.map((m) => ({ classe: 'num', render: (l) => n(porCelula.get(`${l.motivo}|${m}`) ?? 0) })),
+  ], { vazio: 'Sem devoluções classificadas nos últimos 12 meses.' });
+  if (!top5.length) $('dt-motivos-mes-cab').replaceChildren();
+
+  barraHorizontal($('dt-defeito-tags'), dados?.defeito_tags ?? [], 'tag', { vazio: 'Nenhuma foto marcada com defeito no período.' });
+}
+
+/* ═══════════════════════  tabela paginada genérica (local)  ═══════════════ */
+
+function criarTabelaPaginada({
+  corpoId, paginacaoId, buscaId, colunas, porPagina = 12, camposBusca = [], rotuloItem = 'item', vazio = 'Nada encontrado.',
+  csvBotaoId = null, csvArquivo = 'dados.csv', csvColunas = null,
+}) {
+  let todas = [];
+  let linhasFiltradas = [];
+  let pagina = 1;
+  let filtro = '';
+
+  function aplicar() {
+    let linhas = todas;
+    if (filtro) {
+      const alvo = filtro.toLowerCase();
+      linhas = linhas.filter((l) => camposBusca.some((c) => String(l[c] ?? '').toLowerCase().includes(alvo)));
+    }
+    linhasFiltradas = linhas;
+    const p = paginar(linhas, pagina, porPagina);
+    pagina = p.pagina;
+    renderTabela($(corpoId), p.fatia, colunas, { vazio });
+    montarPaginacao($(paginacaoId), { pagina, totalPaginas: p.totalPaginas, total: linhas.length, rotuloItem }, (p2) => { pagina = p2; aplicar(); });
+  }
+
+  if (buscaId) {
+    $(buscaId).addEventListener('input', debounce((e) => { filtro = e.target.value.trim(); pagina = 1; aplicar(); }, 300));
+  }
+  if (csvBotaoId && csvColunas) {
+    $(csvBotaoId).addEventListener('click', () => {
+      baixarCsv(csvArquivo, csvColunas.map((c) => c.cabecalho), linhasFiltradas.map((l) => csvColunas.map((c) => c.valor(l))));
+    });
+  }
+
+  return { atualizar(linhas) { todas = linhas ?? []; pagina = 1; filtro = ''; if (buscaId) $(buscaId).value = ''; aplicar(); } };
+}
+
+const tabelaProdutoMotivo = criarTabelaPaginada({
+  corpoId: 'dt-produto-motivo', paginacaoId: 'dt-produto-motivo-pag', porPagina: 10, rotuloItem: 'produto',
+  colunas: [
+    { classe: 'cel-forte', render: (l) => l.produto },
+    { render: (l) => l.top.map((m) => `${rotularMotivo(m.motivo_devolucao)} (${n(m.total)})`).join(', ') },
+    { classe: 'num', render: (l) => n(l.total) },
+  ],
+  csvBotaoId: 'dt-produto-motivo-csv', csvArquivo: 'produto_motivo.csv',
+  csvColunas: [
+    { cabecalho: 'produto', valor: (l) => l.produto },
+    { cabecalho: 'motivos', valor: (l) => l.top.map((m) => `${rotularMotivo(m.motivo_devolucao)} (${m.total})`).join(' | ') },
+    { cabecalho: 'total', valor: (l) => l.total },
+  ],
+});
+
+function renderProdutoMotivo() {
+  const bruto = dados?.produto_motivo ?? [];
+  const porProduto = new Map();
+  for (const l of bruto) {
+    const grupo = porProduto.get(l.produto_mencionado) ?? [];
+    grupo.push(l);
+    porProduto.set(l.produto_mencionado, grupo);
+  }
+  const linhas = [...porProduto.entries()].map(([produto, itens]) => ({
+    produto,
+    total: itens.reduce((a, i) => a + i.total, 0),
+    top: itens.sort((a, b) => b.total - a.total).slice(0, 3),
+  })).sort((a, b) => b.total - a.total);
+  tabelaProdutoMotivo.atualizar(linhas);
+}
+
+const tabelaReincidentes = criarTabelaPaginada({
+  corpoId: 'dt-reincidentes', paginacaoId: 'dt-reincidentes-pag', buscaId: 'dt-reincidentes-busca',
+  camposBusca: ['nome', 'remetente_email'], porPagina: 10, rotuloItem: 'cliente',
+  colunas: [
+    { render: (l) => l.nome || l.remetente_email, classe: 'cel-forte' },
+    { classe: 'num', render: (l) => n(l.devolucoes) },
+    { render: (l) => truncar(l.motivos ?? '', 60) },
+    { render: (l) => truncar(l.produtos ?? '', 60) },
+    { render: (l) => (l.ultimo ? new Date(l.ultimo).toLocaleDateString('pt-BR') : '—') },
+  ],
+  csvBotaoId: 'dt-reincidentes-csv', csvArquivo: 'reincidentes.csv',
+  csvColunas: [
+    { cabecalho: 'nome', valor: (l) => l.nome ?? '' },
+    { cabecalho: 'remetente_email', valor: (l) => l.remetente_email },
+    { cabecalho: 'devolucoes', valor: (l) => l.devolucoes },
+    { cabecalho: 'motivos', valor: (l) => l.motivos ?? '' },
+    { cabecalho: 'produtos', valor: (l) => l.produtos ?? '' },
+    { cabecalho: 'ultimo', valor: (l) => l.ultimo ?? '' },
+  ],
+});
+
+const tabelaReclamantes = criarTabelaPaginada({
+  corpoId: 'dt-reclamantes', paginacaoId: 'dt-reclamantes-pag', buscaId: 'dt-reclamantes-busca',
+  camposBusca: ['nome', 'remetente_email', 'pedido'], porPagina: 12, rotuloItem: 'cliente',
+  colunas: [
+    { render: (l) => chipSituacaoPedido(l.situacao) },
+    { render: (l) => l.nome || l.remetente_email, classe: 'cel-forte' },
+    { render: (l) => l.pedido ?? '—', classe: 'cel-mono' },
+    { render: (l) => l.produto ?? '—' },
+    { render: (l) => rotularPlataforma(l.plataforma) },
+    { render: (l) => truncar(l.motivos ?? '', 50) },
+    { classe: 'num', render: (l) => n(l.emails) },
+    { render: (l) => (l.ultimo_email ? new Date(l.ultimo_email).toLocaleDateString('pt-BR') : '—') },
+  ],
+  csvBotaoId: 'dt-reclamantes-csv', csvArquivo: 'reclamantes.csv',
+  csvColunas: [
+    { cabecalho: 'situacao', valor: (l) => l.situacao },
+    { cabecalho: 'nome', valor: (l) => l.nome ?? '' },
+    { cabecalho: 'remetente_email', valor: (l) => l.remetente_email },
+    { cabecalho: 'pedido', valor: (l) => l.pedido ?? '' },
+    { cabecalho: 'produto', valor: (l) => l.produto ?? '' },
+    { cabecalho: 'plataforma', valor: (l) => l.plataforma ?? '' },
+    { cabecalho: 'motivos', valor: (l) => l.motivos ?? '' },
+    { cabecalho: 'emails', valor: (l) => l.emails },
+    { cabecalho: 'ultimo_email', valor: (l) => l.ultimo_email ?? '' },
+  ],
+});
+
+const tabelaProdutos = criarTabelaPaginada({
+  corpoId: 'dt-produtos', paginacaoId: 'dt-produtos-pag', buscaId: 'dt-produtos-busca',
+  camposBusca: ['produto_mencionado'], porPagina: 10, rotuloItem: 'produto',
+  colunas: [
+    { render: (l) => l.produto_mencionado, classe: 'cel-forte' },
+    { classe: 'num', render: (l) => n(l.total) },
+    { classe: 'num', render: (l) => n(l.devolucoes) },
+    { classe: 'num', render: (l) => n(l.reclamacoes) },
+  ],
+  csvBotaoId: 'dt-produtos-csv', csvArquivo: 'produtos.csv',
+  csvColunas: [
+    { cabecalho: 'produto', valor: (l) => l.produto_mencionado },
+    { cabecalho: 'total', valor: (l) => l.total },
+    { cabecalho: 'devolucoes', valor: (l) => l.devolucoes },
+    { cabecalho: 'reclamacoes', valor: (l) => l.reclamacoes },
+  ],
+});
+
+const tabelaClientesRisco = criarTabelaPaginada({
+  corpoId: 'dt-clientes-risco', paginacaoId: 'dt-clientes-risco-pag', buscaId: 'dt-clientes-risco-busca',
+  camposBusca: ['nome', 'remetente_email'], porPagina: 10, rotuloItem: 'cliente',
+  colunas: [
+    { render: (l) => l.nome || l.remetente_email, classe: 'cel-forte' },
+    { classe: 'num', render: (l) => n(l.emails_negativos) },
+    { render: (l) => (l.ultimo_contato ? dataHora(l.ultimo_contato) : '—') },
+  ],
+  csvBotaoId: 'dt-clientes-risco-csv', csvArquivo: 'clientes_risco.csv',
+  csvColunas: [
+    { cabecalho: 'nome', valor: (l) => l.nome ?? '' },
+    { cabecalho: 'remetente_email', valor: (l) => l.remetente_email },
+    { cabecalho: 'emails_negativos', valor: (l) => l.emails_negativos },
+    { cabecalho: 'ultimo_contato', valor: (l) => l.ultimo_contato ?? '' },
+  ],
+});
+
+const tabelaUltimos = criarTabelaPaginada({
+  corpoId: 'dt-ultimos', paginacaoId: 'dt-ultimos-pag', buscaId: 'dt-ultimos-busca',
+  camposBusca: ['remetente_nome', 'remetente_email', 'assunto', 'resumo'], porPagina: 15, rotuloItem: 'e-mail',
+  csvBotaoId: 'dt-ultimos-csv', csvArquivo: 'ultimos_emails.csv',
+  csvColunas: [
+    { cabecalho: 'data_email', valor: (l) => l.data_email ?? '' },
+    { cabecalho: 'remetente_nome', valor: (l) => l.remetente_nome ?? '' },
+    { cabecalho: 'remetente_email', valor: (l) => l.remetente_email },
+    { cabecalho: 'assunto', valor: (l) => l.assunto ?? '' },
+    { cabecalho: 'categoria', valor: (l) => l.categoria ?? '' },
+    { cabecalho: 'sentimento', valor: (l) => l.sentimento ?? '' },
+    { cabecalho: 'urgencia', valor: (l) => l.urgencia ?? '' },
+    { cabecalho: 'numero_pedido', valor: (l) => l.numero_pedido ?? '' },
+  ],
+  colunas: [
+    { render: (l) => (l.data_email ? dataHora(l.data_email) : '—'), classe: 'cel-mono' },
+    { render: (l) => l.remetente_nome || l.remetente_email, classe: 'cel-forte' },
+    {
+      render: (l) => {
+        const div = document.createElement('div');
+        div.textContent = l.assunto ?? '—';
+        const notas = [];
+        if (l.tem_anexo) notas.push('📎 anexo');
+        if (l.numero_pedido) notas.push(`pedido ${l.numero_pedido}`);
+        if (notas.length) { const s = document.createElement('span'); s.className = 'cel-sub'; s.textContent = notas.join(' · '); div.append(s); }
+        return div;
+      },
+    },
+    { render: (l) => rotularCategoria(l.categoria) },
+    { render: (l) => chipSentimento(l.sentimento) },
+    { render: (l) => chipUrgencia(l.urgencia) },
+    {
+      classe: 'cel-erro',
+      render: (l) => (l.erro_analise ? '⚠ falha na análise' : truncar(l.resumo ?? '', 90)),
+    },
+  ],
+});
+
+/* ═══════════════════════  pendentes + gerar rascunho  ═══════════════════════ */
+
+let emailModal = null;
+
+function abrirModalResposta(email) {
+  emailModal = email;
+  $('dt-resposta-cliente').textContent = `${email.remetente_nome || email.remetente_email} · ${email.assunto ?? ''}`;
+  $('dt-resposta-texto').value = email.resposta_sugerida ?? '';
+  $('dt-resposta-status').textContent = email.resposta_sugerida ? '' : 'Clique em “Gerar” para criar um rascunho com IA.';
+  $('dt-resposta-regenerar').textContent = email.resposta_sugerida ? 'Regenerar' : 'Gerar';
+  $('dt-resposta-modal').showModal();
+}
+
+$('dt-resposta-fechar').addEventListener('click', () => $('dt-resposta-modal').close());
+$('dt-resposta-copiar').addEventListener('click', async () => {
+  await navigator.clipboard.writeText($('dt-resposta-texto').value);
+  $('dt-resposta-status').textContent = 'Copiado.';
+});
+$('dt-resposta-regenerar').addEventListener('click', async () => {
+  if (!emailModal) return;
+  const botao = $('dt-resposta-regenerar');
+  botao.disabled = true;
+  $('dt-resposta-status').textContent = 'Gerando com IA…';
+  const forcar = Boolean(emailModal.resposta_sugerida);
+  const { ok, dados: resp } = await api('/api/resposta', { metodo: 'POST', corpo: { id: emailModal.id, forcar } });
+  botao.disabled = false;
+  if (!ok || resp.erro) { $('dt-resposta-status').textContent = resp?.erro ?? 'Não consegui gerar a resposta.'; return; }
+  $('dt-resposta-texto').value = resp.resposta ?? '';
+  emailModal.resposta_sugerida = resp.resposta;
+  botao.textContent = 'Regenerar';
+  $('dt-resposta-status').textContent = 'Rascunho pronto — revise antes de enviar.';
+});
+
+function renderPendentes() {
+  const linhas = dados?.pendentes ?? [];
+  renderTabela($('dt-pendentes'), linhas, [
+    { render: (l) => (l.data_email ? dataHora(l.data_email) : '—'), classe: 'cel-mono' },
+    { render: (l) => l.remetente_nome || l.remetente_email, classe: 'cel-forte' },
+    { render: (l) => l.assunto ?? '—' },
+    { render: (l) => rotularCategoria(l.categoria) },
+    { render: (l) => chipUrgencia(l.urgencia) },
+    { render: (l) => truncar(l.resumo ?? '', 70) },
+    {
+      render: (l) => {
+        const b = document.createElement('button');
+        b.className = 'btn';
+        b.type = 'button';
+        b.textContent = l.resposta_sugerida ? 'Ver' : 'Gerar';
+        b.addEventListener('click', () => abrirModalResposta(l));
+        return b;
+      },
+    },
+  ], { vazio: 'Nenhum e-mail aguardando resposta no período.' });
+}
+
+/* ═══════════════════════════════  mini-galeria  ═══════════════════════════ */
+
+// Não há rota própria — esta seção é uma aba a mais dentro do mesmo painel
+// (ver suporte.js), então "ver galeria completa" é só trocar de aba.
+$('dt-ver-galeria').addEventListener('click', (ev) => {
+  ev.preventDefault();
+  $('aba-btn-galeriaia').click();
+});
+
+function renderImagens() {
+  const container = $('dt-imagens');
+  const itens = (dados?.imagens ?? []).slice(0, 12);
+  container.replaceChildren();
+  if (!itens.length) {
+    const p = document.createElement('p');
+    p.className = 'vazio-suave';
+    p.textContent = 'Nenhum anexo no período.';
+    container.append(p);
+    return;
+  }
+  for (const img of itens) {
+    const a = document.createElement('a');
+    a.className = 'gal-card gal-card--mini';
+    a.href = img.mime_type?.startsWith('image/') ? `/api/imagem/${img.id}` : '#galeria-ia';
+    a.target = img.mime_type?.startsWith('image/') ? '_blank' : '_self';
+    a.rel = 'noopener noreferrer';
+    if (img.mime_type?.startsWith('image/')) {
+      const im = document.createElement('img');
+      im.src = `/api/imagem/${img.id}`;
+      im.alt = img.nome_arquivo ?? '';
+      im.loading = 'lazy';
+      a.append(im);
+    } else {
+      const ic = document.createElement('span');
+      ic.className = 'gal-icone';
+      ic.textContent = '📄';
+      a.append(ic);
+    }
+    container.append(a);
+  }
+}
+
+/* ═══════════════════════════════  carregamento  ═══════════════════════════ */
+
+let geracao = 0;
+
+export async function carregarDados() {
+  const meu = ++geracao;
+  try {
+    const { ok, dados: d } = await api(`/api/dados?${qsCompleto()}`);
+    if (meu !== geracao) return;
+    if (!ok) throw new Error(d?.erro ?? 'falha ao carregar');
+    dados = d;
+    renderKpis();
+    renderTicketsCompacto();
+    renderBarrasSimples();
+    renderEvolucao();
+    renderEstudoDevolucoes();
+    renderProdutoMotivo();
+    tabelaReincidentes.atualizar(dados.reincidentes ?? []);
+    renderPendentes();
+    tabelaReclamantes.atualizar(dados.reclamantes ?? []);
+    tabelaProdutos.atualizar(dados.produtos ?? []);
+    tabelaClientesRisco.atualizar(dados.clientes_risco ?? []);
+    renderImagens();
+    tabelaUltimos.atualizar(dados.ultimos ?? []);
+  } catch (err) {
+    if (meu !== geracao) return;
+    $('dt-erro').hidden = false;
+    $('dt-erro').textContent = `Não consegui carregar os dados: ${err.message}`;
+  }
+}
+
+$('dt-periodo').addEventListener('change', carregarDados);
+$('dt-busca').addEventListener('input', debounce((e) => { busca = e.target.value.trim(); carregarDados(); }, 450));
+
+carregarDados();
+setInterval(carregarDados, 30 * 1000);

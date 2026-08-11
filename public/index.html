@@ -128,6 +128,49 @@
       </svg>
       <span class="menu-rotulo">Régua de pós-venda</span>
     </button>
+
+    <!-- ── Central de E-mail IA: 4 abas a mais, mesma mecânica das duas de cima ── -->
+    <p class="menu-separador"><span class="menu-rotulo">Central de E-mail IA</span></p>
+
+    <button class="menu-item" id="aba-btn-ticketsia" type="button"
+            aria-selected="false" title="Tickets de Atendimento">
+      <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
+           stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 6.5h14v9H3z"/>
+        <path d="M3 6.5l7 5 7-5"/>
+      </svg>
+      <span class="menu-rotulo">Tickets de Atendimento</span>
+    </button>
+
+    <button class="menu-item" id="aba-btn-detalhesia" type="button"
+            aria-selected="false" title="Mais Detalhes">
+      <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
+           stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 16.5V11M10 16.5V4.5M16 16.5V8.5"/>
+      </svg>
+      <span class="menu-rotulo">Mais Detalhes</span>
+    </button>
+
+    <button class="menu-item" id="aba-btn-chatia" type="button"
+            aria-selected="false" title="Chat com IA">
+      <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
+           stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 4.5h14v9H8.5L4.5 17v-3.5H3z"/>
+      </svg>
+      <span class="menu-rotulo">Chat com IA</span>
+    </button>
+
+    <button class="menu-item" id="aba-btn-galeriaia" type="button"
+            aria-selected="false" title="Galeria de Imagens">
+      <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
+           stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="6" height="6" rx="1"/>
+        <rect x="11" y="3" width="6" height="6" rx="1"/>
+        <rect x="3" y="11" width="6" height="6" rx="1"/>
+        <rect x="11" y="11" width="6" height="6" rx="1"/>
+      </svg>
+      <span class="menu-rotulo">Galeria de Imagens</span>
+    </button>
   </nav>
 </aside>
 
@@ -775,6 +818,464 @@
   </section>
 
   <p class="rodape-nota" id="rodape-nota"></p>
+</main>
+
+<!-- ═══════════════════  Central de E-mail IA — Tela 1: Tickets  ═══════════════ -->
+<main class="conteudo" id="aba-ticketsia" hidden>
+
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Tickets de Atendimento</h2>
+        <p class="cartao-sub">1 ticket por cliente · e-mails de plataforma não geram ticket.</p>
+      </div>
+      <div class="tk-filtros">
+        <label class="campo campo--cresce">
+          <span class="sr">Buscar cliente, e-mail ou pedido</span>
+          <input type="text" id="tk-busca" placeholder="Buscar cliente, e-mail ou pedido…">
+        </label>
+        <label class="campo">
+          <span class="sr">Período</span>
+          <select id="tk-periodo">
+            <option value="7">7 dias</option>
+            <option value="30">30 dias</option>
+            <option value="90">90 dias</option>
+            <option value="" selected>Tudo</option>
+          </select>
+        </label>
+      </div>
+    </header>
+  </section>
+
+  <!-- ── resposta automática com IA (ao vivo) ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Resposta automática com IA</h2>
+        <p class="cartao-sub" id="tk-automacao-status">carregando…</p>
+      </div>
+    </header>
+    <div class="tabela-envolve">
+      <table class="tabela">
+        <thead>
+          <tr>
+            <th scope="col">Horário</th>
+            <th scope="col">Cliente</th>
+            <th scope="col">Assunto</th>
+            <th scope="col">Etapa</th>
+          </tr>
+        </thead>
+        <tbody id="tk-automacao-lista"><tr><td colspan="4" class="vazio-suave">carregando…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── KPIs de status ── -->
+  <section class="kpis kpis--suporte" id="tk-kpis"></section>
+
+  <!-- ── KPIs de tempo de atendimento ── -->
+  <section class="kpis kpis--suporte" id="tk-kpis-tempo"></section>
+  <p class="rodape-nota">Resoluções anteriores a 08/08/2026 vêm de um backfill: a data usada é a do último
+    e-mail do cliente, e o tempo até o início só passou a ser medido a partir dessa data.</p>
+
+  <!-- ── gráficos de produtividade ── -->
+  <div class="grade-3">
+    <section class="cartao">
+      <header class="cartao-cabeca"><div><h2>Tickets resolvidos por dia</h2><p class="cartao-sub">últimos 30 dias</p></div></header>
+      <div id="tk-graf-resolvidos-dia"></div>
+    </section>
+    <section class="cartao">
+      <header class="cartao-cabeca"><div><h2>Tickets resolvidos por mês</h2><p class="cartao-sub">últimos 12 meses</p></div></header>
+      <div id="tk-graf-resolvidos-mes"></div>
+    </section>
+    <section class="cartao">
+      <header class="cartao-cabeca"><div><h2>E-mails recebidos por dia</h2><p class="cartao-sub">últimos 30 dias</p></div></header>
+      <div id="tk-graf-emails-dia"></div>
+    </section>
+  </div>
+
+  <!-- ── plataformas × clientes ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div><h2>Plataformas × clientes</h2><p class="cartao-sub" id="tk-plataformas-resumo"></p></div>
+    </header>
+    <div id="tk-plataformas"></div>
+  </section>
+
+  <!-- ── tickets por cliente ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Tickets por cliente</h2>
+        <p class="cartao-sub">Clique num cliente com resumo para ver a conversa. As ações mudam o status na hora.</p>
+      </div>
+      <div class="tk-filtros">
+        <label class="campo">
+          <span>Status</span>
+          <select id="tk-tabela-status">
+            <option value="">Todos</option>
+            <option value="nao_iniciado">Não iniciados</option>
+            <option value="em_aberto">Em aberto</option>
+            <option value="resolvido">Resolvidos</option>
+          </select>
+        </label>
+        <button class="btn" id="tk-tabela-csv" type="button">⬇ CSV</button>
+      </div>
+    </header>
+    <div class="tabela-envolve">
+      <table class="tabela">
+        <thead>
+          <tr>
+            <th scope="col">Cliente</th>
+            <th scope="col">Status</th>
+            <th scope="col" class="num">E-mails</th>
+            <th scope="col" class="num">Pedidos únicos</th>
+            <th scope="col" class="num">Reaberturas</th>
+            <th scope="col">Primeiro / Último</th>
+            <th scope="col">Espera</th>
+            <th scope="col">Ações</th>
+          </tr>
+        </thead>
+        <tbody id="tk-tabela-corpo"><tr><td colspan="8" class="vazio-suave">carregando…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="paginacao" id="tk-tabela-paginacao"></div>
+  </section>
+</main>
+
+<!-- ═══════════════════  Central de E-mail IA — Tela 2: Detalhes  ═══════════════ -->
+<main class="conteudo" id="aba-detalhesia" hidden>
+
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Mais Detalhes</h2>
+        <p class="cartao-sub">Visão analítica completa — todos os cortes e séries históricas.</p>
+      </div>
+      <div class="tk-filtros">
+        <label class="campo campo--cresce">
+          <span class="sr">Buscar</span>
+          <input type="text" id="dt-busca" placeholder="Buscar assunto, cliente, produto, pedido…">
+        </label>
+        <label class="campo">
+          <span class="sr">Período</span>
+          <select id="dt-periodo">
+            <option value="7">7 dias</option>
+            <option value="30">30 dias</option>
+            <option value="90">90 dias</option>
+            <option value="" selected>Tudo</option>
+          </select>
+        </label>
+      </div>
+    </header>
+    <div class="sup-filtro" id="dt-filtro-chip" hidden>
+      <span id="dt-filtro-rotulo"></span>
+      <button class="btn btn-fantasma" id="dt-filtro-limpar" type="button">Limpar filtro ✕</button>
+    </div>
+    <p class="faixa faixa--erro" id="dt-erro" hidden></p>
+  </section>
+
+  <section class="kpis kpis--suporte" id="dt-kpis"></section>
+
+  <!-- ── tickets (compacto) + plataformas ── -->
+  <div class="grade-3">
+    <section class="cartao span-2">
+      <header class="cartao-cabeca"><div><h2>Tickets de atendimento</h2></div></header>
+      <section class="kpis kpis--suporte" id="dt-tickets-kpis"></section>
+      <div class="tabela-envolve">
+        <table class="tabela">
+          <thead>
+            <tr>
+              <th scope="col">Status</th><th scope="col">Cliente</th>
+              <th scope="col" class="num">E-mails</th><th scope="col" class="num">Pedidos</th>
+              <th scope="col">Último e-mail</th><th scope="col">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="dt-tickets-corpo"><tr><td colspan="6" class="vazio-suave">carregando…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="paginacao" id="dt-tickets-paginacao"></div>
+    </section>
+    <section class="cartao">
+      <header class="cartao-cabeca"><div><h2>E-mails de plataformas</h2></div></header>
+      <div id="dt-plataformas"></div>
+    </section>
+  </div>
+
+  <!-- ── motivos / categorias / sentimento ── -->
+  <div class="grade-3">
+    <section class="cartao">
+      <header class="cartao-cabeca"><div><h2>Motivos de devolução</h2></div></header>
+      <div id="dt-motivos"></div>
+    </section>
+    <section class="cartao">
+      <header class="cartao-cabeca"><div><h2>Categorias</h2></div></header>
+      <div id="dt-categorias"></div>
+    </section>
+    <section class="cartao">
+      <header class="cartao-cabeca"><div><h2>Sentimento</h2></div></header>
+      <div id="dt-sentimentos"></div>
+    </section>
+  </div>
+
+  <!-- ── e-mails por dia ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca"><div><h2>E-mails por dia</h2></div></header>
+    <div id="dt-evolucao"></div>
+  </section>
+
+  <!-- ── estudo de devoluções e reembolsos ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca"><div><h2>Estudo de devoluções e reembolsos</h2></div></header>
+    <div class="grade-3">
+      <div>
+        <h3 class="dt-subtitulo">Etapa do problema</h3>
+        <div id="dt-areas"></div>
+      </div>
+      <div>
+        <h3 class="dt-subtitulo">De quem é a culpa</h3>
+        <div id="dt-responsaveis"></div>
+      </div>
+      <div>
+        <h3 class="dt-subtitulo">Problemas de pagamento</h3>
+        <div id="dt-pagamento"></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="grade-3">
+    <section class="cartao span-2">
+      <header class="cartao-cabeca"><div><h2>Taxa de devolução por mês</h2><p class="cartao-sub">últimos 12 meses</p></div></header>
+      <div class="tabela-envolve">
+        <table class="tabela">
+          <thead><tr><th scope="col">Mês</th><th scope="col" class="num">Total</th><th scope="col" class="num">Devoluções</th><th scope="col" class="num">%</th></tr></thead>
+          <tbody id="dt-taxa-mensal"><tr><td colspan="4" class="vazio-suave">carregando…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+    <section class="cartao">
+      <header class="cartao-cabeca"><div><h2>O que aparece nas fotos com defeito</h2></div></header>
+      <div id="dt-defeito-tags"></div>
+    </section>
+  </div>
+
+  <section class="cartao">
+    <header class="cartao-cabeca"><div><h2>Motivos por mês</h2><p class="cartao-sub">top 5 motivos, últimos 12 meses</p></div></header>
+    <div class="tabela-envolve">
+      <table class="tabela">
+        <thead><tr id="dt-motivos-mes-cab"></tr></thead>
+        <tbody id="dt-motivos-mes"><tr><td class="vazio-suave">carregando…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── produto × motivo / reincidentes ── -->
+  <div class="grade-3">
+    <section class="cartao span-2">
+      <header class="cartao-cabeca">
+        <div><h2>Produto × motivo</h2></div>
+        <button class="btn" id="dt-produto-motivo-csv" type="button">⬇ CSV</button>
+      </header>
+      <div class="tabela-envolve">
+        <table class="tabela">
+          <thead><tr><th scope="col">Produto</th><th scope="col">Principais motivos</th><th scope="col" class="num">Total</th></tr></thead>
+          <tbody id="dt-produto-motivo"><tr><td colspan="3" class="vazio-suave">carregando…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="paginacao" id="dt-produto-motivo-pag"></div>
+    </section>
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div><h2>Clientes reincidentes</h2><p class="cartao-sub">2+ devoluções no período</p></div>
+      </header>
+      <label class="campo campo--bloco"><span class="sr">Buscar</span><input type="text" id="dt-reincidentes-busca" placeholder="Buscar…"></label>
+      <div class="tabela-envolve">
+        <table class="tabela">
+          <thead><tr><th scope="col">Cliente</th><th scope="col" class="num">Dev.</th><th scope="col">Motivos</th><th scope="col">Produtos</th><th scope="col">Último</th></tr></thead>
+          <tbody id="dt-reincidentes"><tr><td colspan="5" class="vazio-suave">carregando…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="paginacao" id="dt-reincidentes-pag"></div>
+      <button class="btn" id="dt-reincidentes-csv" type="button">⬇ CSV</button>
+    </section>
+  </div>
+
+  <!-- ── aguardando resposta ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div><h2>⚠ Aguardando resposta</h2><p class="cartao-sub">ordenado por urgência</p></div>
+    </header>
+    <div class="tabela-envolve">
+      <table class="tabela">
+        <thead>
+          <tr><th scope="col">Quando</th><th scope="col">Cliente</th><th scope="col">Assunto</th>
+            <th scope="col">Categoria</th><th scope="col">Urgência</th><th scope="col">Resumo</th><th scope="col">Resposta</th></tr>
+        </thead>
+        <tbody id="dt-pendentes"><tr><td colspan="7" class="vazio-suave">carregando…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── reclamações × pedidos ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div><h2>Reclamações × Pedidos</h2><p class="cartao-sub">quem já cancelou o pedido e quem ainda não</p></div>
+    </header>
+    <label class="campo campo--bloco"><span class="sr">Buscar</span><input type="text" id="dt-reclamantes-busca" placeholder="Buscar cliente ou pedido…"></label>
+    <div class="tabela-envolve">
+      <table class="tabela">
+        <thead>
+          <tr><th scope="col">Situação</th><th scope="col">Cliente</th><th scope="col">Pedido</th><th scope="col">Produto</th>
+            <th scope="col">Plataforma</th><th scope="col">Motivos</th><th scope="col" class="num">E-mails</th><th scope="col">Último e-mail</th></tr>
+        </thead>
+        <tbody id="dt-reclamantes"><tr><td colspan="8" class="vazio-suave">carregando…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="paginacao" id="dt-reclamantes-pag"></div>
+    <button class="btn" id="dt-reclamantes-csv" type="button">⬇ CSV</button>
+  </section>
+
+  <!-- ── produtos / clientes em risco ── -->
+  <div class="grade-3">
+    <section class="cartao span-2">
+      <header class="cartao-cabeca"><div><h2>Produtos com devolução/reclamação</h2></div></header>
+      <label class="campo campo--bloco"><span class="sr">Buscar</span><input type="text" id="dt-produtos-busca" placeholder="Buscar produto…"></label>
+      <div class="tabela-envolve">
+        <table class="tabela">
+          <thead><tr><th scope="col">Produto</th><th scope="col" class="num">Total</th><th scope="col" class="num">Devoluções</th><th scope="col" class="num">Reclamações</th></tr></thead>
+          <tbody id="dt-produtos"><tr><td colspan="4" class="vazio-suave">carregando…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="paginacao" id="dt-produtos-pag"></div>
+      <button class="btn" id="dt-produtos-csv" type="button">⬇ CSV</button>
+    </section>
+    <section class="cartao">
+      <header class="cartao-cabeca"><div><h2>Clientes em risco</h2><p class="cartao-sub">2+ e-mails negativos em 30 dias</p></div></header>
+      <label class="campo campo--bloco"><span class="sr">Buscar</span><input type="text" id="dt-clientes-risco-busca" placeholder="Buscar…"></label>
+      <div class="tabela-envolve">
+        <table class="tabela">
+          <thead><tr><th scope="col">Cliente</th><th scope="col" class="num">Neg.</th><th scope="col">Último contato</th></tr></thead>
+          <tbody id="dt-clientes-risco"><tr><td colspan="3" class="vazio-suave">carregando…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="paginacao" id="dt-clientes-risco-pag"></div>
+      <button class="btn" id="dt-clientes-risco-csv" type="button">⬇ CSV</button>
+    </section>
+  </div>
+
+  <!-- ── banco de imagens (mini-galeria) ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div><h2>Banco de imagens e anexos</h2></div>
+      <a href="#" id="dt-ver-galeria">ver galeria completa →</a>
+    </header>
+    <div class="gal-grade gal-grade--mini" id="dt-imagens"></div>
+  </section>
+
+  <!-- ── últimos e-mails ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca"><div><h2>Últimos e-mails</h2></div></header>
+    <label class="campo campo--bloco"><span class="sr">Buscar</span><input type="text" id="dt-ultimos-busca" placeholder="Buscar…"></label>
+    <div class="tabela-envolve">
+      <table class="tabela">
+        <thead>
+          <tr><th scope="col">Quando</th><th scope="col">Cliente</th><th scope="col">Assunto</th>
+            <th scope="col">Categoria</th><th scope="col">Sentimento</th><th scope="col">Urgência</th><th scope="col">Resumo</th></tr>
+        </thead>
+        <tbody id="dt-ultimos"><tr><td colspan="7" class="vazio-suave">carregando…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="paginacao" id="dt-ultimos-pag"></div>
+    <button class="btn" id="dt-ultimos-csv" type="button">⬇ CSV</button>
+  </section>
+</main>
+
+<!-- ── modal: gerar/ver rascunho de resposta ── -->
+<dialog class="janela" id="dt-resposta-modal" aria-labelledby="dt-resposta-titulo">
+  <header class="janela-cabeca">
+    <div>
+      <h2 id="dt-resposta-titulo">Rascunho de resposta</h2>
+      <p class="cartao-sub" id="dt-resposta-cliente"></p>
+    </div>
+    <button class="btn btn-icone" id="dt-resposta-fechar" type="button" aria-label="Fechar">✕</button>
+  </header>
+  <div class="janela-corpo">
+    <label class="campo campo--bloco">
+      <span>Texto da resposta (edite à vontade antes de copiar)</span>
+      <textarea id="dt-resposta-texto" rows="10"></textarea>
+    </label>
+    <p class="cartao-sub" id="dt-resposta-status"></p>
+    <div class="tk-filtros">
+      <button class="btn" id="dt-resposta-regenerar" type="button">Gerar</button>
+      <button class="btn btn-forte" id="dt-resposta-copiar" type="button">Copiar</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ═══════════════════════  Central de E-mail IA — Tela 3: Chat  ═══════════════
+     Estilo "ChatGPT": sem cartão envolvendo tudo — o topo é uma faixa fina,
+     as mensagens flutuam direto no fundo da página e o compositor é uma
+     pílula flutuante ancorada no rodapé da tela, não uma barra dentro de um
+     card. -->
+<main class="conteudo conteudo--chat" id="aba-chatia" hidden>
+  <div class="ch-shell">
+    <header class="ch-topo">
+      <div>
+        <h2>Chat com IA</h2>
+        <p class="ch-topo-sub">Converse em linguagem natural com o banco — a IA só executa consultas de leitura.</p>
+      </div>
+      <div class="ch-topo-acoes">
+        <label class="campo-sel ch-modelo-campo">
+          <span class="sr">Modelo</span>
+          <select id="ch-modelo">
+            <option value="claude-haiku-4-5">Haiku · rápido e barato</option>
+            <option value="claude-sonnet-5">Sonnet · mais capaz</option>
+          </select>
+        </label>
+        <button class="btn btn-fantasma btn-icone" id="ch-limpar" type="button" title="Limpar conversa">
+          <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
+               stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 6h12M8 6V4.5h4V6M6 6l.7 10a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L14 6"/>
+          </svg>
+          <span class="sr">Limpar conversa</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="ch-mensagens" id="ch-mensagens" aria-live="polite"></div>
+
+    <div class="ch-compositor-ancora">
+      <div class="ch-compositor">
+        <textarea id="ch-input" rows="1" placeholder="Pergunte sobre tickets, e-mails, devoluções, clientes…"></textarea>
+        <button class="ch-botao-enviar" id="ch-enviar" type="button" aria-label="Enviar">
+          <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 15.5V4.5M10 4.5L5 9.5M10 4.5l5 5"/>
+          </svg>
+        </button>
+      </div>
+      <p class="ch-nota">A IA consulta o banco em modo somente leitura. Confira números importantes antes de decisões grandes.</p>
+    </div>
+  </div>
+</main>
+
+<!-- ═══════════════════  Central de E-mail IA — Tela 4: Galeria  ═══════════════ -->
+<main class="conteudo" id="aba-galeriaia" hidden>
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Galeria de Imagens</h2>
+        <p class="cartao-sub">Anexos analisados pela IA — fotos de produto, defeito, nota fiscal, comprovante, print de tela, documento.</p>
+      </div>
+      <label class="campo campo--cresce">
+        <span class="sr">Buscar</span>
+        <input type="text" id="gl-busca" placeholder="Buscar por tag, descrição, cliente, assunto…">
+      </label>
+    </header>
+    <div class="gal-chips" id="gl-chips"></div>
+    <div class="gal-grade" id="gl-grade"></div>
+    <div class="paginacao" id="gl-paginacao"></div>
+  </section>
 </main>
 
 <div class="tooltip" id="tooltip" role="status" aria-live="polite" hidden></div>

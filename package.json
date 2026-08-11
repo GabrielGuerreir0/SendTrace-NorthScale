@@ -17,6 +17,7 @@
     "node": ">=20.18"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0",
     "@fastify/jwt": "^10.2.1",
     "@fastify/swagger": "^9.8.1",
     "@fastify/swagger-ui": "^6.1.1",

@@ -33,6 +33,8 @@ import rotasMetricas from './rotas/metricas.js';
 import rotasProdutos from './rotas/produtos.js';
 import rotasCatalogo from './rotas/catalogo.js';
 import rotasAtendimentos from './rotas/atendimentos.js';
+import rotasEmailIA from './rotas/emailIA.js';
+import rotasEmailIACentral from './rotas/emailIACentral.js';
 
 const PORTA = Number(process.env.API_PORT) || 4400;
 const HOST = process.env.API_HOST || '127.0.0.1';
@@ -218,6 +220,7 @@ await app.register(swagger, {
       { name: 'Produtos', description: 'Readmes de produto — o conhecimento que a IA de suporte recebe.' },
       { name: 'Catálogo', description: "O catálogo canônico de produtos (slug, nomes, e-book, suporte) e os aliases. '*' é o padrão da cascata de copy." },
       { name: 'Suporte', description: 'Histórico de atendimentos do chatbot — a memória do suporte por cliente.' },
+      { name: 'Central de E-mail IA', description: 'Chat com o banco e geração de rascunho de resposta, os dois recursos que chamam Claude.' },
       { name: 'Saúde', description: 'A API está de pé?' },
     ],
   },
@@ -331,6 +334,8 @@ await app.register(rotasMetricas);
 await app.register(rotasProdutos);
 await app.register(rotasCatalogo);
 await app.register(rotasAtendimentos);
+await app.register(rotasEmailIA);
+await app.register(rotasEmailIACentral);
 
 /* ═══════════════════════════════  subida  ══════════════════════════════ */
 

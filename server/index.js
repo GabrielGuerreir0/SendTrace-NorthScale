@@ -22,7 +22,7 @@ import {
   apiConfigurada, enderecoApi, saude as saudeApi, ErroApi,
   autenticarUsuario, dadosDoToken, comCredencial, obter as obterApi, listarTudo,
   criar as criarApi, substituir as substituirApi, apagar as apagarApi,
-  remendar as remendarApi,
+  remendar as remendarApi, obterBinario,
 } from './api.js';
 import { enviarConvite, emailConfigurado } from './email.js';
 import {
@@ -1099,6 +1099,101 @@ async function atender(req, res, url, sessao) {
       produto: textoOuNulo(q.get('produto')),
       plataforma: textoOuNulo(q.get('plataforma')),
     }));
+  }
+
+  /* ═══════════════════════  Central de E-mail IA  ════════════════════════
+     Proxy fino: todo o dataset (schema email_ia) e a lógica das duas rotas
+     que chamam Claude moram na API (api/rotas/emailIA.js e
+     emailIACentral.js) — aqui é só repassar querystring/corpo com o token
+     de quem está logado, igual ao resto deste roteador. */
+
+  if (url.pathname === '/api/dados') {
+    const q = url.searchParams;
+    return json(res, 200, await obterApi('/api/dados', {
+      dias: q.get('dias'), q: q.get('q'), tq: q.get('tq'), cat: q.get('cat'),
+      sent: q.get('sent'), urg: q.get('urg'), pede: q.get('pede'), area: q.get('area'),
+      resp: q.get('resp'), pgto: q.get('pgto'), plat: q.get('plat'),
+    }));
+  }
+
+  if (url.pathname === '/api/automacao') {
+    return json(res, 200, await obterApi('/api/automacao'));
+  }
+
+  if (url.pathname === '/api/ticket' && req.method === 'POST') {
+    const corpo = await lerJson(req);
+    const email = String(corpo.email ?? '').trim();
+    if (!email) return json(res, 400, { erro: 'Informe o e-mail do cliente.' });
+    if (!['nao_iniciado', 'em_aberto', 'resolvido'].includes(corpo.status)) {
+      return json(res, 400, { erro: 'Status inválido.' });
+    }
+    try {
+      return json(res, 200, await criarApi('/api/ticket', { email, status: corpo.status }));
+    } catch (err) {
+      if (err instanceof ErroApi && err.status === 404) {
+        return json(res, 404, { erro: 'Ticket não encontrado para este e-mail.' });
+      }
+      throw err;
+    }
+  }
+
+  // O chat roda um loop de tool-use de até 12 idas e vindas ao Claude — bem
+  // mais do que o corte padrão (API_TIMEOUT_MS) das outras chamadas à API.
+  if (url.pathname === '/api/chat' && req.method === 'POST') {
+    const corpo = await lerJson(req, 64 * 1024);
+    if (!Array.isArray(corpo.mensagens) || !corpo.mensagens.length) {
+      return json(res, 400, { erro: 'Envie ao menos uma mensagem.' });
+    }
+    try {
+      return json(res, 200, await criarApi('/api/chat', corpo, { timeoutMs: 120_000 }));
+    } catch (err) {
+      if (err instanceof ErroApi) {
+        return json(res, 200, { erro: detalharErroApi(err, 'Não consegui falar com a IA agora.') });
+      }
+      throw err;
+    }
+  }
+
+  if (url.pathname === '/api/resposta' && req.method === 'POST') {
+    const corpo = await lerJson(req);
+    if (!Number.isInteger(corpo.id)) return json(res, 400, { erro: 'Informe o id do e-mail.' });
+    try {
+      return json(res, 200, await criarApi(
+        '/api/resposta',
+        { id: corpo.id, forcar: Boolean(corpo.forcar) },
+        { timeoutMs: 60_000 },
+      ));
+    } catch (err) {
+      if (err instanceof ErroApi && err.status === 404) return json(res, 404, { erro: 'E-mail não encontrado.' });
+      if (err instanceof ErroApi) {
+        return json(res, 200, { erro: detalharErroApi(err, 'Não consegui gerar a resposta agora.') });
+      }
+      throw err;
+    }
+  }
+
+  if (url.pathname === '/api/galeria') {
+    const q = url.searchParams;
+    return json(res, 200, await obterApi('/api/galeria', {
+      pagina: q.get('pagina'), por_pagina: q.get('por_pagina'), tipo: q.get('tipo'), q: q.get('q'),
+    }));
+  }
+
+  // Imagem em si: bytes crus, não JSON — não pode passar por obterApi().
+  const rotaImagem = /^\/api\/imagem\/(\d+)$/.exec(url.pathname);
+  if (rotaImagem) {
+    try {
+      const { buffer, mimeType } = await obterBinario(`/api/imagem/${rotaImagem[1]}`);
+      res.writeHead(200, { 'Content-Type': mimeType, 'Cache-Control': 'private, max-age=3600' });
+      res.end(buffer);
+      return ATENDIDO;
+    } catch (err) {
+      if (err instanceof ErroApi && err.status === 404) {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Imagem não encontrada');
+        return ATENDIDO;
+      }
+      throw err;
+    }
   }
 
   // A API é a única dependência do painel agora. `/api/health/` dela é rota

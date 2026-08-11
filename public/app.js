@@ -7,8 +7,16 @@ import { n, nc, relativo, dataHora, dia, hora, truncar, duracaoH } from './forma
 import { paraEsperaH, deEsperaH } from './tempo.js';
 import { snapshotDemo, pedidosDemo } from './demo.js';
 // A aba principal (Suporte IA) vive em módulo próprio; importá-lo também liga
-// os botões de aba. Aqui só acoplamos o carregamento aos ciclos do painel.
+// os botões de aba — de TODAS as abas, régua e Central de E-mail IA incluídas
+// (ver suporte.js). Aqui só acoplamos o carregamento aos ciclos do painel.
 import { carregarSuporte } from './suporte.js';
+// As 4 telas da Central de E-mail IA são autossuficientes: cada uma carrega
+// seus próprios dados e mantém seu próprio timer assim que o módulo é
+// importado — não precisam de nenhum acoplamento aqui, só do import.
+import './emailTickets.js';
+import './emailDetalhes.js';
+import './emailChat.js';
+import './emailGaleria.js';
 
 /* Mesmos traçados usados nos nós do canvas, para o card por canal falar a
    mesma língua visual que o fluxo. */

@@ -66,7 +66,9 @@ function montarUrl(rota, params) {
   return url;
 }
 
-async function bruto(metodo, rota, { params, corpo, token } = {}) {
+async function bruto(metodo, rota, {
+  params, corpo, token, timeoutMs = LIMITE_MS,
+} = {}) {
   if (!BASE) {
     throw new ErroApi('A API não está configurada: falta API_URL no .env.', { rota });
   }
@@ -84,11 +86,11 @@ async function bruto(metodo, rota, { params, corpo, token } = {}) {
       body: corpo === undefined ? undefined : JSON.stringify(corpo),
       // Sem corte explícito, uma API pendurada segura a requisição do navegador
       // até o limite do sistema operacional e o painel parece travado.
-      signal: AbortSignal.timeout(LIMITE_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (err) {
     const porque = err.name === 'TimeoutError'
-      ? `a API não respondeu em ${Math.round(LIMITE_MS / 1000)} s`
+      ? `a API não respondeu em ${Math.round(timeoutMs / 1000)} s`
       : err.message;
     throw new ErroApi(`${metodo} ${rota}: ${porque}`, { rota });
   }
@@ -184,10 +186,39 @@ async function pedir(metodo, rota, opcoes = {}) {
 }
 
 export const obter = (rota, params) => pedir('GET', rota, { params });
-export const criar = (rota, corpo) => pedir('POST', rota, { corpo });
+export const criar = (rota, corpo, opcoes) => pedir('POST', rota, { corpo, ...opcoes });
 export const substituir = (rota, corpo) => pedir('PUT', rota, { corpo });
 export const remendar = (rota, corpo) => pedir('PATCH', rota, { corpo });
 export const apagar = (rota) => pedir('DELETE', rota);
+
+/**
+ * Busca um BINÁRIO (imagem de anexo) da API, com o mesmo par de tokens da
+ * sessão — mas sem passar pelo `bruto()`/`pedir()` genéricos, que sempre
+ * decodificam a resposta como JSON e corromperiam os bytes da imagem.
+ */
+export async function obterBinario(rota) {
+  const credencial = credencialAtual();
+  if (!credencial?.access) {
+    throw new ErroApi('sem credencial da API nesta requisição', { status: 401, rota });
+  }
+  if (!BASE) throw new ErroApi('A API não está configurada: falta API_URL no .env.', { rota });
+
+  const chamar = (token) => fetch(`${BASE}${rota}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(LIMITE_MS),
+  });
+
+  let resposta = await chamar(credencial.access);
+  if (resposta.status === 401 && credencial.refresh) {
+    await renovarAcesso(credencial);
+    resposta = await chamar(credencial.access);
+  }
+  if (!resposta.ok) {
+    throw new ErroApi(`GET ${rota}: HTTP ${resposta.status}`, { status: resposta.status, rota });
+  }
+  const buffer = Buffer.from(await resposta.arrayBuffer());
+  return { buffer, mimeType: resposta.headers.get('content-type') || 'application/octet-stream' };
+}
 
 /**
  * Varre uma lista paginada inteira e devolve `{ itens, total, truncado }`.

@@ -16,11 +16,23 @@ const $ = (id) => document.getElementById(id);
 /* ══════════════════════════════  abas  ══════════════════════════════ */
 
 /**
- * A troca de aba é só exibição: as duas <main> continuam no DOM e os timers
+ * A troca de aba é só exibição: todas as <main> continuam no DOM e os timers
  * de cada uma seguem rodando — voltar para uma aba nunca mostra dado velho.
  * A escolha fica salva; "suporte" é o padrão por ser a aba principal.
+ *
+ * As 4 abas da Central de E-mail IA (§ da especificação own doc) entram aqui
+ * em vez de módulo próprio: é este arquivo que já é o dono da mecânica de
+ * troca de aba para o painel inteiro, suporte E régua incluídos — um
+ * segundo lugar decidindo "qual aba está visível" divergiria do primeiro.
  */
-const ABAS = { suporte: 'aba-suporte', regua: 'aba-regua' };
+const ABAS = {
+  suporte: 'aba-suporte',
+  regua: 'aba-regua',
+  ticketsia: 'aba-ticketsia',
+  detalhesia: 'aba-detalhesia',
+  chatia: 'aba-chatia',
+  galeriaia: 'aba-galeriaia',
+};
 
 function mostrarAba(qual) {
   for (const [nome, id] of Object.entries(ABAS)) {
@@ -30,8 +42,9 @@ function mostrarAba(qual) {
   localStorage.setItem('aba', qual);
 }
 
-$('aba-btn-suporte').addEventListener('click', () => mostrarAba('suporte'));
-$('aba-btn-regua').addEventListener('click', () => mostrarAba('regua'));
+for (const nome of Object.keys(ABAS)) {
+  $(`aba-btn-${nome}`).addEventListener('click', () => mostrarAba(nome));
+}
 mostrarAba(ABAS[localStorage.getItem('aba')] ? localStorage.getItem('aba') : 'suporte');
 
 /*
