@@ -8,7 +8,7 @@
 <!-- Favicon: o mesmo rastro da marca, desenhado em vetor para ficar nítido em
      qualquer densidade de tela. Cores fixas porque a aba do navegador não
      expõe o tema da página — estas duas têm contraste nas duas barras. -->
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'><path d='M5 21.5 L21.5 7' stroke='%231baf7a' stroke-width='1.7' stroke-linecap='round' opacity='.45'/><circle cx='5' cy='21.5' r='2.1' fill='%231baf7a' opacity='.6'/><circle cx='13.2' cy='14.3' r='3' fill='%231baf7a' opacity='.85'/><circle cx='21.6' cy='7' r='4.3' fill='%233987e5'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'><path d='M5 21.5 L21.5 7' stroke='%231baf7a' stroke-width='1.7' stroke-linecap='round' opacity='.45'/><circle cx='5' cy='21.5' r='2.1' fill='%231baf7a' opacity='.6'/><circle cx='13.2' cy='14.3' r='3' fill='%231baf7a' opacity='.85'/><circle cx='21.6' cy='7' r='4.3' fill='%234260e6'/></svg>">
 </head>
 <body>
 
@@ -21,7 +21,16 @@
       <circle class="rastro-ponta" cx="21.6" cy="7" r="4.3"/>
     </svg>
     <div>
-      <h1 class="marca-nome"><b>SendTrace</b></h1>
+      <div class="marca-titulo">
+        <h1 class="marca-nome"><b>SendTrace</b></h1>
+        <!-- Selo "by NorthScale": fundo escuro FIXO (não segue --plano/--tinta do
+             tema) porque a logo tem texto branco — em tema claro ela sumiria
+             sem esse contraste embutido no próprio selo. -->
+        <span class="marca-by">
+          <span>by</span>
+          <img src="src/logo_northscale.png" alt="NorthScale" class="marca-by-logo">
+        </span>
+      </div>
       <p class="marca-sub">Régua de pós-venda · <code>disparos_pos_venda</code></p>
     </div>
   </div>
@@ -70,7 +79,6 @@
     <button class="btn btn-icone" id="btn-atualizar" title="Atualizar agora">
       <span aria-hidden="true">↻</span><span class="sr">Atualizar agora</span>
     </button>
-    <button class="btn" id="btn-demo" aria-pressed="false">Demo</button>
     <button class="btn btn-icone" id="btn-tema" title="Alternar tema">
       <span aria-hidden="true" id="ico-tema">☾</span><span class="sr">Alternar tema claro/escuro</span>
     </button>
@@ -453,10 +461,6 @@
   </div>
 </dialog>
 
-<div class="faixa faixa--demo" id="faixa-demo" hidden>
-  <strong>Modo demonstração.</strong> Os números abaixo são gerados no navegador para você avaliar a
-  interface — <em>nada é lido nem gravado no banco</em>. Desligue em “Demo” para voltar aos dados reais.
-</div>
 <div class="faixa faixa--erro" id="faixa-erro" hidden></div>
 <!-- A API não agrega: medir a fila é baixá-la. Passando do teto, os números
      descrevem uma PARTE — e isso precisa estar escrito na tela, não só no log. -->
@@ -1234,8 +1238,11 @@
         </label>
         <button class="btn btn-fantasma btn-icone" id="ch-limpar" type="button" title="Limpar conversa">
           <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
-               stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 6h12M8 6V4.5h4V6M6 6l.7 10a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L14 6"/>
+               stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4.5 6.2h11"/>
+            <path d="M8.1 6.2V4.6a1 1 0 0 1 1-1h1.8a1 1 0 0 1 1 1v1.6"/>
+            <path d="M6.1 6.2l.6 9.3a1.3 1.3 0 0 0 1.3 1.2h4a1.3 1.3 0 0 0 1.3-1.2l.6-9.3"/>
+            <path d="M8.4 8.8v4.8M11.6 8.8v4.8"/>
           </svg>
           <span class="sr">Limpar conversa</span>
         </button>

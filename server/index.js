@@ -46,8 +46,11 @@ const HOST = process.env.HOST || '127.0.0.1';
 const COOKIE = 'painel_sessao';
 
 /* Só isto é servido sem sessão — o necessário para desenhar o próprio login.
-   Todo o resto (o painel, os assets dele e todas as APIs) exige sessão. */
-const PUBLICOS = new Set(['/login', '/login.html', '/login.js', '/styles.css']);
+   Todo o resto (o painel, os assets dele e todas as APIs) exige sessão.
+   A logo entra aqui porque a tela de login (pública por definição) usa ela —
+   sem isso o <img> quebraria para quem ainda não entrou, que é justamente
+   quem está olhando a tela de login. */
+const PUBLICOS = new Set(['/login', '/login.html', '/login.js', '/styles.css', '/src/logo_northscale.png']);
 
 function lerCookie(req, nome) {
   const cru = req.headers.cookie;

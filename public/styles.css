@@ -10,15 +10,22 @@
 :root {
   color-scheme: light;
 
-  --plano:        #f4f4f1;
-  --superficie:   #ffffff;
-  --superficie-2: #fafaf8;
-  --no-bg:        #ffffff;
-  --no-borda:     rgba(11, 11, 11, 0.11);
+  /* Tema claro sem branco puro em lugar nenhum — #ffffff numa área grande de
+     tela (cartão, cabeçalho, nó do canvas) sob brilho normal de monitor é
+     brilho demais para uso prolongado. --superficie continua a mais clara
+     das três (mantém o cartão "elevado" sobre --plano), só que com teto bem
+     abaixo de 255. --tinta também não é mais preto absoluto, pelo mesmo
+     motivo do outro lado: preto puro sobre um fundo assim ainda claro é
+     contraste mais alto do que precisa. */
+  --plano:        #eceae4;
+  --superficie:   #f8f6f1;
+  --superficie-2: #f1efe9;
+  --no-bg:        #f8f6f1;
+  --no-borda:     rgba(11, 11, 11, 0.12);
 
-  --tinta:        #0b0b0b;
-  --tinta-2:      #52514e;
-  --tinta-fraca:  #898781;
+  --tinta:        #201f1c;
+  --tinta-2:      #55534e;
+  --tinta-fraca:  #8b8983;
 
   --grade:        #e1e0d9;
   --eixo:         #c3c2b7;
@@ -26,8 +33,10 @@
   --pontos:       rgba(11, 11, 11, 0.10);
   --trilho:       #d9d8d0;
 
-  /* estados — ver comentário do topo */
-  --st-em-dia:      #2a78d6;
+  /* estados — ver comentário do topo. --st-em-dia é também o azul de marca
+     (NorthScale, #4260e6 na logo) — reaproveitado como o acento primário do
+     painel inteiro (foco, gráficos, filtro ativo), não só do status "em dia". */
+  --st-em-dia:      #4260e6;
   --st-atrasado:    #fab219;
   --st-processando: #1baf7a;
   --st-travado:     #d03b3b;
@@ -62,7 +71,7 @@
     --pontos:       rgba(255, 255, 255, 0.10);
     --trilho:       #2e313a;
 
-    --st-em-dia:      #3987e5;
+    --st-em-dia:      #6478ea;
     --st-atrasado:    #fab219;
     --st-processando: #199e70;
     --st-travado:     #d03b3b;
@@ -93,7 +102,7 @@
   --pontos:       rgba(255, 255, 255, 0.10);
   --trilho:       #2e313a;
 
-  --st-em-dia:      #3987e5;
+  --st-em-dia:      #6478ea;
   --st-atrasado:    #fab219;
   --st-processando: #199e70;
   --st-travado:     #d03b3b;
@@ -174,6 +183,23 @@ code {
 .topo h1 { font-size: 15.5px; font-weight: 640; letter-spacing: -0.012em; }
 .marca-sub { font-size: 11.5px; color: var(--tinta-fraca); margin-top: 1px; }
 
+.marca-titulo { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+
+/*
+ * Selo "SendTrace by NorthScale". O fundo é uma cor FIXA, não uma variável de
+ * tema: a logo da NorthScale tem o texto em branco, então em tema claro
+ * (--plano claro) ela ficaria ilegível sem um fundo escuro embutido no
+ * próprio selo — independente de qual tema a pessoa estiver usando.
+ */
+.marca-by {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px 4px 9px; border-radius: 999px;
+  background: #101114; border: 1px solid rgba(255, 255, 255, .08);
+  font-size: 10px; font-weight: 500; color: rgba(255, 255, 255, .62);
+  line-height: 1; white-space: nowrap;
+}
+.marca-by-logo { height: 11px; width: auto; display: block; }
+
 .topo-acoes { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 .pilula-live {
@@ -192,7 +218,6 @@ code {
   animation: bater 2.4s ease-out infinite;
 }
 .pilula-live[data-estado="erro"] .pulso { background: var(--st-travado); }
-.pilula-live[data-estado="demo"] .pulso { background: var(--st-atrasado); }
 
 @keyframes bater {
   0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--st-processando) 55%, transparent); }

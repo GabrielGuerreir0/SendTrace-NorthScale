@@ -5,7 +5,6 @@ import { validarMensagem, medirSms } from './copy.js';
 import { desenharColunas, svgEl } from './charts.js';
 import { n, nc, relativo, dataHora, dia, hora, truncar, duracaoH } from './format.js';
 import { paraEsperaH, deEsperaH } from './tempo.js';
-import { snapshotDemo, pedidosDemo } from './demo.js';
 // A aba principal (Suporte IA) vive em módulo próprio; importá-lo também liga
 // os botões de aba — de TODAS as abas, régua e Central de E-mail IA incluídas
 // (ver suporte.js). Aqui só acoplamos o carregamento aos ciclos do painel.
@@ -95,7 +94,6 @@ const estado = {
   // `produto` (abaixo), que recorta a FILA — são perguntas diferentes.
   copyProduto: '*',
   snapshot: null,
-  demo: false,
   // De minuto em minuto. Precisa casar com o <option selected> do seletor: se
   // divergirem, a tela diz um intervalo e o timer usa outro.
   intervalo: 60000,
@@ -113,9 +111,9 @@ const estado = {
 /**
  * Selos de geração. Cada carregamento pega um número; ao voltar, só pinta se
  * ainda for o mais recente. Sem isso duas requisições em voo (o timer de 10 s
- * cruzando com o debounce da busca, ou o clique em Demo) chegam fora de ordem
- * e a resposta velha sobrescreve a nova — a tabela passa a mostrar dados que
- * não correspondem aos filtros que estão na tela.
+ * cruzando com o debounce da busca) chegam fora de ordem e a resposta velha
+ * sobrescreve a nova — a tabela passa a mostrar dados que não correspondem
+ * aos filtros que estão na tela.
  */
 let geracaoPedidos = 0;
 let geracaoSnapshot = 0;
@@ -379,8 +377,8 @@ function renderCopyProduto(s) {
   const sel = $('copy-produto-select');
   const catalogo = s.catalogoProdutos ?? [];
 
-  // Sem catálogo (rota ainda não no ar, ou modo demo), o painel funciona como
-  // antes: só o padrão, e o controle nem aparece.
+  // Sem catálogo (rota ainda não no ar), o painel funciona como antes: só o
+  // padrão, e o controle nem aparece.
   campo.hidden = !catalogo.length;
   if (!catalogo.length) { estado.copyProduto = '*'; return; }
 
@@ -1123,31 +1121,29 @@ async function carregarSnapshot({ silencioso = false } = {}) {
 
   try {
     const g = estado.graficos;
-    const s = estado.demo ? snapshotDemo() : await (async () => {
-      const qs = new URLSearchParams();
-      if (g.etapa !== null) qs.set('etapa', String(g.etapa));
-      if (g.canal) qs.set('canal', g.canal);
-      if (estado.produto) qs.set('produto', estado.produto);
-      if (estado.plataforma) qs.set('plataforma', estado.plataforma);
-      if (estado.linhaExibindo) qs.set('linha', estado.linhaExibindo);
-      const resp = await fetch(`/api/snapshot${qs.toString() ? `?${qs}` : ''}`);
-      // Sessão perdida (o token desta pessoa na API venceu ou foi revogado):
-      // insistir traria erro a cada 10 s. O caminho é entrar de novo.
-      if (resp.status === 401) { location.replace('/login'); throw new Error('sem sessão'); }
-      if (!resp.ok) {
-        // O servidor explica o que houve no corpo ("a API recusou as
-        // credenciais", "não consegui falar com a API em …"). Jogar fora essa
-        // frase e mostrar só "HTTP 502" transforma um problema de configuração
-        // com conserto conhecido num defeito misterioso.
-        let motivo = `HTTP ${resp.status}`;
-        try {
-          const corpo = await resp.json();
-          if (corpo?.erro) motivo = corpo.detalhe ? `${corpo.erro} (${corpo.detalhe})` : corpo.erro;
-        } catch { /* resposta sem JSON: fica o código mesmo */ }
-        throw new Error(motivo);
-      }
-      return resp.json();
-    })();
+    const qs = new URLSearchParams();
+    if (g.etapa !== null) qs.set('etapa', String(g.etapa));
+    if (g.canal) qs.set('canal', g.canal);
+    if (estado.produto) qs.set('produto', estado.produto);
+    if (estado.plataforma) qs.set('plataforma', estado.plataforma);
+    if (estado.linhaExibindo) qs.set('linha', estado.linhaExibindo);
+    const resp = await fetch(`/api/snapshot${qs.toString() ? `?${qs}` : ''}`);
+    // Sessão perdida (o token desta pessoa na API venceu ou foi revogado):
+    // insistir traria erro a cada 10 s. O caminho é entrar de novo.
+    if (resp.status === 401) { location.replace('/login'); throw new Error('sem sessão'); }
+    if (!resp.ok) {
+      // O servidor explica o que houve no corpo ("a API recusou as
+      // credenciais", "não consegui falar com a API em …"). Jogar fora essa
+      // frase e mostrar só "HTTP 502" transforma um problema de configuração
+      // com conserto conhecido num defeito misterioso.
+      let motivo = `HTTP ${resp.status}`;
+      try {
+        const corpo = await resp.json();
+        if (corpo?.erro) motivo = corpo.detalhe ? `${corpo.erro} (${corpo.detalhe})` : corpo.erro;
+      } catch { /* resposta sem JSON: fica o código mesmo */ }
+      throw new Error(motivo);
+    }
+    const s = await resp.json();
 
     // Chegou tarde: outro carregamento já começou depois deste. Pintar agora
     // devolveria a tela para um estado que o usuário já deixou para trás.
@@ -1171,18 +1167,16 @@ async function carregarSnapshot({ silencioso = false } = {}) {
     renderLinha(s);
     redesenharGraficos();
 
-    sinalizar(estado.demo ? 'demo' : 'ok', estado.demo ? 'demonstração' : `atualizado ${hora(s.geradoEm)}`);
+    sinalizar('ok', `atualizado ${hora(s.geradoEm)}`);
     // A digital do código no rodapé: se o container e o `npm start` mostrarem
     // valores diferentes, um dos dois está numa versão antiga.
     const v = estado.versao;
     const carimbo = v?.codigo
       ? ` · versão ${v.codigo}${v.container ? ' (container)' : ''}`
       : '';
-    $('rodape-nota').textContent = estado.demo
-      ? `Dados simulados no navegador. Nenhuma leitura ou escrita no banco.${carimbo}`
-      : `Régua e fila lidas da API${s.fonte?.api ? ` ${s.fonte.api}` : ''} · `
-        + `${n(s.fonte?.lidos ?? 0)} pedidos medidos · `
-        + `“travado” = processando há mais de ${s.lockTimeoutMin} min.${carimbo}`;
+    $('rodape-nota').textContent = `Régua e fila lidas da API${s.fonte?.api ? ` ${s.fonte.api}` : ''} · `
+      + `${n(s.fonte?.lidos ?? 0)} pedidos medidos · `
+      + `“travado” = processando há mais de ${s.lockTimeoutMin} min.${carimbo}`;
   } catch (err) {
     if (meu !== geracaoSnapshot) return;
     sinalizar('erro', 'sem conexão');
@@ -1201,13 +1195,6 @@ async function carregarPedidos() {
   const meu = ++geracaoPedidos;
 
   try {
-    if (estado.demo) {
-      return renderTabela(pedidosDemo({
-        etapa: f.etapa, estado: f.estado, canal: f.canal, problema: f.problema,
-        busca: f.busca || null, limit: p.limit, offset: p.offset,
-      }));
-    }
-
     const qs = new URLSearchParams({ limit: String(p.limit), offset: String(p.offset), ordem: f.ordem });
     if (f.etapa !== null) qs.set('etapa', String(f.etapa));
     if (f.estado) qs.set('estado', f.estado);
@@ -1259,29 +1246,6 @@ $('btn-atualizar').addEventListener('click', () => {
   carregarSnapshot();
   carregarPedidos();
   carregarSuporte();
-});
-
-$('btn-demo').addEventListener('click', (e) => {
-  estado.demo = !estado.demo;
-  e.currentTarget.setAttribute('aria-pressed', String(estado.demo));
-  $('faixa-demo').hidden = !estado.demo;
-  estado.pagina.offset = 0;
-  // Os números da demonstração são gerados no navegador em bloco, sem recorte
-  // por produto nem plataforma. Deixar os seletores ativos ali faria a tabela
-  // filtrar e os KPIs não — dois recortes diferentes na mesma tela.
-  if (estado.demo) { estado.produto = null; estado.plataforma = null; }
-  const sel = $('sel-produto');
-  sel.disabled = estado.demo;
-  sel.title = estado.demo
-    ? 'Indisponível na demonstração — os números são gerados no navegador'
-    : 'Recorta o painel inteiro por produto — as ofertas do mesmo produto contam juntas';
-  const selPlat = $('sel-plataforma');
-  selPlat.disabled = estado.demo;
-  selPlat.title = estado.demo
-    ? 'Indisponível na demonstração — os números são gerados no navegador'
-    : 'Recorta o painel inteiro por plataforma de venda (DigiStore24, JVZoo, BuyGoods…)';
-  carregarSnapshot();
-  carregarPedidos();
 });
 
 /**
