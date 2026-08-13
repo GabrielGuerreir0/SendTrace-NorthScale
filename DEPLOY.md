@@ -188,6 +188,13 @@ cat > .env <<'EOF'
 #   node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 #API_JWT_SEGREDO=
 
+# Token de SERVIÇO para integrações (o chatbot de suporte usa este, em
+# vez de logar com e-mail/senha). Mesmo esquema do segredo acima: se
+# deixar de fora, o DEPLOY gera um sozinho na primeira vez. Depois,
+# copie o valor gerado (`grep API_TOKEN_SERVICO .env`) para o
+# SENDTRACE_API_TOKEN do chatbot — são o mesmo segredo, dois nomes.
+#API_TOKEN_SERVICO=
+
 # Teto de registros baixados. A API não agrega, então medir a fila é
 # baixá-la; passando disto o painel avisa que os números são parciais.
 API_FILA_MAX=20000
@@ -216,6 +223,13 @@ PAINEL_URL=
 
 N8N_TROCAR_LINHA_URL=https://n8n.thenorthscales.com/webhook/trocar-linha
 N8N_TOKEN=<token>
+
+# ── Central de E-mail IA (chat com o banco + rascunho de resposta) ─
+# Chave da API Anthropic. Sem ela os dois recursos falham com um aviso
+# amigável na tela ("ANTHROPIC_API_KEY não configurada") — não derruba
+# o painel. Ninguém gera essa sozinho: crie em console.anthropic.com →
+# API Keys.
+ANTHROPIC_API_KEY=
 
 IMAGEM=ghcr.io/SEU_USUARIO/sendtrace:latest
 EOF
