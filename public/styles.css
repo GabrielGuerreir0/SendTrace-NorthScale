@@ -1415,6 +1415,16 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 .tk-filtros { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .tk-filtros input[type="text"] { min-width: 220px; }
 
+/* Barra de filtro da Central de E-mail IA (produto/loja/período) — mesma
+   largura e respiro lateral do .conteudo que vem logo abaixo, para os
+   selects ficarem alinhados com os cartões da tela. */
+.ce-filtro-barra {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  max-width: 1560px; margin: 0 auto;
+  padding: clamp(14px, 2vw, 22px) clamp(16px, 3vw, 34px) 0;
+}
+.ce-filtro-barra input[type="date"] { min-width: 148px; }
+
 .tk-acoes { display: flex; gap: 6px; flex-wrap: wrap; }
 
 .tk-resumo { background: var(--superficie-2); }

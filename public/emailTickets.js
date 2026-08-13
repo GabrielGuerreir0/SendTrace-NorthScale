@@ -13,6 +13,7 @@ import {
 } from './emailComum.js';
 import { n, duracaoH } from './format.js';
 import { desenharColunas } from './charts.js';
+import { qsFiltroCE, aoMudarFiltroCE } from './emailFiltro.js';
 
 /* ═══════════════════════════════  estado  ═══════════════════════════════ */
 
@@ -346,9 +347,7 @@ $('tk-tabela-csv').addEventListener('click', () => {
 /* ═══════════════════════════════  carregamento  ═══════════════════════════ */
 
 function qsPeriodo() {
-  const p = new URLSearchParams();
-  const dias = $('tk-periodo').value;
-  if (dias) p.set('dias', dias);
+  const p = qsFiltroCE();
   if (busca) { p.set('q', busca); p.set('tq', busca); }
   return p;
 }
@@ -373,7 +372,7 @@ export async function carregarDados() {
   }
 }
 
-$('tk-periodo').addEventListener('change', () => { pagina = 1; carregarDados(); });
+aoMudarFiltroCE(() => { pagina = 1; carregarDados(); });
 $('tk-busca').addEventListener('input', debounce((e) => {
   busca = e.target.value.trim();
   pagina = 1;

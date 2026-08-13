@@ -38,23 +38,106 @@ function listaValida(bruto, permitidos) {
 }
 
 /**
- * Filtro sobre email_ia.emails: dias, q (assunto/nome/e-mail/resumo/produto/
- * pedido via ILIKE), cat, sent, urg, pede, area, resp, pgto, plat.
+ * Recorta por produto/loja de alguma VENDA do mesmo cliente, cruzando por
+ * e-mail com email_ia.mv_emails_x_pedidos — o único lugar com produto/loja
+ * como valor EXATO (mesmo catálogo da barra de produto/plataforma do topo),
+ * diferente do `plataforma_origem` de email_ia.emails (que marca e-mail
+ * GERADO por uma plataforma, tipo recibo, não a plataforma da venda).
+ * Quem nunca teve pedido vinculado fica de fora quando isto está ativo.
+ *
+ * `colunaEmail` PRECISA vir qualificado com a tabela/alias de fora (ex.:
+ * `'tk.remetente_email'`, nunca só `'remetente_email'`) — dentro do EXISTS
+ * já existe uma `mv_emails_x_pedidos` com a MESMA coluna, e um nome sem
+ * prefixo cai nela em vez de correlacionar com a linha de fora, virando uma
+ * comparação sempre-verdadeira (ou sempre-falsa) que ignora o cliente.
+ *
+ * Se `qs.__emailsProdutoLoja` já vier preenchido (ver resolverEmailsProdutoLoja,
+ * chamado uma vez no início de GET /api/dados), usa um `= ANY(array)` em vez
+ * do EXISTS — evita repetir o mesmo Seq Scan em mv_emails_x_pedidos em cada
+ * uma das ~15 sub-consultas que passam pelo mesmo `qs`.
+ */
+export function condicaoProdutoLoja(qs, colunaEmail, condicoes, valores, inicio) {
+  let i = inicio;
+
+  if (qs.__emailsProdutoLoja) {
+    condicoes.push(`lower(${colunaEmail}) = ANY($${i}::text[])`);
+    valores.push(qs.__emailsProdutoLoja);
+    return i + 1;
+  }
+
+  const produto = qs.produto ? String(qs.produto) : null;
+  const loja = qs.loja ? String(qs.loja) : null;
+  if (!produto && !loja) return i;
+
+  const sub = [`lower(m.remetente_email) = lower(${colunaEmail})`];
+  if (produto) { sub.push(`m.produto = $${i}`); valores.push(produto); i += 1; }
+  if (loja) { sub.push(`m.plataforma = $${i}`); valores.push(loja); i += 1; }
+  condicoes.push(`EXISTS (SELECT 1 FROM email_ia.mv_emails_x_pedidos m WHERE ${sub.join(' AND ')})`);
+  return i;
+}
+
+/**
+ * Resolve produto/loja para uma lista de e-mails (minúsculos) UMA VEZ, antes
+ * do fan-out de /api/dados — sem isto, cada uma das ~15 sub-consultas que
+ * chamam filtroEmails/filtroTickets reavaliaria o mesmo EXISTS contra
+ * mv_emails_x_pedidos (Seq Scan × 15, sem índice em produto/plataforma).
+ * Devolve `qs` sem alterar se não houver produto/loja no pedido.
+ */
+export async function resolverEmailsProdutoLoja(qs, query) {
+  if (!qs.produto && !qs.loja) return qs;
+  const condicoes = [];
+  const valores = [];
+  let i = 1;
+  if (qs.produto) { condicoes.push(`produto = $${i}`); valores.push(String(qs.produto)); i += 1; }
+  if (qs.loja) { condicoes.push(`plataforma = $${i}`); valores.push(String(qs.loja)); i += 1; }
+  const { rows } = await query(
+    `SELECT DISTINCT lower(remetente_email) AS email FROM email_ia.mv_emails_x_pedidos WHERE ${condicoes.join(' AND ')}`,
+    valores,
+  );
+  return { ...qs, __emailsProdutoLoja: rows.map((r) => r.email) };
+}
+
+/**
+ * Recorta por período de duas formas, mutuamente exclusivas — `dias` tem
+ * prioridade se os dois vierem juntos por engano:
+ *   · `dias`: janela relativa (últimos N dias), como já era.
+ *   · `data_de`/`data_ate`: intervalo absoluto (calendário) — qualquer um
+ *     dos dois sozinho já filtra (ex.: só `data_de` = "desde tal dia").
+ *     `data_ate` inclui o dia inteiro (< dia seguinte), não só 00:00.
+ */
+export function condicaoPeriodo(qs, coluna, condicoes, valores, inicio) {
+  let i = inicio;
+  const dias = Number(qs.dias);
+  if (Number.isFinite(dias) && dias > 0) {
+    condicoes.push(`${coluna} >= now() - make_interval(days => $${i}::int)`);
+    valores.push(dias);
+    return i + 1;
+  }
+  if (qs.data_de) {
+    condicoes.push(`${coluna} >= $${i}::date`);
+    valores.push(String(qs.data_de));
+    i += 1;
+  }
+  if (qs.data_ate) {
+    condicoes.push(`${coluna} < ($${i}::date + interval '1 day')`);
+    valores.push(String(qs.data_ate));
+    i += 1;
+  }
+  return i;
+}
+
+/**
+ * Filtro sobre email_ia.emails: dias/data_de/data_ate, q (assunto/nome/
+ * e-mail/resumo/produto/pedido via ILIKE), cat, sent, urg, pede, area, resp,
+ * pgto, plat.
  *
  * `inicio` é a posição do primeiro placeholder — cada rota decide onde o
  * filtro entra na lista de parâmetros da consulta que o usa.
  */
-export function filtroEmails(qs, inicio = 1) {
+export function filtroEmails(qs, inicio = 1, aliasEmail = 'emails') {
   const condicoes = [];
   const valores = [];
-  let i = inicio;
-
-  const dias = Number(qs.dias);
-  if (Number.isFinite(dias) && dias > 0) {
-    condicoes.push(`data_email >= now() - make_interval(days => $${i}::int)`);
-    valores.push(dias);
-    i += 1;
-  }
+  let i = condicaoPeriodo(qs, 'data_email', condicoes, valores, inicio);
 
   if (qs.q) {
     condicoes.push(`(assunto ILIKE $${i} OR remetente_nome ILIKE $${i} OR remetente_email ILIKE $${i}
@@ -90,6 +173,12 @@ export function filtroEmails(qs, inicio = 1) {
   const plat = listaValida(qs.plat, PLATAFORMAS);
   if (plat) { condicoes.push(`plataforma_origem = ANY($${i}::text[])`); valores.push(plat); i += 1; }
 
+  // Precisa do alias/nome de tabela da consulta que chamou filtroEmails: um
+  // "remetente_email" sem prefixo aqui dentro cairia no email_ia.mv_emails_x_pedidos
+  // do EXISTS (mesmo nome de coluna), não na linha de fora — o filtro viraria
+  // sempre verdadeiro (ou sempre falso) em vez de recortar por cliente.
+  i = condicaoProdutoLoja(qs, `${aliasEmail}.remetente_email`, condicoes, valores, i);
+
   return { sql: condicoes.length ? condicoes.join(' AND ') : 'true', valores, fim: i };
 }
 
@@ -98,17 +187,10 @@ export function filtroEmails(qs, inicio = 1) {
  * é a busca própria da tabela de tickets (nome/e-mail); sem ela, cai para o
  * `q` global, para a busca do cabeçalho continuar filtrando a tabela também.
  */
-export function filtroTickets(qs, inicio = 1) {
+export function filtroTickets(qs, inicio = 1, aliasEmail = 'tickets') {
   const condicoes = [];
   const valores = [];
-  let i = inicio;
-
-  const dias = Number(qs.dias);
-  if (Number.isFinite(dias) && dias > 0) {
-    condicoes.push(`ultimo_email_em >= now() - make_interval(days => $${i}::int)`);
-    valores.push(dias);
-    i += 1;
-  }
+  let i = condicaoPeriodo(qs, 'ultimo_email_em', condicoes, valores, inicio);
 
   const busca = qs.tq || qs.q;
   if (busca) {
@@ -116,6 +198,8 @@ export function filtroTickets(qs, inicio = 1) {
     valores.push(`%${busca}%`);
     i += 1;
   }
+
+  i = condicaoProdutoLoja(qs, `${aliasEmail}.remetente_email`, condicoes, valores, i);
 
   return {
     sql: condicoes.length ? condicoes.join(' AND ') : 'true', valores, fim: i, temBusca: Boolean(busca),

@@ -17,7 +17,13 @@ const insecure = String(process.env.DB_SSL_INSECURE).toLowerCase() === 'true';
 export const pool = new Pool({
   connectionString,
   ssl: insecure ? { rejectUnauthorized: false } : undefined,
-  max: 5,
+  // GET /api/dados (Central de E-mail IA) dispara ~25 consultas em paralelo
+  // num único Promise.all. Com max:5 elas competem em 5 lotes sequenciais —
+  // sozinho já é lento, e sob concorrência (duas abas recarregando junto,
+  // ou o filtro de produto/loja mudando com a tela de Detalhes já com o
+  // polling de 30s ligado) o request inteiro passa dos 20s de timeout do
+  // painel e vira 502. 5 conexões era folgado antes desta tela existir.
+  max: 15,
   idleTimeoutMillis: 30_000,
   // Neon hiberna a compute quando ociosa; o primeiro SELECT pode acordar o banco.
   connectionTimeoutMillis: 15_000,

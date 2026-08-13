@@ -824,6 +824,46 @@
   <p class="rodape-nota" id="rodape-nota"></p>
 </main>
 
+<!-- ── barra de filtro da Central de E-mail IA — produto/loja/período
+     cruzam por e-mail com o pedido do cliente (mv_emails_x_pedidos), não
+     com a barra do topo (que só vale para Suporte IA/Régua e some nestas
+     abas). Fica FORA dos <main> de cada tela porque é compartilhada pelas
+     três: Tickets, Detalhes e Galeria. ── -->
+<div class="ce-filtro-barra" id="ce-filtro-barra" hidden>
+  <label class="campo-sel" id="ce-campo-produto">
+    <span class="sr">Filtrar por produto</span>
+    <select id="ce-sel-produto"
+            title="Recorta pelo produto de algum pedido do cliente — e-mails sem pedido vinculado ficam de fora">
+      <option value="">Todos os produtos</option>
+    </select>
+  </label>
+  <label class="campo-sel" id="ce-campo-loja">
+    <span class="sr">Filtrar por loja</span>
+    <select id="ce-sel-loja"
+            title="Recorta pela loja/plataforma de venda de algum pedido do cliente">
+      <option value="">Todas as lojas</option>
+    </select>
+  </label>
+  <label class="campo-sel" id="ce-campo-periodo">
+    <span class="sr">Período</span>
+    <select id="ce-sel-periodo">
+      <option value="7">7 dias</option>
+      <option value="30">30 dias</option>
+      <option value="90">90 dias</option>
+      <option value="" selected>Tudo</option>
+      <option value="intervalo">Escolher datas…</option>
+    </select>
+  </label>
+  <label class="campo" id="ce-campo-data-de" hidden>
+    <span class="sr">De</span>
+    <input type="date" id="ce-data-de" title="E-mails recebidos a partir desta data">
+  </label>
+  <label class="campo" id="ce-campo-data-ate" hidden>
+    <span class="sr">Até</span>
+    <input type="date" id="ce-data-ate" title="E-mails recebidos até esta data (incluída)">
+  </label>
+</div>
+
 <!-- ═══════════════════  Central de E-mail IA — Tela 1: Tickets  ═══════════════ -->
 <main class="conteudo" id="aba-ticketsia" hidden>
 
@@ -837,15 +877,6 @@
         <label class="campo campo--cresce">
           <span class="sr">Buscar cliente, e-mail ou pedido</span>
           <input type="text" id="tk-busca" placeholder="Buscar cliente, e-mail ou pedido…">
-        </label>
-        <label class="campo">
-          <span class="sr">Período</span>
-          <select id="tk-periodo">
-            <option value="7">7 dias</option>
-            <option value="30">30 dias</option>
-            <option value="90">90 dias</option>
-            <option value="" selected>Tudo</option>
-          </select>
         </label>
       </div>
     </header>
@@ -960,15 +991,6 @@
         <label class="campo campo--cresce">
           <span class="sr">Buscar</span>
           <input type="text" id="dt-busca" placeholder="Buscar assunto, cliente, produto, pedido…">
-        </label>
-        <label class="campo">
-          <span class="sr">Período</span>
-          <select id="dt-periodo">
-            <option value="7">7 dias</option>
-            <option value="30">30 dias</option>
-            <option value="90">90 dias</option>
-            <option value="" selected>Tudo</option>
-          </select>
         </label>
       </div>
     </header>

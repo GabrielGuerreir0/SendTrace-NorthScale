@@ -1113,9 +1113,11 @@ async function atender(req, res, url, sessao) {
   if (url.pathname === '/api/dados') {
     const q = url.searchParams;
     return json(res, 200, await obterApi('/api/dados', {
-      dias: q.get('dias'), q: q.get('q'), tq: q.get('tq'), cat: q.get('cat'),
+      dias: q.get('dias'), data_de: q.get('data_de'), data_ate: q.get('data_ate'),
+      q: q.get('q'), tq: q.get('tq'), cat: q.get('cat'),
       sent: q.get('sent'), urg: q.get('urg'), pede: q.get('pede'), area: q.get('area'),
       resp: q.get('resp'), pgto: q.get('pgto'), plat: q.get('plat'),
+      produto: q.get('produto'), loja: q.get('loja'),
     }));
   }
 
@@ -1179,6 +1181,8 @@ async function atender(req, res, url, sessao) {
     const q = url.searchParams;
     return json(res, 200, await obterApi('/api/galeria', {
       pagina: q.get('pagina'), por_pagina: q.get('por_pagina'), tipo: q.get('tipo'), q: q.get('q'),
+      dias: q.get('dias'), data_de: q.get('data_de'), data_ate: q.get('data_ate'),
+      produto: q.get('produto'), loja: q.get('loja'),
     }));
   }
 

@@ -14,6 +14,7 @@ import {
 } from './emailComum.js';
 import { n, dataHora, truncar } from './format.js';
 import { desenharColunas } from './charts.js';
+import { qsFiltroCE, aoMudarFiltroCE } from './emailFiltro.js';
 
 /* ═══════════════════════════════  estado  ═══════════════════════════════ */
 
@@ -25,9 +26,7 @@ let paginaTickets = 1;
 const PT_POR_PAGINA = 10;
 
 function qsCompleto() {
-  const p = new URLSearchParams();
-  const dias = $('dt-periodo').value;
-  if (dias) p.set('dias', dias);
+  const p = qsFiltroCE();
   if (busca) { p.set('q', busca); p.set('tq', busca); }
   if (filtroAtivo) p.set(filtroAtivo.tipo, filtroAtivo.valor);
   return p;
@@ -524,7 +523,7 @@ export async function carregarDados() {
   }
 }
 
-$('dt-periodo').addEventListener('change', carregarDados);
+aoMudarFiltroCE(carregarDados);
 $('dt-busca').addEventListener('input', debounce((e) => { busca = e.target.value.trim(); carregarDados(); }, 450));
 
 carregarDados();

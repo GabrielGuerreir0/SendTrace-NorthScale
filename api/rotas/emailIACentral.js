@@ -14,7 +14,9 @@
  */
 import { query } from '../../server/db.js';
 import { ErroHttp } from '../comum.js';
-import { filtroEmails, filtroTickets } from '../filtrosEmailIA.js';
+import {
+  filtroEmails, filtroTickets, condicaoProdutoLoja, condicaoPeriodo, resolverEmailsProdutoLoja,
+} from '../filtrosEmailIA.js';
 
 /* ═══════════════════════════════  GET /api/dados  ═══════════════════════════ */
 
@@ -31,7 +33,7 @@ async function ticketsKpis(qs) {
 }
 
 async function listaTickets(qs) {
-  const f = filtroTickets(qs, 1);
+  const f = filtroTickets(qs, 1, 'tk'); // FROM email_ia.tickets TK — o alias explícito
   const limite = f.temBusca ? '' : 'LIMIT 800';
   const { rows } = await query(
     `WITH ped AS (
@@ -100,8 +102,8 @@ async function kpisPrincipais(qs) {
     ),
     query(
       `SELECT count(*)::int AS fotos_defeito FROM email_ia.anexos a
-       JOIN email_ia.emails e USING (message_id) WHERE a.defeito_visivel AND ${filtroEmails(qs, 1).sql}`,
-      filtroEmails(qs, 1).valores,
+       JOIN email_ia.emails e USING (message_id) WHERE a.defeito_visivel AND ${filtroEmails(qs, 1, 'e').sql}`,
+      filtroEmails(qs, 1, 'e').valores,
     ),
   ]);
   return { ...principais.rows[0], ...gerais.rows[0], ...fotos.rows[0] };
@@ -188,7 +190,7 @@ async function motivosPorMes(qs) {
 }
 
 async function defeitoTags(qs) {
-  const f = filtroEmails(qs, 1);
+  const f = filtroEmails(qs, 1, 'e'); // LEFT JOIN email_ia.emails E abaixo
   const { rows } = await query(
     `SELECT tag, count(*)::int AS total FROM (
        SELECT unnest(a.tags) AS tag FROM email_ia.anexos a
@@ -238,8 +240,19 @@ async function pendentes(qs) {
   return rows;
 }
 
-/** Quem já reclamou/pediu devolução e o pedido correspondente — cancelado ou não. */
-async function reclamantes() {
+/**
+ * Quem já reclamou/pediu devolução e o pedido correspondente — cancelado ou
+ * não. Já junta mv_emails_x_pedidos por conta própria, então produto/loja
+ * entram direto no WHERE (via o `m` já disponível) em vez de chamar
+ * condicaoProdutoLoja, que criaria um segundo EXISTS redundante.
+ */
+async function reclamantes(qs) {
+  const condicoes = ["e.categoria IN ('devolucao', 'troca', 'reclamacao')"];
+  const valores = [];
+  let i = 1;
+  if (qs.produto) { condicoes.push(`m.produto = $${i}`); valores.push(String(qs.produto)); i += 1; }
+  if (qs.loja) { condicoes.push(`m.plataforma = $${i}`); valores.push(String(qs.loja)); i += 1; }
+
   const { rows } = await query(
     `SELECT lower(m.remetente_email) AS remetente_email, max(e.remetente_nome) AS nome,
             m.transacao_id AS pedido, max(m.produto) AS produto, max(m.plataforma) AS plataforma,
@@ -252,7 +265,7 @@ async function reclamantes() {
             END AS situacao
      FROM email_ia.emails e
      JOIN email_ia.mv_emails_x_pedidos m ON lower(m.remetente_email) = lower(e.remetente_email)
-     WHERE e.categoria IN ('devolucao', 'troca', 'reclamacao')
+     WHERE ${condicoes.join(' AND ')}
      GROUP BY lower(m.remetente_email), m.transacao_id
      ORDER BY CASE
        WHEN m.transacao_id IS NULL THEN 2
@@ -260,6 +273,7 @@ async function reclamantes() {
        ELSE 1
      END, max(e.data_email) DESC
      LIMIT 300`,
+    valores,
   );
   return rows;
 }
@@ -278,18 +292,23 @@ async function produtosComProblema(qs) {
   return rows;
 }
 
-async function clientesRisco() {
+async function clientesRisco(qs) {
+  const condicoes = ["sentimento IN ('negativo','muito_negativo')", "data_email >= now() - interval '30 days'"];
+  const valores = [];
+  condicaoProdutoLoja(qs, 'emails.remetente_email', condicoes, valores, 1); // FROM email_ia.emails sem alias
+
   const { rows } = await query(
     `SELECT remetente_email, max(remetente_nome) AS nome, count(*)::int AS emails_negativos, max(data_email) AS ultimo_contato
      FROM email_ia.emails
-     WHERE sentimento IN ('negativo','muito_negativo') AND data_email >= now() - interval '30 days'
+     WHERE ${condicoes.join(' AND ')}
      GROUP BY remetente_email HAVING count(*) >= 2 ORDER BY emails_negativos DESC LIMIT 100`,
+    valores,
   );
   return rows;
 }
 
 async function miniGaleria(qs) {
-  const f = filtroEmails(qs, 1);
+  const f = filtroEmails(qs, 1, 'e'); // LEFT JOIN email_ia.emails E abaixo
   const { rows } = await query(
     `SELECT a.id, a.nome_arquivo, a.mime_type, a.tamanho_bytes, a.tipo_conteudo,
             a.descricao_ia, a.defeito_visivel, a.tags, a.criado_em,
@@ -319,12 +338,15 @@ export default async function rotasEmailIACentral(app) {
       tags: ['Central de E-mail IA'],
       summary: 'O dataset único das telas Tickets e Detalhes',
       description: 'Todos os cartões, barras e tabelas das duas telas saem daqui — os mesmos '
-        + 'parâmetros de período/filtro/busca (dias, q, tq, cat, sent, urg, pede, area, resp, '
-        + 'pgto, plat), aplicados no servidor a cada consulta.',
+        + 'parâmetros de período/filtro/busca (dias OU data_de/data_ate, q, tq, cat, sent, urg, '
+        + 'pede, area, resp, pgto, plat, produto, loja), aplicados no servidor a cada consulta. '
+        + '`produto`/`loja` cruzam com o pedido do cliente (mv_emails_x_pedidos) — diferente de '
+        + '`plat`, que olha só o e-mail em si. `dias` tem prioridade sobre `data_de`/`data_ate` '
+        + 'se os dois vierem juntos.',
       security: [{ bearerAuth: [] }],
     },
   }, async (req) => {
-    const qs = req.query;
+    const qs = await resolverEmailsProdutoLoja(req.query, query);
     const [
       ticketsKpisRes, ticketsRes, ticketsEvolucaoRes, evolucaoRes, plataformasRes,
       kpisRes, devolucaoConfRes, motivos, categorias, sentimentosRes, areas, responsaveis,
@@ -350,9 +372,9 @@ export default async function rotasEmailIACentral(app) {
       produtoMotivo(qs),
       reincidentes(qs),
       pendentes(qs),
-      reclamantes(),
+      reclamantes(qs),
       produtosComProblema(qs),
-      clientesRisco(),
+      clientesRisco(qs),
       miniGaleria(qs),
       ultimosEmails(qs),
     ]);
@@ -451,6 +473,11 @@ export default async function rotasEmailIACentral(app) {
           por_pagina: { type: 'integer', default: 24, minimum: 6, maximum: 96 },
           tipo: { type: 'string' },
           q: { type: 'string' },
+          dias: { type: 'integer', minimum: 1 },
+          data_de: { type: 'string' },
+          data_ate: { type: 'string' },
+          produto: { type: 'string' },
+          loja: { type: 'string' },
         },
       },
     },
@@ -458,25 +485,31 @@ export default async function rotasEmailIACentral(app) {
     const pagina = Math.max(1, Number(req.query.pagina) || 1);
     const porPagina = Math.min(96, Math.max(6, Number(req.query.por_pagina) || 24));
     const offset = (pagina - 1) * porPagina;
+    const qs = await resolverEmailsProdutoLoja(req.query, query);
 
     const condicoes = [];
     const valores = [];
     let i = 1;
 
-    if (req.query.tipo === 'sem_analise') {
+    if (qs.tipo === 'sem_analise') {
       condicoes.push('a.tipo_conteudo IS NULL');
-    } else if (req.query.tipo) {
+    } else if (qs.tipo) {
       condicoes.push(`a.tipo_conteudo = $${i}`);
-      valores.push(req.query.tipo);
+      valores.push(qs.tipo);
       i += 1;
     }
-    if (req.query.q) {
+    if (qs.q) {
       condicoes.push(`(a.nome_arquivo ILIKE $${i} OR a.descricao_ia ILIKE $${i}
         OR array_to_string(a.tags, ' ') ILIKE $${i} OR e.remetente_nome ILIKE $${i}
         OR e.remetente_email ILIKE $${i} OR e.assunto ILIKE $${i})`);
-      valores.push(`%${req.query.q}%`);
+      valores.push(`%${qs.q}%`);
       i += 1;
     }
+    // Anexo sem e-mail vinculado (e IS NULL, do LEFT JOIN abaixo) fica de
+    // fora sempre que um destes três estiver ativo — não tem como saber a
+    // data, o produto ou a loja de um anexo sem remetente.
+    i = condicaoPeriodo(qs, 'e.data_email', condicoes, valores, i);
+    i = condicaoProdutoLoja(qs, 'e.remetente_email', condicoes, valores, i);
     const onde = condicoes.length ? condicoes.join(' AND ') : 'true';
 
     const { rows } = await query(

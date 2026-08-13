@@ -10,6 +10,7 @@
  * está em texto.
  */
 import { n, relativo, dataHora } from './format.js';
+import { aoTrocarAba } from './emailFiltro.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -40,6 +41,7 @@ function mostrarAba(qual) {
     $(`aba-btn-${nome}`).setAttribute('aria-selected', String(nome === qual));
   }
   localStorage.setItem('aba', qual);
+  aoTrocarAba(qual);
 }
 
 for (const nome of Object.keys(ABAS)) {

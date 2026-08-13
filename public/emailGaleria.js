@@ -7,6 +7,7 @@ import {
   $, api, debounce, rotularTipoConteudo,
 } from './emailComum.js';
 import { n, dataHora } from './format.js';
+import { qsFiltroCE, aoMudarFiltroCE } from './emailFiltro.js';
 
 const POR_PAGINA = 24;
 
@@ -144,7 +145,9 @@ let geracao = 0;
 
 async function carregar() {
   const meu = ++geracao;
-  const qs = new URLSearchParams({ pagina: String(pagina), por_pagina: String(POR_PAGINA) });
+  const qs = qsFiltroCE();
+  qs.set('pagina', String(pagina));
+  qs.set('por_pagina', String(POR_PAGINA));
   if (tipoAtivo) qs.set('tipo', tipoAtivo);
   if (busca) qs.set('q', busca);
 
@@ -182,5 +185,7 @@ $('gl-busca').addEventListener('input', debounce((e) => {
   pagina = 1;
   carregar();
 }, 350));
+
+aoMudarFiltroCE(() => { pagina = 1; carregar(); });
 
 carregar();
