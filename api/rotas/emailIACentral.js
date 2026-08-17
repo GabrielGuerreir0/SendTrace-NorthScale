@@ -1,16 +1,20 @@
 /**
- * Central de E-mail IA — tudo que é LEITURA pura do schema email_ia (+ a
- * única escrita que não chama IA: mudar status de ticket).
+ * Central de E-mail IA — tudo que é LEITURA pura do schema email_ia (+ as
+ * escritas que não chamam IA: mudar status de ticket, mover/reativar um
+ * caso do kanban de suporte escalado).
  *
- *   GET  /api/dados      → o dataset único das telas Tickets e Detalhes
- *   GET  /api/automacao  → execuções do fluxo n8n de resposta automática (ao vivo)
- *   POST /api/ticket     → muda o status de um ticket
- *   GET  /api/galeria    → grade paginada de anexos analisados por IA
- *   GET  /api/imagem/:id → serve o binário de uma imagem (bytea → bytes)
+ *   GET  /api/dados                     → o dataset único das telas Tickets e Detalhes
+ *   GET  /api/automacao                 → execuções do fluxo n8n de resposta automática (ao vivo)
+ *   POST /api/ticket                    → muda o status de um ticket
+ *   GET  /api/galeria                   → grade paginada de anexos analisados por IA
+ *   GET  /api/imagem/:id                → serve o binário de uma imagem (bytea → bytes)
+ *   GET  /api/suporte-escalado          → kanban de suporte escalado (lista + KPIs)
+ *   POST /api/suporte-escalado/status   → move um caso entre colunas do kanban
+ *   POST /api/suporte-escalado/reativar → tira o caso do kanban (a IA volta a responder)
  *
  * As duas rotas que CHAMAM Claude (POST /api/chat e POST /api/resposta)
  * moram em emailIA.js — este arquivo é 100% leitura do banco, exceto
- * POST /api/ticket.
+ * POST /api/ticket e as duas de suporte-escalado abaixo.
  */
 import { query } from '../../server/db.js';
 import { ErroHttp } from '../comum.js';
@@ -553,5 +557,114 @@ export default async function rotasEmailIACentral(app) {
     if (!anexo) throw new ErroHttp(404, 'Imagem não encontrada.');
     resposta.header('Content-Type', anexo.mime_type);
     return resposta.send(anexo.conteudo);
+  });
+
+  /* ═══════════════════════════  GET /api/suporte-escalado  ═══════════════════ */
+
+  const STATUS_ESCALADO = ['pendente', 'iniciado', 'esperando_resposta', 'finalizado'];
+
+  app.get('/api/suporte-escalado', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Kanban de suporte escalado — lista + KPIs por coluna',
+      description: 'Casos que a IA tirou de si (nunca mais responde este remetente até alguém '
+        + 'reativar). `q` busca em nome, e-mail, resumo da conversa e motivo do escalonamento — '
+        + 'os KPIs refletem o mesmo recorte da busca.',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: { q: { type: 'string' } },
+      },
+    },
+  }, async (req) => {
+    const condicoes = [];
+    const valores = [];
+    let i = 1;
+    if (req.query.q) {
+      condicoes.push(`(nome ILIKE $${i} OR remetente_email ILIKE $${i}
+        OR resumo_conversa ILIKE $${i} OR motivo_escalonamento ILIKE $${i})`);
+      valores.push(`%${req.query.q}%`);
+      i += 1;
+    }
+    const onde = condicoes.length ? condicoes.join(' AND ') : 'true';
+
+    const [kpisRes, itensRes] = await Promise.all([
+      query(
+        `SELECT count(*) FILTER (WHERE status = 'pendente')::int            AS pendente,
+                count(*) FILTER (WHERE status = 'iniciado')::int            AS iniciado,
+                count(*) FILTER (WHERE status = 'esperando_resposta')::int  AS esperando_resposta,
+                count(*) FILTER (WHERE status = 'finalizado')::int          AS finalizado
+         FROM email_ia.suporte_escalado WHERE ${onde}`,
+        valores,
+      ),
+      query(
+        `SELECT id, remetente_email, nome, resumo_conversa, motivo_escalonamento, status,
+                email_id, criado_em, atualizado_em, iniciado_em, finalizado_em
+         FROM email_ia.suporte_escalado
+         WHERE ${onde}
+         ORDER BY criado_em DESC`,
+        valores,
+      ),
+    ]);
+
+    return { kpis: kpisRes.rows[0], itens: itensRes.rows };
+  });
+
+  /* ═══════════════════════  POST /api/suporte-escalado/status  ═══════════════ */
+
+  app.post('/api/suporte-escalado/status', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Move um caso escalado entre colunas do kanban',
+      security: [{ bearerAuth: [] }],
+      body: {
+        type: 'object',
+        required: ['id', 'status'],
+        properties: {
+          id: { type: 'integer' },
+          status: { type: 'string', enum: STATUS_ESCALADO },
+        },
+      },
+    },
+  }, async (req) => {
+    const { id, status } = req.body;
+    const { rows } = await query(
+      `UPDATE email_ia.suporte_escalado SET status = $1,
+         iniciado_em = CASE WHEN $1 <> 'pendente' THEN coalesce(iniciado_em, now()) ELSE iniciado_em END,
+         finalizado_em = CASE WHEN $1 = 'finalizado' THEN now() ELSE finalizado_em END,
+         atualizado_em = now()
+       WHERE id = $2
+       RETURNING id, remetente_email, nome, resumo_conversa, motivo_escalonamento, status,
+                 email_id, criado_em, atualizado_em, iniciado_em, finalizado_em`,
+      [status, id],
+    );
+    if (!rows[0]) throw new ErroHttp(404, 'Caso escalado não encontrado.');
+    return rows[0];
+  });
+
+  /* ═══════════════════════  POST /api/suporte-escalado/reativar  ══════════════ */
+
+  app.post('/api/suporte-escalado/reativar', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Reativa o atendimento automático: tira o caso do kanban de suporte escalado',
+      description: 'Remove a linha de email_ia.suporte_escalado — o cliente volta a receber '
+        + 'resposta automática da IA no próximo e-mail dele.',
+      security: [{ bearerAuth: [] }],
+      body: {
+        type: 'object',
+        required: ['id'],
+        properties: { id: { type: 'integer' } },
+      },
+    },
+  }, async (req, resposta) => {
+    const { id } = req.body;
+    const r = await query('DELETE FROM email_ia.suporte_escalado WHERE id = $1', [id]);
+    if (!r.rowCount) throw new ErroHttp(404, 'Caso escalado não encontrado.');
+    resposta.code(204);
+    return null;
   });
 }
