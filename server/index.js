@@ -1186,6 +1186,41 @@ async function atender(req, res, url, sessao) {
     }));
   }
 
+  if (url.pathname === '/api/suporte-escalado') {
+    const q = url.searchParams;
+    return json(res, 200, await obterApi('/api/suporte-escalado', { q: q.get('q') }));
+  }
+
+  if (url.pathname === '/api/suporte-escalado/status' && req.method === 'POST') {
+    const corpo = await lerJson(req);
+    if (!Number.isInteger(corpo.id)) return json(res, 400, { erro: 'Informe o id do caso escalado.' });
+    if (!['pendente', 'iniciado', 'esperando_resposta', 'finalizado'].includes(corpo.status)) {
+      return json(res, 400, { erro: 'Status inválido.' });
+    }
+    try {
+      return json(res, 200, await criarApi('/api/suporte-escalado/status', { id: corpo.id, status: corpo.status }));
+    } catch (err) {
+      if (err instanceof ErroApi && err.status === 404) {
+        return json(res, 404, { erro: 'Caso escalado não encontrado.' });
+      }
+      throw err;
+    }
+  }
+
+  if (url.pathname === '/api/suporte-escalado/reativar' && req.method === 'POST') {
+    const corpo = await lerJson(req);
+    if (!Number.isInteger(corpo.id)) return json(res, 400, { erro: 'Informe o id do caso escalado.' });
+    try {
+      await criarApi('/api/suporte-escalado/reativar', { id: corpo.id });
+      return json(res, 200, { ok: true });
+    } catch (err) {
+      if (err instanceof ErroApi && err.status === 404) {
+        return json(res, 404, { erro: 'Caso escalado não encontrado.' });
+      }
+      throw err;
+    }
+  }
+
   // Imagem em si: bytes crus, não JSON — não pode passar por obterApi().
   const rotaImagem = /^\/api\/imagem\/(\d+)$/.exec(url.pathname);
   if (rotaImagem) {
