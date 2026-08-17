@@ -16,6 +16,7 @@ import './emailTickets.js';
 import './emailDetalhes.js';
 import './emailChat.js';
 import './emailGaleria.js';
+import './emailSuporteEscalado.js';
 
 /* Mesmos traçados usados nos nós do canvas, para o card por canal falar a
    mesma língua visual que o fluxo. */

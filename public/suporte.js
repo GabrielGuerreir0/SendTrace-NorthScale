@@ -33,6 +33,7 @@ const ABAS = {
   detalhesia: 'aba-detalhesia',
   chatia: 'aba-chatia',
   galeriaia: 'aba-galeriaia',
+  suporteescalado: 'aba-suporteescalado',
 };
 
 function mostrarAba(qual) {

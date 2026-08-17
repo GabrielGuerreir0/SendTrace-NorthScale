@@ -118,14 +118,14 @@ $('ce-data-ate')?.addEventListener('change', (e) => {
 });
 
 const ABAS_COM_FILTRO = new Set(['ticketsia', 'detalhesia', 'galeriaia']);
-const ABAS_CENTRAL_EMAIL = new Set(['ticketsia', 'detalhesia', 'chatia', 'galeriaia']);
+const ABAS_CENTRAL_EMAIL = new Set(['ticketsia', 'detalhesia', 'chatia', 'galeriaia', 'suporteescalado']);
 
 /**
  * Chamada pelo troca-de-aba do painel (suporte.js): esconde a barra do topo
- * (produto/plataforma) nas 4 abas da Central de E-mail IA — lá ela não faz
- * nada — e mostra a barra nova só nas 3 que sabem usá-la. O Chat com IA
- * fica sem nenhuma das duas: a IA roda a própria consulta, filtrar por
- * parâmetro de URL não se aplica.
+ * (produto/plataforma) nas 5 abas da Central de E-mail IA — lá ela não faz
+ * nada — e mostra a barra nova só nas 3 que sabem usá-la. Chat com IA e
+ * Suporte Escalado ficam sem nenhuma das duas: a IA roda a própria consulta
+ * (chat) e a tabela de suporte_escalado não tem produto/loja/período (kanban).
  */
 export function aoTrocarAba(nomeAba) {
   const barraCE = $('ce-filtro-barra');

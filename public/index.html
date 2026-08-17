@@ -179,6 +179,17 @@
       </svg>
       <span class="menu-rotulo">Galeria de Imagens</span>
     </button>
+
+    <button class="menu-item" id="aba-btn-suporteescalado" type="button"
+            aria-selected="false" title="Suporte Escalado">
+      <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
+           stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2.5" y="4" width="4.2" height="12" rx="1"/>
+        <rect x="8.4" y="4" width="4.2" height="7.5" rx="1"/>
+        <rect x="14.3" y="4" width="3.2" height="4.5" rx="1"/>
+      </svg>
+      <span class="menu-rotulo">Suporte Escalado</span>
+    </button>
   </nav>
 </aside>
 
@@ -1305,6 +1316,35 @@
     <div class="gal-grade" id="gl-grade"></div>
     <div class="paginacao" id="gl-paginacao"></div>
   </section>
+</main>
+
+<!-- ═══════════════════  Central de E-mail IA — Tela 5: Suporte Escalado  ═══════════════ -->
+<main class="conteudo" id="aba-suporteescalado" hidden>
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Suporte Escalado</h2>
+        <p class="cartao-sub">Casos que a IA tirou de si — ela não responde mais a estes clientes até alguém reativar.</p>
+      </div>
+      <div class="tk-filtros">
+        <label class="campo campo--cresce">
+          <span class="sr">Buscar nome, e-mail ou resumo</span>
+          <input type="text" id="esc-busca" placeholder="Buscar nome, e-mail ou resumo…">
+        </label>
+        <label class="campo">
+          <span>Ordenar</span>
+          <select id="esc-ordem">
+            <option value="recentes">Mais recentes</option>
+            <option value="antigos">Mais antigos</option>
+          </select>
+        </label>
+      </div>
+    </header>
+  </section>
+
+  <section class="kpis kpis--suporte" id="esc-kpis"></section>
+
+  <div class="esc-board" id="esc-board"></div>
 </main>
 
 <div class="tooltip" id="tooltip" role="status" aria-live="polite" hidden></div>
