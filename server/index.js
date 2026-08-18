@@ -22,11 +22,11 @@ import {
   apiConfigurada, enderecoApi, saude as saudeApi, ErroApi,
   autenticarUsuario, dadosDoToken, comCredencial, obter as obterApi, listarTudo,
   criar as criarApi, substituir as substituirApi, apagar as apagarApi,
-  remendar as remendarApi, obterBinario,
+  remendar as remendarApi, obterBinario, pedirRecuperacao, confirmarRecuperacao,
 } from './api.js';
-import { enviarConvite, emailConfigurado } from './email.js';
+import { enviarConvite, enviarRecuperacao, emailConfigurado } from './email.js';
 import {
-  abrirSessao, lerSessao, fecharSessao, contarSessoesDe, limparVencidas,
+  abrirSessao, lerSessao, fecharSessao, fecharSessoesDe, contarSessoesDe, limparVencidas,
 } from './sessoes.js';
 import {
   trocarLinha, linhaAtual, historicoLinha, linhaConfigurada, linhasValidas,
@@ -50,7 +50,15 @@ const COOKIE = 'painel_sessao';
    A logo entra aqui porque a tela de login (pública por definição) usa ela —
    sem isso o <img> quebraria para quem ainda não entrou, que é justamente
    quem está olhando a tela de login. */
-const PUBLICOS = new Set(['/login', '/login.html', '/login.js', '/styles.css', '/src/logo_northscale.png']);
+const PUBLICOS = new Set([
+  '/login', '/login.html', '/login.js',
+  '/recuperar', '/recuperar.html', '/recuperar.js',
+  '/styles.css', '/src/logo_northscale.png',
+]);
+
+/* /login e /recuperar são as duas telas públicas (arquivo .html) — o resto
+   dos PUBLICOS já bate o nome do arquivo direto. */
+const PAGINA_PUBLICA = { '/login': '/login.html', '/recuperar': '/recuperar.html' };
 
 function lerCookie(req, nome) {
   const cru = req.headers.cookie;
@@ -576,6 +584,59 @@ async function rotasAuth(req, res, url, sessao) {
     return json(res, 200, { ok: true });
   }
 
+  /*
+   * Esqueci minha senha — pede o link. Sempre responde a MESMA mensagem,
+   * gerado ou não (e-mail inexistente, conta desativada e cooldown de 1 min
+   * são indistinguíveis de propósito) — o freio de IP é o mesmo do login,
+   * pra não virar vetor de spam de caixa de entrada de terceiros.
+   */
+  if (p === '/api/auth/esqueci' && req.method === 'POST') {
+    const ip = ipDe(req);
+    if (ipBloqueado(ip)) {
+      return json(res, 429, { erro: 'Muitas tentativas deste endereço. Aguarde alguns minutos.' });
+    }
+    const corpo = await lerJson(req);
+    const email = String(corpo.email ?? '').trim().toLowerCase();
+
+    let r = { gerado: false };
+    if (email) {
+      try {
+        r = await pedirRecuperacao(email);
+      } catch {
+        r = { gerado: false }; // falha da API também não pode vazar diferença
+      }
+    }
+    if (r.gerado) await enviarRecuperacao({ para: r.email, token: r.token, req });
+
+    // Atraso fixo, gerado ou não — a demora não pode revelar se o e-mail existe.
+    await new Promise((ok) => setTimeout(ok, 260));
+    return json(res, 200, {
+      ok: true,
+      mensagem: 'Se esse e-mail tiver uma conta ativa, você recebe um link em instantes.',
+    });
+  }
+
+  /*
+   * Redefinir com o token do e-mail. Aqui já não tem mais o que esconder —
+   * quem tem o token no e-mail já sabe que a conta existe — então o erro da
+   * API (token inválido/vencido/já usado, senha fraca) vai direto pra tela.
+   */
+  if (p === '/api/auth/redefinir' && req.method === 'POST') {
+    const corpo = await lerJson(req);
+    let resultado;
+    try {
+      resultado = await confirmarRecuperacao(String(corpo.token ?? ''), String(corpo.senha ?? ''));
+    } catch (err) {
+      if (err instanceof ErroApi && err.status === 400) {
+        return json(res, 400, { erro: detalharErroApi(err, 'Não foi possível redefinir a senha.') });
+      }
+      throw err;
+    }
+    // Deriva a sessão antiga de verdade — ver server/sessoes.js.
+    fecharSessoesDe(resultado.email);
+    return json(res, 200, { ok: true });
+  }
+
   return null;   // não é rota de acesso
 }
 
@@ -668,6 +729,14 @@ async function rotasUsuarios(req, res, url, sessao) {
       throw err;
     }
 
+    // Desativar ou emitir senha nova têm que derrubar a sessão aberta AGORA —
+    // sem isto a pessoa continuava dentro do painel até o cookie vencer
+    // sozinho. É este DELETE em memória que faz efeito de verdade (o
+    // `encerrarSessoesDe` chamado lá dentro da API mexe numa tabela morta).
+    if (corpo.ativo === false || corpo.senha !== undefined) {
+      fecharSessoesDe(alterado.email);
+    }
+
     // Senha provisória nova: o convite sai daqui, como na criação.
     let envio = null;
     if (corpo.senha && corpo.enviarEmail !== false) {
@@ -707,7 +776,7 @@ async function atender(req, res, url, sessao) {
   if (!usuario) {
     if (url.pathname.startsWith('/api/')) return json(res, 401, { erro: 'sem sessão' });
     if (PUBLICOS.has(url.pathname)) {
-      await servirEstatico(req, res, url.pathname === '/login' ? '/login.html' : url.pathname);
+      await servirEstatico(req, res, PAGINA_PUBLICA[url.pathname] ?? url.pathname);
       return ATENDIDO;
     }
     // Guarda para onde a pessoa queria ir, para voltar depois do login.

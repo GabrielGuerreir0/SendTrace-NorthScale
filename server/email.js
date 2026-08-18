@@ -162,6 +162,80 @@ export async function enviarConvite({ para, senha, admin, quemConvidou, dias, re
   }
 }
 
+function corpoRecuperacao({ base, link }) {
+  const html = `
+<div style="background:#eef0f4;padding:24px 12px">
+  <div style="max-width:560px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1f2430">
+    <div style="background:#0c0c0c;border-radius:10px 10px 0 0;padding:18px 24px;text-align:center">
+      <span style="font-size:15px;font-weight:700;letter-spacing:.12em;color:#fff">${esc(NOME).toUpperCase()}</span>
+    </div>
+    <div style="background:#fff;border-radius:0 0 10px 10px;padding:28px 26px">
+      <p style="margin:0 0 16px">Pediram para redefinir a senha da sua conta no painel <b>${esc(NOME)}</b>.</p>
+
+      <p style="margin:22px 0">
+        <a href="${esc(link)}" style="display:inline-block;padding:13px 26px;background:#415fe5;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">Redefinir senha &rarr;</a>
+      </p>
+      <p style="margin:0 0 18px;font-size:13px;color:#6b7280">
+        Se o botão não funcionar, abra: <a href="${esc(link)}" style="color:#415fe5">${esc(link)}</a>
+      </p>
+
+      <div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:0 8px 8px 0;padding:14px 18px;margin:20px 0">
+        <p style="margin:0;font-size:14px">
+          Este link vale por <b>30 minutos</b> e só funciona <b>uma vez</b>.
+        </p>
+      </div>
+
+      <p style="margin:18px 0 0;font-size:13px;color:#6b7280">
+        Se você não pediu isso, ignore este e-mail — sua senha continua a mesma.
+      </p>
+    </div>
+  </div>
+</div>`.trim();
+
+  const texto = [
+    `Pediram para redefinir a senha da sua conta no painel ${NOME}.`,
+    '',
+    `Redefinir: ${link}`,
+    '',
+    'Este link vale por 30 minutos e só funciona uma vez.',
+    '',
+    'Se você não pediu isso, ignore este e-mail — sua senha continua a mesma.',
+  ].join('\n');
+
+  return { html, texto };
+}
+
+/**
+ * Manda o e-mail de recuperação de senha. Mesmo contrato de `enviarConvite`:
+ * NUNCA estoura, devolve `{ enviado, motivo }`. Quem chama (server/index.js)
+ * já responde ao navegador de forma genérica de qualquer jeito — a falha de
+ * SMTP aqui só entra em log, não muda o que a pessoa vê na tela.
+ */
+export async function enviarRecuperacao({ para, token, req }) {
+  if (!emailConfigurado) {
+    return { enviado: false, motivo: 'SMTP não configurado no .env' };
+  }
+
+  const base = urlDoPainel(req);
+  const link = `${base}/recuperar?token=${encodeURIComponent(token)}`;
+  const { html, texto } = corpoRecuperacao({ base, link });
+
+  try {
+    await obterTransporte().sendMail({
+      from: SMTP_DE,
+      to: para,
+      subject: `Redefinir sua senha — ${NOME}`,
+      text: texto,
+      html,
+      headers: { 'Auto-Submitted': 'auto-generated', 'X-Auto-Response-Suppress': 'All' },
+    });
+    return { enviado: true };
+  } catch (err) {
+    console.error('[email] falha ao enviar recuperação de senha:', err.message);
+    return { enviado: false, motivo: err.message };
+  }
+}
+
 /** Testa a conexão SMTP sem mandar nada — usado no `npm run setup`. */
 export async function verificarSmtp() {
   if (!emailConfigurado) return { ok: false, motivo: 'não configurado' };

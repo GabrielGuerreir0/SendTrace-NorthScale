@@ -127,6 +127,18 @@ export async function autenticarUsuario(email, senha) {
 }
 
 /**
+ * As duas chamadas de "esqueci minha senha" — mesma razão de `autenticarUsuario`
+ * ir direto em `bruto()`: quem esqueceu a senha não tem sessão nenhuma, então
+ * `pedir()`/`credencialAtual()` não têm o que usar.
+ */
+export async function pedirRecuperacao(email) {
+  return bruto('POST', '/api/auth/esqueci-senha/', { corpo: { email } });
+}
+export async function confirmarRecuperacao(token, senha) {
+  return bruto('POST', '/api/auth/redefinir-senha/', { corpo: { token, senha } });
+}
+
+/**
  * Renova o `access` a partir do `refresh`, no lugar.
  *
  * Muda o objeto em vez de devolver um novo porque ele é o mesmo que está

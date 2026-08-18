@@ -9,6 +9,7 @@
 import {
   autenticar, conferirSenha, trocarSenha, criarUsuario, definirAdmin, definirAtivo,
   emitirSenhaProvisoria, contarAdmins, validarSenha, normalizarEmail, emailValido,
+  criarTokenReset, usuarioDoTokenReset, consumirTokenReset,
 } from '../../server/auth.js';
 import { query } from '../../server/db.js';
 import { ErroHttp, fatiar, montarBusca, montarOrdem } from '../comum.js';
@@ -121,6 +122,72 @@ export default async function rotasAcesso(app) {
     }
     await trocarSenha(req.usuario.user_id, req.body.nova);
     return { ok: true };
+  });
+
+  /*
+   * Recuperação de senha por e-mail (self-service, sem admin envolvido).
+   * Público de propósito — quem esqueceu a senha não tem sessão nenhuma.
+   *
+   * `gerado` distingue conta-existe de conta-inexistente na resposta — isso
+   * só é seguro porque esta rota é chamada SERVER-TO-SERVER pelo painel
+   * (server/index.js), nunca exposta ao navegador. O painel devolve uma
+   * mensagem idêntica ao navegador nos dois casos, com atraso fixo. A API
+   * não deve ser exposta publicamente por conta dessa premissa — mesmo
+   * raciocínio que já vale hoje para /api/auth/token/.
+   */
+  app.post('/api/auth/esqueci-senha/', {
+    schema: {
+      tags: ['Acesso'],
+      summary: 'Gera um token de recuperação, se a conta existir e estiver ativa',
+      description: 'Rota pública, sem sessão. `gerado: false` cobre e-mail inexistente, conta '
+        + 'desativada, OU cooldown de 1 min (já pediu recentemente) — os três casos são '
+        + 'indistinguíveis de propósito.',
+      body: { type: 'object', required: ['email'], properties: { email: { type: 'string' } } },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            gerado: { type: 'boolean' },
+            token: { type: 'string' },
+            email: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (req) => {
+    const email = normalizarEmail(req.body.email);
+    const { rows } = await query('SELECT id FROM painel_usuarios WHERE email = $1 AND ativo', [email]);
+    if (!rows[0]) return { gerado: false };
+    const token = await criarTokenReset(rows[0].id, { ip: req.ip });
+    if (!token) return { gerado: false };
+    return { gerado: true, token, email };
+  });
+
+  app.post('/api/auth/redefinir-senha/', {
+    schema: {
+      tags: ['Acesso'],
+      summary: 'Troca a senha usando um token de recuperação',
+      description: 'Rota pública. Token de uso único, expira em 30 min. Derruba as sessões '
+        + 'abertas da conta (ver server/index.js, que chama fecharSessoesDe depois desta rota '
+        + 'responder ok — esta função aqui só grava no banco).',
+      body: {
+        type: 'object',
+        required: ['token', 'senha'],
+        properties: { token: { type: 'string' }, senha: { type: 'string' } },
+      },
+      response: {
+        200: { type: 'object', properties: { ok: { type: 'boolean' }, email: { type: 'string' } } },
+        400: { $ref: 'Erro#' },
+      },
+    },
+  }, async (req) => {
+    const alvo = await usuarioDoTokenReset(String(req.body.token ?? ''));
+    if (!alvo) throw new ErroHttp(400, 'Link inválido, expirado ou já usado. Peça um novo.');
+    const problema = validarSenha(req.body.senha, { email: alvo.email });
+    if (problema) throw new ErroHttp(400, problema);
+    await trocarSenha(alvo.usuario_id, req.body.senha);
+    await consumirTokenReset(String(req.body.token));
+    return { ok: true, email: alvo.email };
   });
 
   /* ────────────────────────────  usuários  ──────────────────────────── */

@@ -267,8 +267,14 @@ export async function trocarSenha(usuarioId, senha) {
 /**
  * Emite uma senha PROVISÓRIA para outra pessoa (admin criando ou redefinindo).
  * Sempre com prazo e sempre exigindo troca — quem emite não deve seguir
- * sabendo a senha de ninguém. Derruba as sessões abertas da conta: uma
- * redefinição que deixa a sessão antiga viva não redefine nada.
+ * sabendo a senha de ninguém.
+ *
+ * `encerrarSessoesDe` abaixo mexe em `painel_sessoes` (Postgres) — hoje uma
+ * tabela morta, sem relação com as sessões reais do painel (essas vivem em
+ * memória, `server/sessoes.js`). Quem chama isto pelo painel (server/index.js,
+ * PATCH /api/usuarios/:id) também chama `fecharSessoesDe(email)` de
+ * `server/sessoes.js` depois — é ESSA chamada que derruba a sessão de
+ * verdade. Mantida aqui por compatibilidade, mas não é o que faz efeito.
  */
 export async function emitirSenhaProvisoria(usuarioId, senha) {
   const { hash, salt, params } = await gerarHash(senha);
@@ -298,7 +304,10 @@ export async function definirAtivo(usuarioId, ativo) {
     [usuarioId, !!ativo],
   );
   // Desativar sem derrubar a sessão deixaria a pessoa dentro do painel até o
-  // cookie vencer — o desligamento tem que valer agora.
+  // cookie vencer — o desligamento tem que valer agora. `encerrarSessoesDe`
+  // aqui não faz efeito de verdade (ver comentário em emitirSenhaProvisoria);
+  // quem chama isto pelo painel também chama `fecharSessoesDe(email)` de
+  // server/sessoes.js, que é quem derruba a sessão em memória de verdade.
   if (rows[0] && !ativo) await encerrarSessoesDe(usuarioId);
   return rows[0] ?? null;
 }
@@ -314,4 +323,51 @@ export async function contarAdmins() {
 export async function existeAlgumUsuario() {
   const { rows } = await query('SELECT count(*)::int AS n FROM painel_usuarios');
   return rows[0].n > 0;
+}
+
+/* ─────────────────────── recuperação de senha por e-mail ─────────────────────── */
+
+const RESET_MIN = 30;
+const RESET_COOLDOWN_S = 60;
+
+/**
+ * Gera um token de recuperação (256 bits, só o hash SHA-256 vai pro banco —
+ * mesma ideia de `criarSessao`). `null` sinaliza "não gere/mande outro":
+ * cooldown de 1 min contra clique repetido virando spam de caixa de entrada.
+ * Apaga os tokens não-usados anteriores do mesmo usuário ao emitir um novo,
+ * pra nunca ter dois links válidos ao mesmo tempo.
+ */
+export async function criarTokenReset(usuarioId, { ip } = {}) {
+  const { rows: recentes } = await query(
+    `SELECT 1 FROM painel_reset_senha
+     WHERE usuario_id = $1 AND usado_em IS NULL AND expira_em > now()
+       AND criado_em > now() - make_interval(secs => $2::int)`,
+    [usuarioId, RESET_COOLDOWN_S],
+  );
+  if (recentes.length) return null;
+
+  await query('DELETE FROM painel_reset_senha WHERE usuario_id = $1 AND usado_em IS NULL', [usuarioId]);
+  const token = crypto.randomBytes(32).toString('base64url');
+  await query(
+    `INSERT INTO painel_reset_senha (token_hash, usuario_id, expira_em, ip)
+     VALUES ($1, $2, now() + make_interval(mins => $3::int), $4)`,
+    [hashToken(token), usuarioId, RESET_MIN, ip ?? null],
+  );
+  return token;
+}
+
+/** O usuário dono de um token válido (não vencido, não usado, conta ativa), ou null. */
+export async function usuarioDoTokenReset(token) {
+  const { rows } = await query(
+    `SELECT r.usuario_id, u.email, u.ativo
+     FROM painel_reset_senha r JOIN painel_usuarios u ON u.id = r.usuario_id
+     WHERE r.token_hash = $1 AND r.expira_em > now() AND r.usado_em IS NULL AND u.ativo`,
+    [hashToken(token)],
+  );
+  return rows[0] ?? null;
+}
+
+/** Marca o token como usado — não pode servir uma segunda vez. */
+export async function consumirTokenReset(token) {
+  await query('UPDATE painel_reset_senha SET usado_em = now() WHERE token_hash = $1', [hashToken(token)]);
 }

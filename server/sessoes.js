@@ -51,6 +51,16 @@ export function fecharSessao(token) {
   if (token) sessoes.delete(hash(token));
 }
 
+/**
+ * Derruba TODAS as sessões abertas desta pessoa — usado ao redefinir senha
+ * (por token de recuperação) e quando um admin troca a senha de alguém ou
+ * desativa a conta. Precisa varrer o mapa porque a chave é o hash do
+ * COOKIE, não o e-mail — não tem como indexar direto por pessoa.
+ */
+export function fecharSessoesDe(email) {
+  for (const [chave, s] of sessoes) if (s.usuario?.email === email) sessoes.delete(chave);
+}
+
 /** Quantas sessões abertas esta pessoa tem — usado só para exibir. */
 export const contarSessoesDe = (email) => {
   let n = 0;
