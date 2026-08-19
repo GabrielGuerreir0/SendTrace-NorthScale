@@ -197,7 +197,7 @@ async function pedir(metodo, rota, opcoes = {}) {
   }
 }
 
-export const obter = (rota, params) => pedir('GET', rota, { params });
+export const obter = (rota, params, opcoes) => pedir('GET', rota, { params, ...opcoes });
 export const criar = (rota, corpo, opcoes) => pedir('POST', rota, { corpo, ...opcoes });
 export const substituir = (rota, corpo) => pedir('PUT', rota, { corpo });
 export const remendar = (rota, corpo) => pedir('PATCH', rota, { corpo });

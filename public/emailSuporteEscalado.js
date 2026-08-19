@@ -66,6 +66,39 @@ async function moverStatus(id, status) {
   await carregarDados();
 }
 
+/**
+ * Abre o e-mail ORIGINAL no webmail (Hostinger) — não é navegação dentro do
+ * painel, é o servidor buscando pasta+UID ao vivo via IMAP (ver
+ * /api/emails/:id/webmail em emailIACentral.js) e devolvendo a URL exata.
+ *
+ * A aba é aberta ANTES do fetch (não depois) porque a maioria dos navegadores
+ * só permite `window.open` disparado direto por um clique — chamado depois de
+ * um `await`, cairia no bloqueador de pop-up. A aba fica em branco por um
+ * instante e só troca de endereço quando a URL chega.
+ */
+async function abrirNoWebmail(emailId, botao) {
+  const aba = window.open('', '_blank', 'noopener,noreferrer');
+  const original = botao.textContent;
+  botao.disabled = true;
+  botao.textContent = '…';
+  try {
+    const { ok, dados: resp } = await api(`/api/emails/${emailId}/webmail`);
+    if (!ok || !resp?.url) {
+      aba?.close();
+      window.alert(resp?.erro ?? resp?.detail ?? 'Não consegui achar este e-mail na caixa.');
+      return;
+    }
+    if (aba) aba.location.href = resp.url;
+    else window.open(resp.url, '_blank', 'noopener,noreferrer');
+  } catch {
+    aba?.close();
+    window.alert('Não consegui achar este e-mail na caixa.');
+  } finally {
+    botao.disabled = false;
+    botao.textContent = original;
+  }
+}
+
 async function reativar(id, nome) {
   const confirmou = window.confirm(
     `Reativar resposta automática da IA para ${nome || 'este cliente'}?\n\n`
@@ -171,6 +204,21 @@ function criarCard(item) {
     abrirNaTabela(item.remetente_email);
   });
 
+  const btnWebmail = document.createElement('button');
+  btnWebmail.className = 'btn btn-icone';
+  btnWebmail.type = 'button';
+  btnWebmail.textContent = '✉';
+  if (item.email_id) {
+    btnWebmail.title = 'Abrir o e-mail original na caixa (Hostinger)';
+    btnWebmail.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      abrirNoWebmail(item.email_id, btnWebmail);
+    });
+  } else {
+    btnWebmail.disabled = true;
+    btnWebmail.title = 'Nenhum e-mail vinculado a este caso.';
+  }
+
   const btnReativar = document.createElement('button');
   btnReativar.className = 'btn btn-icone';
   btnReativar.type = 'button';
@@ -181,7 +229,7 @@ function criarCard(item) {
     reativar(item.id, item.nome || item.remetente_email);
   });
 
-  acoesEl.append(sel, btnAbrir, btnReativar);
+  acoesEl.append(sel, btnAbrir, btnWebmail, btnReativar);
   rodape.append(quando, acoesEl);
   card.append(rodape);
 

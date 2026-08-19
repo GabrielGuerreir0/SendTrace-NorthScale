@@ -8,6 +8,7 @@
  *   POST /api/ticket                    → muda o status de um ticket
  *   GET  /api/galeria                   → grade paginada de anexos analisados por IA
  *   GET  /api/imagem/:id                → serve o binário de uma imagem (bytea → bytes)
+ *   GET  /api/emails/:id/webmail        → acha o e-mail na caixa real (IMAP) e devolve a URL do webmail
  *   GET  /api/suporte-escalado          → kanban de suporte escalado (lista + KPIs)
  *   POST /api/suporte-escalado/status   → move um caso entre colunas do kanban
  *   POST /api/suporte-escalado/reativar → tira o caso do kanban (a IA volta a responder)
@@ -21,6 +22,7 @@ import { ErroHttp } from '../comum.js';
 import {
   filtroEmails, filtroTickets, condicaoProdutoLoja, condicaoPeriodo, resolverEmailsProdutoLoja,
 } from '../filtrosEmailIA.js';
+import { acharNoWebmail, urlWebmail, webmailConfigurado } from '../webmail.js';
 
 /* ═══════════════════════════════  GET /api/dados  ═══════════════════════════ */
 
@@ -557,6 +559,41 @@ export default async function rotasEmailIACentral(app) {
     if (!anexo) throw new ErroHttp(404, 'Imagem não encontrada.');
     resposta.header('Content-Type', anexo.mime_type);
     return resposta.send(anexo.conteudo);
+  });
+
+  /* ═══════════════════════════  GET /api/emails/:id/webmail  ═══════════════════ */
+
+  app.get('/api/emails/:id/webmail', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Acha este e-mail na caixa real (IMAP) e devolve a URL do webmail',
+      description: 'Conecta na caixa (Hostinger, IMAP, somente leitura), procura pelo '
+        + '`message_id` deste e-mail e devolve `{ url }` pronta para abrir no webmail — '
+        + 'usado pelo botão ✉ do kanban de Suporte Escalado. Pode levar alguns segundos '
+        + '(é uma conexão IMAP ao vivo, não uma consulta ao Postgres).',
+      security: [{ bearerAuth: [] }],
+      params: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] },
+    },
+  }, async (req) => {
+    if (!webmailConfigurado) {
+      throw new ErroHttp(503, 'IMAP não configurado no servidor — falta SMTP_USUARIO/SMTP_SENHA (ou IMAP_USUARIO/IMAP_SENHA) no .env.');
+    }
+    const { rows } = await query(
+      'SELECT message_id, pasta_imap FROM email_ia.emails WHERE id = $1', [req.params.id],
+    );
+    const email = rows[0];
+    if (!email) throw new ErroHttp(404, 'E-mail não encontrado.');
+
+    let achado;
+    try {
+      achado = await acharNoWebmail(email.message_id, email.pasta_imap);
+    } catch (err) {
+      throw new ErroHttp(502, `Não consegui falar com a caixa de e-mail: ${err.message}`);
+    }
+    if (!achado) throw new ErroHttp(404, 'Não encontrei este e-mail na caixa (pode ter sido movido ou apagado por lá).');
+
+    return { url: urlWebmail(achado.pasta, achado.uid), pasta: achado.pasta };
   });
 
   /* ═══════════════════════════  GET /api/suporte-escalado  ═══════════════════ */

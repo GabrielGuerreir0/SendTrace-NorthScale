@@ -1290,6 +1290,20 @@ async function atender(req, res, url, sessao) {
     }
   }
 
+  // Busca ao vivo no IMAP (não é consulta ao Postgres) — folga a mais no
+  // corte de paciência, no mesmo espírito do /api/resposta acima.
+  const rotaWebmail = /^\/api\/emails\/(\d+)\/webmail$/.exec(url.pathname);
+  if (rotaWebmail) {
+    try {
+      return json(res, 200, await obterApi(`/api/emails/${rotaWebmail[1]}/webmail`, {}, { timeoutMs: 25_000 }));
+    } catch (err) {
+      if (err instanceof ErroApi && (err.status === 404 || err.status === 502 || err.status === 503)) {
+        return json(res, err.status, { erro: detalharErroApi(err, 'Não consegui achar este e-mail na caixa.') });
+      }
+      throw err;
+    }
+  }
+
   // Imagem em si: bytes crus, não JSON — não pode passar por obterApi().
   const rotaImagem = /^\/api\/imagem\/(\d+)$/.exec(url.pathname);
   if (rotaImagem) {
