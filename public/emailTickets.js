@@ -14,6 +14,7 @@ import {
 import { n, duracaoH } from './format.js';
 import { desenharColunas } from './charts.js';
 import { qsFiltroCE, aoMudarFiltroCE } from './emailFiltro.js';
+import { abrirModalTicket } from './emailDetalhes.js';
 
 /* ═══════════════════════════════  estado  ═══════════════════════════════ */
 
@@ -22,7 +23,6 @@ let filtroStatus = null; // null | 'nao_iniciado' | 'em_aberto' | 'resolvido'
 let busca = '';
 let pagina = 1;
 const POR_PAGINA = 25;
-const expandidos = new Set();
 
 /* ═══════════════════════════════  automação  ══════════════════════════════ */
 
@@ -267,18 +267,12 @@ function renderTabelaTickets() {
   for (const t of fatia) {
     const tr = document.createElement('tr');
     tr.dataset.email = t.remetente_email;
-    if (t.resumo_conversa) tr.classList.add('sup-linha-clique');
+    tr.classList.add('sup-linha-clique');
+    tr.title = 'Clique para ver todos os detalhes deste ticket';
+    tr.addEventListener('click', () => abrirModalTicket(t));
 
     const tdCliente = document.createElement('td');
     tdCliente.append(celCliente(t.nome, t.remetente_email));
-    if (t.resumo_conversa) {
-      tdCliente.title = 'Clique para ver o resumo da conversa';
-      tr.addEventListener('click', () => {
-        if (expandidos.has(t.remetente_email)) expandidos.delete(t.remetente_email);
-        else expandidos.add(t.remetente_email);
-        renderTabelaTickets();
-      });
-    }
 
     const tdStatus = document.createElement('td');
     tdStatus.append(chipTicket(t.status));
@@ -297,24 +291,6 @@ function renderTabelaTickets() {
 
     tr.append(tdCliente, tdStatus, tdEmails, tdPedidos, tdReab, tdDatas, tdEspera, tdAcoes);
     corpo.append(tr);
-
-    if (expandidos.has(t.remetente_email) && t.resumo_conversa) {
-      const trDetalhe = document.createElement('tr');
-      const td = document.createElement('td');
-      td.colSpan = 8;
-      td.className = 'tk-resumo';
-      const p = document.createElement('p');
-      p.textContent = t.resumo_conversa;
-      td.append(p);
-      if (t.resumo_conversa_em) {
-        const sub = document.createElement('p');
-        sub.className = 'cel-sub';
-        sub.textContent = `atualizado em ${new Date(t.resumo_conversa_em).toLocaleString('pt-BR')}`;
-        td.append(sub);
-      }
-      trDetalhe.append(td);
-      corpo.append(trDetalhe);
-    }
   }
 
   montarPaginacao($('tk-tabela-paginacao'), { pagina, totalPaginas, total: linhas.length, rotuloItem: 'ticket' }, (p2) => {

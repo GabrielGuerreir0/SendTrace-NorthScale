@@ -16,7 +16,7 @@ import {
   $, api, debounce, tooltip, kpiCard, barraHorizontal, renderTabela, paginar,
   montarPaginacao, baixarCsv, chipTicket, chipSentimento, chipUrgencia, chipSituacaoPedido,
   rotularCategoria, rotularMotivo, rotularArea, rotularResponsavel, rotularPagamento, rotularPlataforma,
-  celCliente,
+  celCliente, abrirFicha, renderFicha,
 } from './emailComum.js';
 import { n, dataHora, truncar } from './format.js';
 import { desenharColunas } from './charts.js';
@@ -56,7 +56,14 @@ $('dt-filtro-limpar').addEventListener('click', () => { filtroAtivo = null; rend
    Abre ao clicar numa barra (motivo, categoria, sentimento, área,
    responsável, pagamento, plataforma) — pede só a LISTA de e-mails daquele
    recorte (GET /api/emails, mesmo período/produto/loja do resto da tela),
-   sem pagar o custo dos ~15 agregados de /api/dados. */
+   sem pagar o custo dos ~15 agregados de /api/dados.
+
+   TAMBÉM reaproveitado (com `ficha` preenchida) por qualquer linha que
+   representa UM CLIENTE — ticket, reincidente, reclamante, cliente de risco
+   — tanto aqui quanto em emailTickets.js: em vez de só listar os e-mails,
+   mostra primeiro a ficha completa do registro clicado (todos os campos que
+   a linha da tabela não tinha espaço para mostrar) e, embaixo, a lista de
+   e-mails trocados com aquele cliente (tipo='email', valor=e-mail exato). */
 
 let emailsModalGeracao = 0;
 let emailsModalTodos = [];
@@ -90,8 +97,11 @@ function celulaCarregandoEmails(texto) {
   $('dt-emails-corpo').replaceChildren(tr);
 }
 
-async function abrirModalEmails(tipo, valor, rotulo) {
+export async function abrirModalEmails(tipo, valor, rotulo, ficha = null) {
   $('dt-emails-sub').textContent = `filtrando: ${rotulo}`;
+  const elFicha = $('dt-emails-ficha');
+  elFicha.hidden = !ficha;
+  if (ficha) renderFicha(elFicha, ficha);
   celulaCarregandoEmails('carregando…');
   $('dt-emails-pag').replaceChildren();
   $('dt-emails-modal').showModal();
@@ -113,6 +123,31 @@ async function abrirModalEmails(tipo, valor, rotulo) {
 }
 
 $('dt-emails-fechar').addEventListener('click', () => $('dt-emails-modal').close());
+
+/**
+ * Ficha de UM ticket (linha da tabela compacta aqui, ou da tabela dedicada em
+ * emailTickets.js) + a lista de e-mails trocados com aquele cliente — tudo
+ * que a linha não tinha espaço para mostrar, num clique só.
+ */
+export function abrirModalTicket(t) {
+  abrirModalEmails('email', t.remetente_email, `ticket de ${t.nome || t.remetente_email}`, [
+    { rotulo: 'Cliente', valor: t.nome || '—' },
+    { rotulo: 'E-mail', valor: t.remetente_email },
+    { rotulo: 'Status', valor: chipTicket(t.status) },
+    { rotulo: 'E-mails trocados', valor: n(t.qtd_emails) },
+    { rotulo: 'Pedidos únicos', valor: n(t.pedidos_unicos) },
+    { rotulo: 'Reaberturas', valor: n(t.reaberturas) },
+    { rotulo: 'Primeiro e-mail', valor: t.primeiro_email_em ? dataHora(t.primeiro_email_em) : '—' },
+    { rotulo: 'Último e-mail', valor: t.ultimo_email_em ? dataHora(t.ultimo_email_em) : '—' },
+    { rotulo: 'Iniciado em', valor: t.iniciado_em ? dataHora(t.iniciado_em) : '—' },
+    { rotulo: 'Resolvido em', valor: t.resolvido_em ? dataHora(t.resolvido_em) : '—' },
+    t.resumo_conversa && {
+      rotulo: `Resumo da IA${t.resumo_conversa_em ? ` · atualizado em ${dataHora(t.resumo_conversa_em)}` : ''}`,
+      valor: t.resumo_conversa,
+      largo: true,
+    },
+  ]);
+}
 
 /* ═══════════════════════════════  KPIs principais  ═══════════════════════ */
 
@@ -177,7 +212,7 @@ function renderTicketsCompacto() {
   const { pagina, totalPaginas, fatia } = paginar(linhas, paginaTickets, PT_POR_PAGINA);
   paginaTickets = pagina;
 
-  renderTabela($('dt-tickets-corpo'), fatia, [
+  const colunasTickets = [
     { render: (t) => chipTicket(t.status) },
     { render: (t) => celCliente(t.nome, t.remetente_email) },
     { classe: 'num', render: (t) => n(t.qtd_emails) },
@@ -190,7 +225,8 @@ function renderTicketsCompacto() {
         b.type = 'button';
         b.textContent = t.status === 'nao_iniciado' ? 'Iniciar' : t.status === 'em_aberto' ? 'Resolver' : 'Reabrir';
         const proximo = t.status === 'nao_iniciado' ? 'em_aberto' : t.status === 'em_aberto' ? 'resolvido' : 'nao_iniciado';
-        b.addEventListener('click', async () => {
+        b.addEventListener('click', async (ev) => {
+          ev.stopPropagation();
           b.disabled = true;
           await api('/api/ticket', { metodo: 'POST', corpo: { email: t.remetente_email, status: proximo } });
           await carregarDados();
@@ -198,7 +234,9 @@ function renderTicketsCompacto() {
         return b;
       },
     },
-  ], { vazio: 'Nenhum ticket no período.' });
+  ];
+  colunasTickets.aoClicarLinha = abrirModalTicket;
+  renderTabela($('dt-tickets-corpo'), fatia, colunasTickets, { vazio: 'Nenhum ticket no período.' });
 
   montarPaginacao($('dt-tickets-paginacao'), { pagina: paginaTickets, totalPaginas, total: linhas.length, rotuloItem: 'ticket' }, (p) => {
     paginaTickets = p;

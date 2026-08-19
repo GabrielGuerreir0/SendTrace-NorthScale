@@ -1467,10 +1467,6 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 
 .tk-acoes { display: flex; gap: 6px; flex-wrap: wrap; }
 
-.tk-resumo { background: var(--superficie-2); }
-.tk-resumo p { margin: 0 0 4px; font-size: 12.5px; line-height: 1.5; }
-.tk-resumo p:last-child { margin-bottom: 0; }
-
 .dt-subtitulo { font-size: 12px; font-weight: 600; color: var(--tinta-2); margin-bottom: 8px; }
 
 /* ── novos estados de .selo-estado (o componente já existe; só os tons) ── */
