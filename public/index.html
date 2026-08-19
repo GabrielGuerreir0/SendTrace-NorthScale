@@ -1249,6 +1249,29 @@
   </div>
 </dialog>
 
+<!-- ── modal: e-mails filtrados (abre ao clicar numa barra em Mais Detalhes) ── -->
+<dialog class="janela janela--larga" id="dt-emails-modal" aria-labelledby="dt-emails-titulo">
+  <header class="janela-cabeca">
+    <div>
+      <h2 id="dt-emails-titulo">E-mails</h2>
+      <p class="cartao-sub" id="dt-emails-sub"></p>
+    </div>
+    <button class="btn btn-icone" id="dt-emails-fechar" type="button" aria-label="Fechar">✕</button>
+  </header>
+  <div class="janela-corpo">
+    <div class="tabela-envolve">
+      <table class="tabela">
+        <thead>
+          <tr><th scope="col">Quando</th><th scope="col">Cliente</th><th scope="col">Assunto</th>
+            <th scope="col">Categoria</th><th scope="col">Sentimento</th><th scope="col">Urgência</th><th scope="col">Resumo</th></tr>
+        </thead>
+        <tbody id="dt-emails-corpo"><tr><td colspan="7" class="vazio-suave">carregando…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="paginacao" id="dt-emails-pag"></div>
+  </div>
+</dialog>
+
 <!-- ═══════════════════════  Central de E-mail IA — Tela 3: Chat  ═══════════════
      Estilo "ChatGPT": sem cartão envolvendo tudo — o topo é uma faixa fina,
      as mensagens flutuam direto no fundo da página e o compositor é uma

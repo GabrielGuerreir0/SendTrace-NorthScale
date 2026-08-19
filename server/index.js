@@ -1190,6 +1190,16 @@ async function atender(req, res, url, sessao) {
     }));
   }
 
+  if (url.pathname === '/api/emails') {
+    const q = url.searchParams;
+    return json(res, 200, await obterApi('/api/emails', {
+      dias: q.get('dias'), data_de: q.get('data_de'), data_ate: q.get('data_ate'),
+      q: q.get('q'), cat: q.get('cat'), sent: q.get('sent'), urg: q.get('urg'), pede: q.get('pede'),
+      area: q.get('area'), resp: q.get('resp'), pgto: q.get('pgto'), plat: q.get('plat'),
+      motivo: q.get('motivo'), produto: q.get('produto'), loja: q.get('loja'),
+    }));
+  }
+
   if (url.pathname === '/api/automacao') {
     return json(res, 200, await obterApi('/api/automacao'));
   }

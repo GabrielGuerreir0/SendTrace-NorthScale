@@ -4,6 +4,7 @@
  * caso do kanban de suporte escalado).
  *
  *   GET  /api/dados                     → o dataset único das telas Tickets e Detalhes
+ *   GET  /api/emails                    → só a lista de e-mails, mesmos filtros de /api/dados
  *   GET  /api/automacao                 → execuções do fluxo n8n de resposta automática (ao vivo)
  *   POST /api/ticket                    → muda o status de um ticket
  *   GET  /api/galeria                   → grade paginada de anexos analisados por IA
@@ -411,6 +412,24 @@ export default async function rotasEmailIACentral(app) {
       imagens,
       ultimos,
     };
+  });
+
+  /* ═══════════════════════════════  GET /api/emails  ═════════════════════════════ */
+
+  app.get('/api/emails', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Só a lista de e-mails — mesmos filtros de /api/dados, sem os ~15 agregados',
+      description: 'Usada pelo modal "ver e-mails" que abre ao clicar num filtro em Mais '
+        + 'Detalhes (motivo, categoria, sentimento, área, responsável, pagamento, plataforma): '
+        + 'pedir só a lista é bem mais leve que recarregar o dataset inteiro de /api/dados só '
+        + 'para mostrar quem caiu no filtro. Mesmos parâmetros de período/filtro/busca.',
+      security: [{ bearerAuth: [] }],
+    },
+  }, async (req) => {
+    const qs = await resolverEmailsProdutoLoja(req.query, query);
+    return { itens: await ultimosEmails(qs) };
   });
 
   /* ═══════════════════════════════  GET /api/automacao  ═════════════════════════ */

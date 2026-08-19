@@ -3,9 +3,14 @@
  * completa — todos os cortes e séries históricas do §4. Usa o MESMO endpoint
  * GET /api/dados da Tela 1, só que consumindo mais chaves do JSON.
  *
- * Um clique numa barra/KPI clicável recorta PRATICAMENTE TODOS os cartões da
- * página — não só o que foi clicado (§4.1) — refazendo a consulta inteira
- * com o filtro aplicado.
+ * Dois tipos de clique clicável:
+ * - Nos KPIs do topo: recorta PRATICAMENTE TODOS os cartões da página —
+ *   não só o que foi clicado (§4.1) — refazendo a consulta inteira com o
+ *   filtro aplicado (ver aplicarFiltro/filtroAtivo).
+ * - Nas barras (motivos, categorias, sentimento, área, responsável,
+ *   pagamento, plataforma): abre um modal com a lista de e-mails que caem
+ *   naquele filtro (ver abrirModalEmails) — mais direto que recortar a
+ *   página inteira para "quem são esses e-mails".
  */
 import {
   $, api, debounce, tooltip, kpiCard, barraHorizontal, renderTabela, paginar,
@@ -46,6 +51,68 @@ function renderChipFiltro() {
 }
 
 $('dt-filtro-limpar').addEventListener('click', () => { filtroAtivo = null; renderChipFiltro(); carregarDados(); });
+
+/* ═══════════════════════  modal: e-mails filtrados  ═══════════════════════
+   Abre ao clicar numa barra (motivo, categoria, sentimento, área,
+   responsável, pagamento, plataforma) — pede só a LISTA de e-mails daquele
+   recorte (GET /api/emails, mesmo período/produto/loja do resto da tela),
+   sem pagar o custo dos ~15 agregados de /api/dados. */
+
+let emailsModalGeracao = 0;
+let emailsModalTodos = [];
+let emailsModalPagina = 1;
+const EM_POR_PAGINA = 15;
+
+function renderEmailsModal() {
+  const { pagina, totalPaginas, fatia } = paginar(emailsModalTodos, emailsModalPagina, EM_POR_PAGINA);
+  emailsModalPagina = pagina;
+  renderTabela($('dt-emails-corpo'), fatia, [
+    { render: (l) => (l.data_email ? dataHora(l.data_email) : '—'), classe: 'cel-mono' },
+    { render: (l) => celCliente(l.remetente_nome, l.remetente_email) },
+    { render: (l) => l.assunto ?? '—' },
+    { render: (l) => rotularCategoria(l.categoria) },
+    { render: (l) => chipSentimento(l.sentimento) },
+    { render: (l) => chipUrgencia(l.urgencia) },
+    { render: (l) => (l.erro_analise ? '⚠ falha na análise' : truncar(l.resumo ?? '', 90)) },
+  ], { vazio: 'Nenhum e-mail encontrado com este filtro.' });
+  montarPaginacao($('dt-emails-pag'), {
+    pagina, totalPaginas, total: emailsModalTodos.length, rotuloItem: 'e-mail',
+  }, (p) => { emailsModalPagina = p; renderEmailsModal(); });
+}
+
+function celulaCarregandoEmails(texto) {
+  const tr = document.createElement('tr');
+  const td = document.createElement('td');
+  td.colSpan = 7;
+  td.className = 'vazio-suave';
+  td.textContent = texto;
+  tr.append(td);
+  $('dt-emails-corpo').replaceChildren(tr);
+}
+
+async function abrirModalEmails(tipo, valor, rotulo) {
+  $('dt-emails-sub').textContent = `filtrando: ${rotulo}`;
+  celulaCarregandoEmails('carregando…');
+  $('dt-emails-pag').replaceChildren();
+  $('dt-emails-modal').showModal();
+
+  const meu = ++emailsModalGeracao;
+  const p = qsFiltroCE();
+  p.set(tipo, valor);
+  try {
+    const { ok, dados: resp } = await api(`/api/emails?${p}`);
+    if (meu !== emailsModalGeracao) return;
+    if (!ok) throw new Error(resp?.erro ?? resp?.detail ?? 'falha ao carregar');
+    emailsModalTodos = resp.itens ?? [];
+    emailsModalPagina = 1;
+    renderEmailsModal();
+  } catch (err) {
+    if (meu !== emailsModalGeracao) return;
+    celulaCarregandoEmails(`Não consegui carregar: ${err.message}`);
+  }
+}
+
+$('dt-emails-fechar').addEventListener('click', () => $('dt-emails-modal').close());
 
 /* ═══════════════════════════════  KPIs principais  ═══════════════════════ */
 
@@ -139,7 +206,7 @@ function renderTicketsCompacto() {
   });
 
   barraHorizontal($('dt-plataformas'), dados?.plataformas ?? [], 'plataforma_origem', {
-    rotular: rotularPlataforma, onClick: (v) => aplicarFiltro('plat', v, `plataforma ${rotularPlataforma(v)}`),
+    rotular: rotularPlataforma, onClick: (v) => abrirModalEmails('plat', v, `plataforma ${rotularPlataforma(v)}`),
     vazio: 'Nenhum e-mail de plataforma no período.',
   });
 }
@@ -153,15 +220,15 @@ const rotularSentimento = (v) => ({
 function renderBarrasSimples() {
   barraHorizontal($('dt-motivos'), dados?.motivos ?? [], 'motivo_devolucao', {
     rotular: rotularMotivo, vazio: 'Sem devoluções/trocas classificadas por motivo.',
-    onClick: (v) => aplicarFiltro('motivo', v, `motivo de devolução “${rotularMotivo(v)}”`),
+    onClick: (v) => abrirModalEmails('motivo', v, `motivo de devolução “${rotularMotivo(v)}”`),
   });
   barraHorizontal($('dt-categorias'), dados?.categorias ?? [], 'categoria', {
     rotular: rotularCategoria,
-    onClick: (v) => aplicarFiltro('cat', v, `categoria “${rotularCategoria(v)}”`),
+    onClick: (v) => abrirModalEmails('cat', v, `categoria “${rotularCategoria(v)}”`),
   });
   barraHorizontal($('dt-sentimentos'), dados?.sentimentos ?? [], 'sentimento', {
     rotular: rotularSentimento,
-    onClick: (v) => aplicarFiltro('sent', v, `sentimento “${rotularSentimento(v)}”`),
+    onClick: (v) => abrirModalEmails('sent', v, `sentimento “${rotularSentimento(v)}”`),
   });
 }
 
@@ -183,13 +250,13 @@ function renderEvolucao() {
 
 function renderEstudoDevolucoes() {
   barraHorizontal($('dt-areas'), dados?.areas ?? [], 'area_problema', {
-    rotular: rotularArea, onClick: (v) => aplicarFiltro('area', v, `área “${rotularArea(v)}”`),
+    rotular: rotularArea, onClick: (v) => abrirModalEmails('area', v, `área “${rotularArea(v)}”`),
   });
   barraHorizontal($('dt-responsaveis'), dados?.responsaveis ?? [], 'responsavel', {
-    rotular: rotularResponsavel, onClick: (v) => aplicarFiltro('resp', v, `responsável “${rotularResponsavel(v)}”`),
+    rotular: rotularResponsavel, onClick: (v) => abrirModalEmails('resp', v, `responsável “${rotularResponsavel(v)}”`),
   });
   barraHorizontal($('dt-pagamento'), dados?.pagamento ?? [], 'problema_pagamento', {
-    rotular: rotularPagamento, onClick: (v) => aplicarFiltro('pgto', v, `pagamento “${rotularPagamento(v)}”`),
+    rotular: rotularPagamento, onClick: (v) => abrirModalEmails('pgto', v, `pagamento “${rotularPagamento(v)}”`),
   });
 
   renderTabela($('dt-taxa-mensal'), dados?.taxa_mensal ?? [], [

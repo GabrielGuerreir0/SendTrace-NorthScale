@@ -956,6 +956,9 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
 .linha-botoes-admin .btn { padding: 8px 13px; font-size: 12px; }
 
 .janela--linha[open] { width: min(560px, calc(100vw - 32px)); }
+/* Modal de e-mails filtrados (Mais Detalhes) — tabela de 7 colunas não cabe
+   na largura padrão de .janela. */
+.janela--larga[open] { width: min(980px, calc(100vw - 32px)); }
 .janela--linha .editar-dupla { margin-bottom: 12px; }
 .janela--linha .campo--bloco { margin-bottom: 12px; }
 .janela--linha textarea {
