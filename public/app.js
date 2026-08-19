@@ -5,6 +5,7 @@ import { validarMensagem, medirSms } from './copy.js';
 import { desenharColunas, svgEl } from './charts.js';
 import { n, nc, relativo, dataHora, dia, hora, truncar, duracaoH } from './format.js';
 import { paraEsperaH, deEsperaH } from './tempo.js';
+import { renderFicha } from './emailComum.js';
 // A aba principal (Suporte IA) vive em módulo próprio; importá-lo também liga
 // os botões de aba — de TODAS as abas, régua e Central de E-mail IA incluídas
 // (ver suporte.js). Aqui só acoplamos o carregamento aos ciclos do painel.
@@ -1036,10 +1037,11 @@ function renderTabela({ pedidos, total }) {
   corpo.replaceChildren(...pedidos.map((p) => {
     const tr = document.createElement('tr');
 
-    // Duplo clique abre o que o chatbot de suporte registrou deste cliente.
-    // Clique simples continua livre para selecionar/copiar texto da linha.
-    tr.title = 'Duplo clique: atendimento do suporte';
-    tr.addEventListener('dblclick', () => abrirChatCliente(p));
+    // Clique na linha abre todos os detalhes deste disparo (pedido, etapa,
+    // erro completo etc.) + o histórico de atendimento do suporte.
+    tr.classList.add('sup-linha-clique');
+    tr.title = 'Clique para ver todos os detalhes deste disparo';
+    tr.addEventListener('click', () => abrirChatCliente(p));
 
     tr.append(celula(p.transacao_id, 'cel-mono'));
 
@@ -1780,6 +1782,24 @@ const avisoChat = (texto) =>
 async function abrirChatCliente(p) {
   $('chat-quem').textContent =
     [p.nome, p.email].filter(Boolean).join(' · ') || p.transacao_id;
+
+  const nomeEtapa = estado.snapshot?.etapas.find((e) => e.etapa === p.etapa)?.nome ?? '';
+  const meta = ROTULO_ESTADO[p.estado];
+  renderFicha($('chat-ficha'), [
+    { rotulo: 'Cliente', valor: p.nome || '—' },
+    { rotulo: 'E-mail', valor: p.email || '—' },
+    { rotulo: 'Telefone', valor: p.telefone || '—' },
+    { rotulo: 'Transação', valor: p.transacao_id || '—' },
+    { rotulo: 'Produto', valor: p.produto || '—' },
+    { rotulo: 'Plataforma', valor: p.plataforma || '—' },
+    { rotulo: 'Etapa', valor: nomeEtapa ? `${p.etapa} — ${nomeEtapa}` : String(p.etapa ?? '—') },
+    { rotulo: 'Estado', valor: meta?.label ?? p.status ?? '—' },
+    { rotulo: 'Tentativas', valor: String(p.tentativas ?? 0) },
+    { rotulo: 'Próximo disparo', valor: p.proximo_disparo ? `${relativo(p.proximo_disparo)} · ${dataHora(p.proximo_disparo)}` : '—' },
+    { rotulo: 'Criado em', valor: p.criado_em ? dataHora(p.criado_em) : '—' },
+    p.ultimo_erro && { rotulo: 'Último erro', valor: p.ultimo_erro, largo: true },
+  ]);
+
   const alvo = $('chat-historico');
   alvo.replaceChildren(avisoChat('Carregando…'));
   $('janela-chat').showModal();
