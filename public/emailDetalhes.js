@@ -73,7 +73,7 @@ const EM_POR_PAGINA = 15;
 function renderEmailsModal() {
   const { pagina, totalPaginas, fatia } = paginar(emailsModalTodos, emailsModalPagina, EM_POR_PAGINA);
   emailsModalPagina = pagina;
-  renderTabela($('dt-emails-corpo'), fatia, [
+  const colunas = [
     { render: (l) => (l.data_email ? dataHora(l.data_email) : '—'), classe: 'cel-mono' },
     { render: (l) => celCliente(l.remetente_nome, l.remetente_email) },
     { render: (l) => l.assunto ?? '—' },
@@ -81,7 +81,9 @@ function renderEmailsModal() {
     { render: (l) => chipSentimento(l.sentimento) },
     { render: (l) => chipUrgencia(l.urgencia) },
     { render: (l) => (l.erro_analise ? '⚠ falha na análise' : truncar(l.resumo ?? '', 90)) },
-  ], { vazio: 'Nenhum e-mail encontrado com este filtro.' });
+  ];
+  colunas.aoClicarLinha = abrirFichaEmail;
+  renderTabela($('dt-emails-corpo'), fatia, colunas, { vazio: 'Nenhum e-mail encontrado com este filtro.' });
   montarPaginacao($('dt-emails-pag'), {
     pagina, totalPaginas, total: emailsModalTodos.length, rotuloItem: 'e-mail',
   }, (p) => { emailsModalPagina = p; renderEmailsModal(); });
@@ -123,6 +125,31 @@ export async function abrirModalEmails(tipo, valor, rotulo, ficha = null) {
 }
 
 $('dt-emails-fechar').addEventListener('click', () => $('dt-emails-modal').close());
+
+/**
+ * Ficha de UM e-mail (linha da tabela "últimos e-mails" aqui, ou de qualquer
+ * modal de e-mails filtrados por motivo/categoria/sentimento/etc.) — os
+ * campos que a linha da tabela não tinha espaço para mostrar.
+ */
+function abrirFichaEmail(l) {
+  abrirFicha({
+    titulo: l.assunto || '(sem assunto)',
+    subtitulo: [l.remetente_nome, l.remetente_email].filter(Boolean).join(' · '),
+    campos: [
+      { rotulo: 'Quando', valor: l.data_email ? dataHora(l.data_email) : '—' },
+      { rotulo: 'Categoria', valor: rotularCategoria(l.categoria) },
+      { rotulo: 'Sentimento', valor: chipSentimento(l.sentimento) },
+      { rotulo: 'Urgência', valor: chipUrgencia(l.urgencia) },
+      { rotulo: 'Pede resposta', valor: l.pede_resposta ? 'Sim' : 'Não' },
+      { rotulo: 'Anexo', valor: l.tem_anexo ? 'Sim' : 'Não' },
+      { rotulo: 'Pedido', valor: l.numero_pedido || '—' },
+      { rotulo: 'Produto mencionado', valor: l.produto_mencionado || '—' },
+      l.motivo_devolucao && { rotulo: 'Motivo de devolução', valor: rotularMotivo(l.motivo_devolucao) },
+      { rotulo: 'Erro de análise', valor: l.erro_analise || 'nenhum' },
+      { rotulo: 'Resumo', valor: l.resumo || '—', largo: true },
+    ],
+  });
+}
 
 /**
  * Ficha de UM ticket (linha da tabela compacta aqui, ou da tabela dedicada em
@@ -503,23 +530,7 @@ const tabelaClientesRisco = criarTabelaPaginada({
 const tabelaUltimos = criarTabelaPaginada({
   corpoId: 'dt-ultimos', paginacaoId: 'dt-ultimos-pag', buscaId: 'dt-ultimos-busca',
   camposBusca: ['remetente_nome', 'remetente_email', 'assunto', 'resumo'], porPagina: 15, rotuloItem: 'e-mail',
-  aoClicarLinha: (l) => abrirFicha({
-    titulo: l.assunto || '(sem assunto)',
-    subtitulo: [l.remetente_nome, l.remetente_email].filter(Boolean).join(' · '),
-    campos: [
-      { rotulo: 'Quando', valor: l.data_email ? dataHora(l.data_email) : '—' },
-      { rotulo: 'Categoria', valor: rotularCategoria(l.categoria) },
-      { rotulo: 'Sentimento', valor: chipSentimento(l.sentimento) },
-      { rotulo: 'Urgência', valor: chipUrgencia(l.urgencia) },
-      { rotulo: 'Pede resposta', valor: l.pede_resposta ? 'Sim' : 'Não' },
-      { rotulo: 'Anexo', valor: l.tem_anexo ? 'Sim' : 'Não' },
-      { rotulo: 'Pedido', valor: l.numero_pedido || '—' },
-      { rotulo: 'Produto mencionado', valor: l.produto_mencionado || '—' },
-      l.motivo_devolucao && { rotulo: 'Motivo de devolução', valor: rotularMotivo(l.motivo_devolucao) },
-      { rotulo: 'Erro de análise', valor: l.erro_analise || 'nenhum' },
-      { rotulo: 'Resumo', valor: l.resumo || '—', largo: true },
-    ],
-  }),
+  aoClicarLinha: abrirFichaEmail,
   csvBotaoId: 'dt-ultimos-csv', csvArquivo: 'ultimos_emails.csv',
   csvColunas: [
     { cabecalho: 'data_email', valor: (l) => l.data_email ?? '' },
