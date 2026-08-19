@@ -328,12 +328,13 @@ function renderEstudoDevolucoes() {
 
 function criarTabelaPaginada({
   corpoId, paginacaoId, buscaId, colunas, porPagina = 12, camposBusca = [], rotuloItem = 'item', vazio = 'Nada encontrado.',
-  csvBotaoId = null, csvArquivo = 'dados.csv', csvColunas = null,
+  csvBotaoId = null, csvArquivo = 'dados.csv', csvColunas = null, aoClicarLinha = null,
 }) {
   let todas = [];
   let linhasFiltradas = [];
   let pagina = 1;
   let filtro = '';
+  if (aoClicarLinha) colunas.aoClicarLinha = aoClicarLinha;
 
   function aplicar() {
     let linhas = todas;
@@ -401,6 +402,14 @@ const tabelaReincidentes = criarTabelaPaginada({
     { render: (l) => truncar(l.produtos ?? '', 60) },
     { render: (l) => (l.ultimo ? new Date(l.ultimo).toLocaleDateString('pt-BR') : '—') },
   ],
+  aoClicarLinha: (l) => abrirModalEmails('email', l.remetente_email, `reincidente ${l.nome || l.remetente_email}`, [
+    { rotulo: 'Cliente', valor: l.nome || '—' },
+    { rotulo: 'E-mail', valor: l.remetente_email },
+    { rotulo: 'Devoluções/trocas', valor: n(l.devolucoes) },
+    { rotulo: 'Último contato', valor: l.ultimo ? dataHora(l.ultimo) : '—' },
+    { rotulo: 'Motivos', valor: l.motivos || '—', largo: true },
+    { rotulo: 'Produtos', valor: l.produtos || '—', largo: true },
+  ]),
   csvBotaoId: 'dt-reincidentes-csv', csvArquivo: 'reincidentes.csv',
   csvColunas: [
     { cabecalho: 'nome', valor: (l) => l.nome ?? '' },
@@ -425,6 +434,17 @@ const tabelaReclamantes = criarTabelaPaginada({
     { classe: 'num', render: (l) => n(l.emails) },
     { render: (l) => (l.ultimo_email ? new Date(l.ultimo_email).toLocaleDateString('pt-BR') : '—') },
   ],
+  aoClicarLinha: (l) => abrirModalEmails('email', l.remetente_email, `reclamante ${l.nome || l.remetente_email}`, [
+    { rotulo: 'Cliente', valor: l.nome || '—' },
+    { rotulo: 'E-mail', valor: l.remetente_email },
+    { rotulo: 'Situação do pedido', valor: chipSituacaoPedido(l.situacao) },
+    { rotulo: 'Pedido', valor: l.pedido || '—' },
+    { rotulo: 'Produto', valor: l.produto || '—' },
+    { rotulo: 'Plataforma', valor: rotularPlataforma(l.plataforma) },
+    { rotulo: 'E-mails trocados', valor: n(l.emails) },
+    { rotulo: 'Último e-mail', valor: l.ultimo_email ? dataHora(l.ultimo_email) : '—' },
+    { rotulo: 'Motivos', valor: l.motivos || '—', largo: true },
+  ]),
   csvBotaoId: 'dt-reclamantes-csv', csvArquivo: 'reclamantes.csv',
   csvColunas: [
     { cabecalho: 'situacao', valor: (l) => l.situacao },
@@ -465,6 +485,12 @@ const tabelaClientesRisco = criarTabelaPaginada({
     { classe: 'num', render: (l) => n(l.emails_negativos) },
     { render: (l) => (l.ultimo_contato ? dataHora(l.ultimo_contato) : '—') },
   ],
+  aoClicarLinha: (l) => abrirModalEmails('email', l.remetente_email, `cliente de risco ${l.nome || l.remetente_email}`, [
+    { rotulo: 'Cliente', valor: l.nome || '—' },
+    { rotulo: 'E-mail', valor: l.remetente_email },
+    { rotulo: 'E-mails negativos (30 dias)', valor: n(l.emails_negativos) },
+    { rotulo: 'Último contato', valor: l.ultimo_contato ? dataHora(l.ultimo_contato) : '—' },
+  ]),
   csvBotaoId: 'dt-clientes-risco-csv', csvArquivo: 'clientes_risco.csv',
   csvColunas: [
     { cabecalho: 'nome', valor: (l) => l.nome ?? '' },
