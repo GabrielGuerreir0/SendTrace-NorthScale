@@ -11,6 +11,7 @@
  */
 import { n, relativo, dataHora } from './format.js';
 import { aoTrocarAba } from './emailFiltro.js';
+import { abrirFicha } from './emailComum.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -399,6 +400,32 @@ async function carregarConversas() {
   }
 }
 
+/**
+ * Ficha de UMA conversa — todos os campos que a linha da tabela não tem
+ * espaço para mostrar (hoje só o resumo aparecia, e só no hover do mouse).
+ */
+function abrirDetalheConversa(c) {
+  abrirFicha({
+    titulo: c.topico_label || 'Conversa de suporte',
+    subtitulo: [c.transacao_id, c.email].filter(Boolean).join(' · ') || '—',
+    campos: [
+      { rotulo: 'Início', valor: c.inicio ? dataHora(c.inicio) : '—' },
+      { rotulo: 'Duração', valor: duracao(c.duracao_s) },
+      { rotulo: 'Desfecho', valor: c.resolvido === true ? '✓ resolvida' : c.resolvido === false ? '✕ escalada' : '—' },
+      { rotulo: 'Etapa da régua', valor: c.etapa_regua ?? '—' },
+      { rotulo: 'Avaliação (CSAT)', valor: c.csat ? `★ ${c.csat}` : '—' },
+      {
+        rotulo: 'Pedido',
+        valor: c.pedido_cancelado ? 'Cancelado na fila'
+          : c.reembolso_pedido ? 'Cliente pediu cancelamento/reembolso — retido' : 'Sem pedido de cancelamento',
+      },
+      c.reembolso_evitado && { rotulo: 'Reembolso evitado', valor: 'Sim' },
+      c.desfecho && { rotulo: 'Desfecho detalhado', valor: c.desfecho, largo: true },
+      { rotulo: 'Resumo da conversa', valor: c.resumo || '—', largo: true },
+    ],
+  });
+}
+
 function renderConversas({ total, conversas }) {
   const corpo = $('sup-conversas');
   if (!conversas.length) {
@@ -424,9 +451,9 @@ function renderConversas({ total, conversas }) {
 
   corpo.replaceChildren(...conversas.map((c) => {
     const tr = document.createElement('tr');
-    // O resumo inteiro do atendimento mora no hover — a tabela mostra o que
-    // se compara; o texto, quem quiser lê.
-    if (c.resumo) tr.title = c.resumo;
+    tr.className = 'sup-linha-clique';
+    tr.title = 'Clique para ver todos os detalhes desta conversa';
+    tr.addEventListener('click', () => abrirDetalheConversa(c));
 
     tr.append(celula(c.inicio ? dataHora(c.inicio) : '—'));
     tr.append(celula(c.transacao_id ?? c.email ?? '—'));
