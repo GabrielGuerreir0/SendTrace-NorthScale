@@ -343,7 +343,7 @@ export default async function rotasEmailIACentral(app) {
       summary: 'O dataset único das telas Tickets e Detalhes',
       description: 'Todos os cartões, barras e tabelas das duas telas saem daqui — os mesmos '
         + 'parâmetros de período/filtro/busca (dias OU data_de/data_ate, q, tq, cat, sent, urg, '
-        + 'pede, area, resp, pgto, plat, produto, loja), aplicados no servidor a cada consulta. '
+        + 'pede, area, resp, pgto, plat, motivo, produto, loja), aplicados no servidor a cada consulta. '
         + '`produto`/`loja` cruzam com o pedido do cliente (mv_emails_x_pedidos) — diferente de '
         + '`plat`, que olha só o e-mail em si. `dias` tem prioridade sobre `data_de`/`data_ate` '
         + 'se os dois vierem juntos.',

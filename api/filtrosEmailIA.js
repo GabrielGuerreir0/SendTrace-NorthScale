@@ -129,7 +129,7 @@ export function condicaoPeriodo(qs, coluna, condicoes, valores, inicio) {
 /**
  * Filtro sobre email_ia.emails: dias/data_de/data_ate, q (assunto/nome/
  * e-mail/resumo/produto/pedido via ILIKE), cat, sent, urg, pede, area, resp,
- * pgto, plat.
+ * pgto, plat, motivo.
  *
  * `inicio` é a posição do primeiro placeholder — cada rota decide onde o
  * filtro entra na lista de parâmetros da consulta que o usa.
@@ -172,6 +172,9 @@ export function filtroEmails(qs, inicio = 1, aliasEmail = 'emails') {
 
   const plat = listaValida(qs.plat, PLATAFORMAS);
   if (plat) { condicoes.push(`plataforma_origem = ANY($${i}::text[])`); valores.push(plat); i += 1; }
+
+  const motivo = listaValida(qs.motivo, MOTIVOS_DEVOLUCAO);
+  if (motivo) { condicoes.push(`motivo_devolucao = ANY($${i}::text[])`); valores.push(motivo); i += 1; }
 
   // Precisa do alias/nome de tabela da consulta que chamou filtroEmails: um
   // "remetente_email" sem prefixo aqui dentro cairia no email_ia.mv_emails_x_pedidos

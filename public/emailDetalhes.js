@@ -146,11 +146,22 @@ function renderTicketsCompacto() {
 
 /* ═══════════════════════  motivos / categorias / sentimentos  ═══════════════ */
 
+const rotularSentimento = (v) => ({
+  positivo: 'Positivo', neutro: 'Neutro', negativo: 'Negativo', muito_negativo: 'Muito negativo',
+}[v] ?? v);
+
 function renderBarrasSimples() {
-  barraHorizontal($('dt-motivos'), dados?.motivos ?? [], 'motivo_devolucao', { rotular: rotularMotivo, vazio: 'Sem devoluções/trocas classificadas por motivo.' });
-  barraHorizontal($('dt-categorias'), dados?.categorias ?? [], 'categoria', { rotular: rotularCategoria });
+  barraHorizontal($('dt-motivos'), dados?.motivos ?? [], 'motivo_devolucao', {
+    rotular: rotularMotivo, vazio: 'Sem devoluções/trocas classificadas por motivo.',
+    onClick: (v) => aplicarFiltro('motivo', v, `motivo de devolução “${rotularMotivo(v)}”`),
+  });
+  barraHorizontal($('dt-categorias'), dados?.categorias ?? [], 'categoria', {
+    rotular: rotularCategoria,
+    onClick: (v) => aplicarFiltro('cat', v, `categoria “${rotularCategoria(v)}”`),
+  });
   barraHorizontal($('dt-sentimentos'), dados?.sentimentos ?? [], 'sentimento', {
-    rotular: (v) => ({ positivo: 'Positivo', neutro: 'Neutro', negativo: 'Negativo', muito_negativo: 'Muito negativo' }[v] ?? v),
+    rotular: rotularSentimento,
+    onClick: (v) => aplicarFiltro('sent', v, `sentimento “${rotularSentimento(v)}”`),
   });
 }
 
