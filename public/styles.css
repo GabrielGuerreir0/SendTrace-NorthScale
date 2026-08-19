@@ -687,6 +687,20 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
 .cel-sub { display: block; font-size: 11px; color: var(--tinta-fraca); margin-top: 2px; }
 .cel-erro { color: var(--tinta-2); max-width: 260px; }
 
+/* Linha "nome + e-mail com botão de copiar" — ver celCliente/botaoCopiar em
+   emailComum.js, reaproveitada em toda a Central de E-mail IA. */
+.cel-email-linha { display: flex; align-items: center; gap: 3px; margin-top: 2px; }
+.cel-email-linha .cel-sub { margin-top: 0; }
+
+.btn-copiar {
+  appearance: none; border: none; background: transparent; cursor: pointer;
+  padding: 1px 5px; border-radius: 6px; font-size: 12px; line-height: 1.5;
+  color: var(--tinta-fraca); transition: background .14s, color .14s;
+  flex: 0 0 auto;
+}
+.btn-copiar:hover { background: var(--superficie-2); color: var(--tinta); }
+.btn-copiar--ok { color: var(--st-em-dia); }
+
 .selo-etapa {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 2px 8px 2px 6px; border-radius: 999px;
@@ -1527,6 +1541,7 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 .esc-card[draggable="true"] { cursor: grab; }
 .esc-card[data-arrastando="sim"] { opacity: .45; }
 .esc-card-nome { font-size: 12.5px; font-weight: 620; }
+.esc-card-email-linha { display: flex; align-items: center; gap: 3px; }
 .esc-card-email { font-size: 11px; color: var(--tinta-fraca); word-break: break-all; }
 .esc-card-motivo {
   font-size: 11.5px; line-height: 1.4; color: var(--tinta);

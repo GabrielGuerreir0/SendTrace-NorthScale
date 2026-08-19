@@ -9,7 +9,7 @@
  */
 import {
   $, api, debounce, tooltip, kpiCard, barraHorizontal, renderTabela, paginar,
-  montarPaginacao, baixarCsv, chipTicket, chipEtapaAutomacao, rotularPlataforma,
+  montarPaginacao, baixarCsv, chipTicket, chipEtapaAutomacao, rotularPlataforma, celCliente,
 } from './emailComum.js';
 import { n, duracaoH } from './format.js';
 import { desenharColunas } from './charts.js';
@@ -269,13 +269,7 @@ function renderTabelaTickets() {
     if (t.resumo_conversa) tr.classList.add('sup-linha-clique');
 
     const tdCliente = document.createElement('td');
-    const nome = document.createElement('span');
-    nome.className = 'cel-forte';
-    nome.textContent = t.nome || t.remetente_email;
-    const email = document.createElement('span');
-    email.className = 'cel-sub';
-    email.textContent = t.remetente_email;
-    tdCliente.append(nome, email);
+    tdCliente.append(celCliente(t.nome, t.remetente_email));
     if (t.resumo_conversa) {
       tdCliente.title = 'Clique para ver o resumo da conversa';
       tr.addEventListener('click', () => {

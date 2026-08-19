@@ -8,7 +8,7 @@
  * o Chat com IA, fica fora de ABAS_COM_FILTRO em emailFiltro.js.
  */
 import {
-  $, api, debounce, kpiCard, paginar, montarPaginacao,
+  $, api, debounce, kpiCard, paginar, montarPaginacao, botaoCopiar,
 } from './emailComum.js';
 import { n, relativo, dataHora } from './format.js';
 
@@ -100,10 +100,17 @@ function criarCard(item) {
   const nome = document.createElement('div');
   nome.className = 'esc-card-nome';
   nome.textContent = item.nome || item.remetente_email || '(sem nome)';
-  const email = document.createElement('div');
-  email.className = 'esc-card-email';
-  email.textContent = item.remetente_email;
-  card.append(nome, email);
+  card.append(nome);
+
+  if (item.remetente_email) {
+    const linhaEmail = document.createElement('div');
+    linhaEmail.className = 'esc-card-email-linha';
+    const email = document.createElement('span');
+    email.className = 'esc-card-email';
+    email.textContent = item.remetente_email;
+    linhaEmail.append(email, botaoCopiar(item.remetente_email, { titulo: `Copiar ${item.remetente_email}` }));
+    card.append(linhaEmail);
+  }
 
   if (item.motivo_escalonamento) {
     const motivo = document.createElement('div');

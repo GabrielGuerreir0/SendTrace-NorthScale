@@ -11,6 +11,7 @@ import {
   $, api, debounce, tooltip, kpiCard, barraHorizontal, renderTabela, paginar,
   montarPaginacao, baixarCsv, chipTicket, chipSentimento, chipUrgencia, chipSituacaoPedido,
   rotularCategoria, rotularMotivo, rotularArea, rotularResponsavel, rotularPagamento, rotularPlataforma,
+  celCliente,
 } from './emailComum.js';
 import { n, dataHora, truncar } from './format.js';
 import { desenharColunas } from './charts.js';
@@ -111,7 +112,7 @@ function renderTicketsCompacto() {
 
   renderTabela($('dt-tickets-corpo'), fatia, [
     { render: (t) => chipTicket(t.status) },
-    { render: (t) => t.nome || t.remetente_email },
+    { render: (t) => celCliente(t.nome, t.remetente_email) },
     { classe: 'num', render: (t) => n(t.qtd_emails) },
     { classe: 'num', render: (t) => n(t.pedidos_unicos) },
     { render: (t) => (t.ultimo_email_em ? new Date(t.ultimo_email_em).toLocaleDateString('pt-BR') : '—') },
@@ -278,7 +279,7 @@ const tabelaReincidentes = criarTabelaPaginada({
   corpoId: 'dt-reincidentes', paginacaoId: 'dt-reincidentes-pag', buscaId: 'dt-reincidentes-busca',
   camposBusca: ['nome', 'remetente_email'], porPagina: 10, rotuloItem: 'cliente',
   colunas: [
-    { render: (l) => l.nome || l.remetente_email, classe: 'cel-forte' },
+    { render: (l) => celCliente(l.nome, l.remetente_email) },
     { classe: 'num', render: (l) => n(l.devolucoes) },
     { render: (l) => truncar(l.motivos ?? '', 60) },
     { render: (l) => truncar(l.produtos ?? '', 60) },
@@ -300,7 +301,7 @@ const tabelaReclamantes = criarTabelaPaginada({
   camposBusca: ['nome', 'remetente_email', 'pedido'], porPagina: 12, rotuloItem: 'cliente',
   colunas: [
     { render: (l) => chipSituacaoPedido(l.situacao) },
-    { render: (l) => l.nome || l.remetente_email, classe: 'cel-forte' },
+    { render: (l) => celCliente(l.nome, l.remetente_email) },
     { render: (l) => l.pedido ?? '—', classe: 'cel-mono' },
     { render: (l) => l.produto ?? '—' },
     { render: (l) => rotularPlataforma(l.plataforma) },
@@ -344,7 +345,7 @@ const tabelaClientesRisco = criarTabelaPaginada({
   corpoId: 'dt-clientes-risco', paginacaoId: 'dt-clientes-risco-pag', buscaId: 'dt-clientes-risco-busca',
   camposBusca: ['nome', 'remetente_email'], porPagina: 10, rotuloItem: 'cliente',
   colunas: [
-    { render: (l) => l.nome || l.remetente_email, classe: 'cel-forte' },
+    { render: (l) => celCliente(l.nome, l.remetente_email) },
     { classe: 'num', render: (l) => n(l.emails_negativos) },
     { render: (l) => (l.ultimo_contato ? dataHora(l.ultimo_contato) : '—') },
   ],
@@ -373,7 +374,7 @@ const tabelaUltimos = criarTabelaPaginada({
   ],
   colunas: [
     { render: (l) => (l.data_email ? dataHora(l.data_email) : '—'), classe: 'cel-mono' },
-    { render: (l) => l.remetente_nome || l.remetente_email, classe: 'cel-forte' },
+    { render: (l) => celCliente(l.remetente_nome, l.remetente_email) },
     {
       render: (l) => {
         const div = document.createElement('div');
@@ -432,7 +433,7 @@ function renderPendentes() {
   const linhas = dados?.pendentes ?? [];
   renderTabela($('dt-pendentes'), linhas, [
     { render: (l) => (l.data_email ? dataHora(l.data_email) : '—'), classe: 'cel-mono' },
-    { render: (l) => l.remetente_nome || l.remetente_email, classe: 'cel-forte' },
+    { render: (l) => celCliente(l.remetente_nome, l.remetente_email) },
     { render: (l) => l.assunto ?? '—' },
     { render: (l) => rotularCategoria(l.categoria) },
     { render: (l) => chipUrgencia(l.urgencia) },

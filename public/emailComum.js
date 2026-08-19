@@ -135,6 +135,54 @@ export const chipEtapaAutomacao = (v) => chip(`auto-${v}`, ROT_ETAPA_AUTOMACAO[v
 const ROT_SITUACAO_PEDIDO = { nao_cancelado: 'Não cancelado', ja_cancelado: 'Já cancelado', sem_pedido_vinculado: 'Sem pedido vinculado' };
 export const chipSituacaoPedido = (v) => chip(`sit-${v}`, ROT_SITUACAO_PEDIDO[v] ?? v ?? '—');
 
+/* ══════════════════════════  copiar e-mail  ═══════════════════════════════
+   Um botão pequeno reaproveitado em toda a Central de E-mail IA (tickets,
+   detalhes, suporte escalado) — sempre que um e-mail de cliente aparece na
+   tela, este botão fica do lado. `stopPropagation` porque várias dessas
+   linhas/cartões já têm o próprio clique (expandir resumo, arrastar) — clicar
+   em copiar não pode disparar os dois. */
+
+export function botaoCopiar(valor, { titulo = 'Copiar e-mail' } = {}) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'btn-copiar';
+  b.title = titulo;
+  b.setAttribute('aria-label', titulo);
+  b.textContent = '⧉';
+  b.addEventListener('click', async (ev) => {
+    ev.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(valor);
+    } catch {
+      window.prompt('Copie manualmente:', valor);
+      return;
+    }
+    b.textContent = '✓';
+    b.classList.add('btn-copiar--ok');
+    setTimeout(() => { b.textContent = '⧉'; b.classList.remove('btn-copiar--ok'); }, 1200);
+  });
+  return b;
+}
+
+/** Nome (ou e-mail, se não houver nome) em negrito + linha do e-mail com o botão de copiar. */
+export function celCliente(nome, email) {
+  const div = document.createElement('div');
+  const nomeEl = document.createElement('span');
+  nomeEl.className = 'cel-forte';
+  nomeEl.textContent = nome || email || '—';
+  div.append(nomeEl);
+  if (email) {
+    const linha = document.createElement('div');
+    linha.className = 'cel-email-linha';
+    const sub = document.createElement('span');
+    sub.className = 'cel-sub';
+    sub.textContent = email;
+    linha.append(sub, botaoCopiar(email, { titulo: `Copiar ${email}` }));
+    div.append(linha);
+  }
+  return div;
+}
+
 /* ══════════════════════════════════  KPI  ══════════════════════════════════
    Mesmo desenho do card de Suporte IA (kpi/kpi-topo/kpi-valor/kpi-nota),
    generalizado para as duas telas novas que também precisam de KPIs clicáveis. */
