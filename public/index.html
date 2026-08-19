@@ -1272,6 +1272,22 @@
   </div>
 </dialog>
 
+<!-- ── modal genérico de ficha: registro simples, sem lista vinculada
+     (conversa de suporte, e-mail de "últimos") — ver abrirFicha em
+     emailComum.js. Único no documento, reaproveitado por qualquer aba. ── -->
+<dialog class="janela" id="modal-ficha" aria-labelledby="mf-titulo">
+  <header class="janela-cabeca">
+    <div>
+      <h2 id="mf-titulo">Detalhes</h2>
+      <p class="cartao-sub" id="mf-subtitulo"></p>
+    </div>
+    <button class="btn btn-icone" id="mf-fechar" type="button" aria-label="Fechar">✕</button>
+  </header>
+  <div class="janela-corpo">
+    <div class="mf-grid" id="mf-campos"></div>
+  </div>
+</dialog>
+
 <!-- ═══════════════════════  Central de E-mail IA — Tela 3: Chat  ═══════════════
      Estilo "ChatGPT": sem cartão envolvendo tudo — o topo é uma faixa fina,
      as mensagens flutuam direto no fundo da página e o compositor é uma

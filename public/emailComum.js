@@ -249,6 +249,46 @@ export function barraHorizontal(container, itens, campo, {
   container.append(ul);
 }
 
+/* ══════════════════════════  ficha de detalhe (linha → modal)  ═════════════
+   Reaproveitada por toda tela que tem "linha representa um registro"
+   (lead da régua, ticket, reincidente, reclamante, cliente de risco,
+   conversa de suporte) — em vez de espremer tudo numa linha só, o clique
+   abre esta grade de campo:valor com o registro inteiro. */
+
+export function renderFicha(container, campos) {
+  container.replaceChildren(...campos.filter(Boolean).map(({ rotulo, valor, largo = false }) => {
+    const div = document.createElement('div');
+    div.className = largo ? 'mf-campo mf-campo--largo' : 'mf-campo';
+    const dt = document.createElement('span');
+    dt.className = 'mf-campo-rotulo';
+    dt.textContent = rotulo;
+    const dd = document.createElement('div');
+    dd.className = 'mf-campo-valor';
+    if (valor instanceof Node) dd.append(valor);
+    else dd.textContent = (valor === null || valor === undefined || valor === '') ? '—' : String(valor);
+    div.append(dt, dd);
+    return div;
+  }));
+}
+
+/**
+ * Modal genérico de ficha (#modal-ficha, único no documento — reaproveitado
+ * por qualquer aba, já que todas as abas/diálogos convivem no mesmo HTML).
+ * Uso: registro simples, sem lista vinculada (ex.: uma conversa de suporte,
+ * um e-mail de "últimos"). Quando o registro tem uma LISTA vinculada (ex.:
+ * todos os e-mails de um cliente), as telas de e-mail IA reaproveitam o
+ * modal #dt-emails-modal (ver abrirModalEmails em emailDetalhes.js), que já
+ * resolve paginação — este aqui é só ficha, sem tabela.
+ */
+export function abrirFicha({ titulo, subtitulo = '', campos = [] }) {
+  $('mf-titulo').textContent = titulo;
+  $('mf-subtitulo').textContent = subtitulo;
+  renderFicha($('mf-campos'), campos);
+  $('modal-ficha').showModal();
+}
+
+$('mf-fechar')?.addEventListener('click', () => $('modal-ficha').close());
+
 /* ═══════════════════════════════  tabela genérica  ═════════════════════════ */
 
 export function renderTabela(corpoEl, linhas, colunas, { vazio = 'Nada encontrado.' } = {}) {

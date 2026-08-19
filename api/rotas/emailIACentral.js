@@ -422,9 +422,12 @@ export default async function rotasEmailIACentral(app) {
       tags: ['Central de E-mail IA'],
       summary: 'Só a lista de e-mails — mesmos filtros de /api/dados, sem os ~15 agregados',
       description: 'Usada pelo modal "ver e-mails" que abre ao clicar num filtro em Mais '
-        + 'Detalhes (motivo, categoria, sentimento, área, responsável, pagamento, plataforma): '
-        + 'pedir só a lista é bem mais leve que recarregar o dataset inteiro de /api/dados só '
-        + 'para mostrar quem caiu no filtro. Mesmos parâmetros de período/filtro/busca.',
+        + 'Detalhes (motivo, categoria, sentimento, área, responsável, pagamento, plataforma) ou '
+        + 'numa linha (ticket, reincidente, reclamante, cliente de risco) — neste caso com '
+        + '`email` (recorte exato, diferente do `q` por substring) para trazer o histórico '
+        + 'completo daquele cliente. Pedir só a lista é bem mais leve que recarregar o dataset '
+        + 'inteiro de /api/dados só para mostrar quem caiu no filtro. Mesmos parâmetros de '
+        + 'período/filtro/busca.',
       security: [{ bearerAuth: [] }],
     },
   }, async (req) => {

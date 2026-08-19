@@ -146,6 +146,17 @@ export function filtroEmails(qs, inicio = 1, aliasEmail = 'emails') {
     i += 1;
   }
 
+  // Recorte EXATO por e-mail (diferente do `q` acima, que é ILIKE por
+  // substring em vários campos) — usado pelo modal "ver e-mails deste
+  // cliente" (ticket, reincidente, reclamante, cliente de risco): precisa do
+  // histórico completo de UM remetente, não de quem casa parcialmente com o
+  // texto digitado.
+  if (qs.email) {
+    condicoes.push(`lower(${aliasEmail}.remetente_email) = lower($${i})`);
+    valores.push(String(qs.email));
+    i += 1;
+  }
+
   const cat = listaValida(qs.cat, CATEGORIAS);
   if (cat) { condicoes.push(`categoria = ANY($${i}::text[])`); valores.push(cat); i += 1; }
 
