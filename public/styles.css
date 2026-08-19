@@ -701,6 +701,14 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
 .btn-copiar:hover { background: var(--superficie-2); color: var(--tinta); }
 .btn-copiar--ok { color: var(--st-em-dia); }
 
+/* Realce temporário da linha de ticket ao chegar via "abrir no atendimento"
+   do kanban de Suporte Escalado (ver abrirNaTabela em emailTickets.js). */
+.tk-linha-destaque { animation: destaque-linha 2.4s ease-out; }
+@keyframes destaque-linha {
+  0%   { background: color-mix(in srgb, var(--eixo) 28%, transparent); }
+  100% { background: transparent; }
+}
+
 .selo-etapa {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 2px 8px 2px 6px; border-radius: 999px;

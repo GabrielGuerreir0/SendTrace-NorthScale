@@ -11,6 +11,7 @@ import {
   $, api, debounce, kpiCard, paginar, montarPaginacao, botaoCopiar,
 } from './emailComum.js';
 import { n, relativo, dataHora } from './format.js';
+import { abrirNaTabela } from './emailTickets.js';
 
 /* ═══════════════════════════════  estado  ═══════════════════════════════ */
 
@@ -159,6 +160,17 @@ function criarCard(item) {
     moverStatus(item.id, sel.value);
   });
 
+  const btnAbrir = document.createElement('button');
+  btnAbrir.className = 'btn btn-icone';
+  btnAbrir.type = 'button';
+  btnAbrir.title = 'Abrir este cliente em Tickets de atendimento';
+  btnAbrir.textContent = '↗';
+  btnAbrir.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    $('aba-btn-ticketsia').click();
+    abrirNaTabela(item.remetente_email);
+  });
+
   const btnReativar = document.createElement('button');
   btnReativar.className = 'btn btn-icone';
   btnReativar.type = 'button';
@@ -169,7 +181,7 @@ function criarCard(item) {
     reativar(item.id, item.nome || item.remetente_email);
   });
 
-  acoesEl.append(sel, btnReativar);
+  acoesEl.append(sel, btnAbrir, btnReativar);
   rodape.append(quando, acoesEl);
   card.append(rodape);
 

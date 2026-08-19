@@ -266,6 +266,7 @@ function renderTabelaTickets() {
 
   for (const t of fatia) {
     const tr = document.createElement('tr');
+    tr.dataset.email = t.remetente_email;
     if (t.resumo_conversa) tr.classList.add('sup-linha-clique');
 
     const tdCliente = document.createElement('td');
@@ -364,6 +365,26 @@ export async function carregarDados() {
     if (meu !== geracao) return;
     $('tk-automacao-status').textContent = `Não consegui carregar os dados: ${err.message}`;
   }
+}
+
+/**
+ * Ponto de entrada para "ir direto pro atendimento deste cliente" — chamado
+ * pelo kanban de Suporte Escalado (ver emailSuporteEscalado.js). Busca só
+ * este e-mail (sobrescrevendo qualquer filtro de status), recarrega e rola
+ * até a linha, destacando-a por alguns segundos.
+ */
+export async function abrirNaTabela(email) {
+  busca = email;
+  $('tk-busca').value = email;
+  filtroStatus = null;
+  $('tk-tabela-status').value = '';
+  pagina = 1;
+  await carregarDados();
+  const linha = $('tk-tabela-corpo').querySelector(`tr[data-email="${CSS.escape(email)}"]`);
+  if (!linha) return;
+  linha.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  linha.classList.add('tk-linha-destaque');
+  setTimeout(() => linha.classList.remove('tk-linha-destaque'), 2400);
 }
 
 aoMudarFiltroCE(() => { pagina = 1; carregarDados(); });
