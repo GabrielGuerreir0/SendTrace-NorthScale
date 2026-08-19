@@ -71,27 +71,27 @@ async function moverStatus(id, status) {
  * painel, é o servidor buscando pasta+UID ao vivo via IMAP (ver
  * /api/emails/:id/webmail em emailIACentral.js) e devolvendo a URL exata.
  *
- * A aba é aberta ANTES do fetch (não depois) porque a maioria dos navegadores
- * só permite `window.open` disparado direto por um clique — chamado depois de
- * um `await`, cairia no bloqueador de pop-up. A aba fica em branco por um
- * instante e só troca de endereço quando a URL chega.
+ * SÓ abre a aba depois que a URL chega. A versão anterior pré-abria uma aba
+ * em branco para driblar bloqueador de pop-up e trocava o endereço dela
+ * depois — mas se a busca no IMAP demorasse ou falhasse, sobrava uma aba
+ * `about:blank` travada (alguns navegadores ignoram `.close()` numa aba que
+ * o usuário já olhou). Preferível arriscar o pop-up ser bloqueado (o
+ * `window.open` ainda roda perto o bastante do clique pra maioria dos
+ * navegadores aceitar) do que garantir uma aba fantasma no erro.
  */
 async function abrirNoWebmail(emailId, botao) {
-  const aba = window.open('', '_blank', 'noopener,noreferrer');
   const original = botao.textContent;
   botao.disabled = true;
   botao.textContent = '…';
   try {
     const { ok, dados: resp } = await api(`/api/emails/${emailId}/webmail`);
     if (!ok || !resp?.url) {
-      aba?.close();
       window.alert(resp?.erro ?? resp?.detail ?? 'Não consegui achar este e-mail na caixa.');
       return;
     }
-    if (aba) aba.location.href = resp.url;
-    else window.open(resp.url, '_blank', 'noopener,noreferrer');
+    const aba = window.open(resp.url, '_blank', 'noopener,noreferrer');
+    if (!aba) window.alert(`Seu navegador bloqueou a aba. Abra manualmente:\n${resp.url}`);
   } catch {
-    aba?.close();
     window.alert('Não consegui achar este e-mail na caixa.');
   } finally {
     botao.disabled = false;

@@ -1563,16 +1563,19 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 }
 .esc-card[data-expandido="sim"] .esc-card-resumo { -webkit-line-clamp: unset; }
 .esc-card-rodape {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  display: flex; flex-direction: column; gap: 8px;
   margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--borda);
 }
-.esc-card-quando { font-size: 10.5px; color: var(--tinta-fraca); white-space: nowrap; }
-.esc-card-acoes { display: flex; align-items: center; gap: 6px; }
+.esc-card-quando { font-size: 10.5px; color: var(--tinta-fraca); }
+/* 4 controles (select + 3 botões-ícone) não cabem numa linha só num cartão de
+   280px — por isso viraram linha própria (acima) e podem quebrar (abaixo). */
+.esc-card-acoes { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .esc-card-acoes select {
   font: 500 11px/1.3 inherit; color: var(--tinta-2); padding: 4px 6px;
   background: var(--superficie); border: 1px solid var(--borda); border-radius: 7px;
-  max-width: 128px;
+  flex: 1 1 96px; min-width: 0;
 }
+.esc-card-acoes .btn-icone { flex: 0 0 auto; padding: 5px 8px; font-size: 12px; }
 
 /* ═══════════════════════════════  chat com IA  ═════════════════════════════
    Deliberadamente SEM .cartao envolvendo a tela inteira — o visual aqui é o
