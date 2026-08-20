@@ -190,6 +190,16 @@
       </svg>
       <span class="menu-rotulo">Suporte Escalado</span>
     </button>
+
+    <button class="menu-item" id="aba-btn-relatorioia" type="button"
+            aria-selected="false" title="Relatório de Métricas">
+      <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
+           stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="14" height="14" rx="1.5"/>
+        <path d="M6.5 13.5v-4M10 13.5v-7M13.5 13.5v-2.5"/>
+      </svg>
+      <span class="menu-rotulo">Relatório de Métricas</span>
+    </button>
   </nav>
 </aside>
 
@@ -1387,6 +1397,116 @@
   <section class="kpis kpis--suporte" id="esc-kpis"></section>
 
   <div class="esc-board" id="esc-board"></div>
+</main>
+
+<!-- ═══════════════════  Central de E-mail IA — Tela 6: Relatório de Métricas  ═══════════════ -->
+<main class="conteudo" id="aba-relatorioia" hidden>
+
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Relatório de Métricas</h2>
+        <p class="cartao-sub">
+          Chat com IA, e-mail, abertura de e-mail e reembolsos por dias após a compra — tudo num
+          só lugar. NPS e taxa de devolução física ficam de fora por enquanto: nenhuma das duas
+          tem fonte de dado pronta hoje.
+        </p>
+      </div>
+      <div class="tk-filtros">
+        <label class="campo">
+          <span>Período</span>
+          <select id="rel-dias">
+            <option value="7">7 dias</option>
+            <option value="30" selected>30 dias</option>
+            <option value="60">60 dias</option>
+            <option value="90">90 dias</option>
+          </select>
+        </label>
+        <button class="btn btn-forte" id="rel-baixar-pdf" type="button">Baixar PDF</button>
+      </div>
+    </header>
+    <p class="cartao-sub" id="rel-pdf-status" hidden></p>
+  </section>
+
+  <section class="kpis kpis--suporte" id="rel-kpis"></section>
+
+  <div class="sup-grade">
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Contatos por dia — Chat IA</h2>
+          <p class="cartao-sub">Conversas iniciadas por dia, no período escolhido acima.</p>
+        </div>
+      </header>
+      <div class="grafico" id="rel-graf-contatos"></div>
+    </section>
+
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Abertura por etapa da régua</h2>
+          <p class="cartao-sub">Acumulado desde que o pixel de abertura entrou no ar (20/08/2026) — ainda pouco dado.</p>
+        </div>
+      </header>
+      <ol class="sup-ranking" id="rel-abertura-regua"><li class="vazio-suave">carregando…</li></ol>
+    </section>
+  </div>
+
+  <div class="sup-grade">
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div><h2>Principais motivos de contato — Chat IA</h2></div>
+      </header>
+      <ol class="sup-ranking" id="rel-motivos-chat"><li class="vazio-suave">carregando…</li></ol>
+    </section>
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div><h2>Onde a jornada gera contato</h2></div>
+      </header>
+      <ol class="sup-ranking" id="rel-jornada"><li class="vazio-suave">carregando…</li></ol>
+    </section>
+  </div>
+
+  <div class="sup-grade">
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div><h2>Reembolsos por dias após a compra — sinalizados por e-mail</h2></div>
+      </header>
+      <div class="grafico" id="rel-graf-reembolso-email"></div>
+    </section>
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div><h2>Reembolsos por dias após a compra — pedidos no chat</h2></div>
+      </header>
+      <div class="grafico" id="rel-graf-reembolso-chat"></div>
+    </section>
+  </div>
+
+  <div class="sup-grade">
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div><h2>Motivos de contato — E-mail</h2></div>
+      </header>
+      <ol class="sup-ranking" id="rel-motivos-email"><li class="vazio-suave">carregando…</li></ol>
+    </section>
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div><h2>Motivos de reembolso — E-mail</h2></div>
+      </header>
+      <ol class="sup-ranking" id="rel-motivos-reembolso"><li class="vazio-suave">carregando…</li></ol>
+    </section>
+  </div>
+
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Fotos analisadas nos anexos</h2>
+        <p class="cartao-sub">Acumulado — o que a IA reconheceu nas imagens recebidas por e-mail.</p>
+      </div>
+    </header>
+    <ol class="sup-ranking" id="rel-fotos"><li class="vazio-suave">carregando…</li></ol>
+  </section>
+
 </main>
 
 <div class="tooltip" id="tooltip" role="status" aria-live="polite" hidden></div>
