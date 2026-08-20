@@ -20,6 +20,18 @@ import { query } from '../../server/db.js';
 
 /* ═══════════════════════════════  SQL  ══════════════════════════════════ */
 
+/**
+ * Quando o pixel de abertura entrou no ar (20/08/2026 ~08h30, 10 min antes
+ * da primeira abertura real registrada nas duas tabelas). Sem isto, a taxa
+ * de abertura por etapa comparava aberturas de HOJE com "enviados" que
+ * incluíam anos de disparos antigos — e-mails que nunca tiveram pixel
+ * nenhum, porque foram mandados antes de o código existir. O denominador
+ * ficava artificialmente enorme e a taxa, artificialmente (e
+ * permanentemente) pequena. Achado pelo usuário 20/08/2026: "os dados devem
+ * ser comparados a partir do momento que iniciou as novas implementações".
+ */
+const PIXEL_ABERTURA_DESDE = '2026-08-20 08:30:00-03';
+
 /** Bucket de dias desde a compra: 0, 1, 2–5, 6–10 … 26–30, >30 (pedido do usuário). */
 function bucketDias(expr) {
   return `CASE
@@ -72,27 +84,39 @@ async function coletarMetricas(dias) {
       WHERE coalesce(a.iniciado_em, a.criado_em) >= now() - ($1::int || ' days')::interval
       GROUP BY coalesce(e.nome, 'Fora da régua') ORDER BY total DESC`, p),
 
-    // Acumulado (não filtrado pelo período): etapa_atual é um PONTEIRO de
-    // estado, não um evento com data — "enviados_aprox" conta quem já
-    // passou daquela etapa em qualquer momento. abertos idem, sem filtro de
-    // período, para os dois lados da fração ficarem comparáveis.
+    // "enviados_aprox" só conta disparos CRIADOS depois do pixel entrar no
+    // ar — etapa_atual é um ponteiro de estado sem data própria, então não
+    // dá pra saber quando cada etapa foi mandada de verdade; usar criado_em
+    // do pedido é a aproximação mais simples que não mistura pedido velho
+    // (nunca teve pixel) com pedido novo. "abertos" segue o mesmo recorte
+    // (join com disparos_pos_venda) pra numerador e denominador falarem da
+    // MESMA população — sem isso um disparo antigo que abrisse por acaso
+    // contaria no numerador sem nunca poder contar no denominador.
     query(`
       SELECT e.etapa, e.nome,
-        (SELECT count(*)::int FROM disparos_pos_venda d WHERE d.etapa_atual > e.etapa) AS enviados_aprox,
-        (SELECT count(DISTINCT ab.disparo_id)::int FROM aberturas_disparo ab WHERE ab.etapa = e.etapa) AS abertos
+        (SELECT count(*)::int FROM disparos_pos_venda d
+           WHERE d.etapa_atual > e.etapa AND d.criado_em >= $1::timestamptz) AS enviados_aprox,
+        (SELECT count(DISTINCT ab.disparo_id)::int FROM aberturas_disparo ab
+           JOIN disparos_pos_venda d2 ON d2.id = ab.disparo_id
+           WHERE ab.etapa = e.etapa AND d2.criado_em >= $1::timestamptz) AS abertos
       FROM etapas_regua e
       WHERE e.etapa BETWEEN 0 AND 5
-      ORDER BY e.etapa`),
+      ORDER BY e.etapa`, [PIXEL_ABERTURA_DESDE]),
 
+    // Aqui não precisa aproximar: resposta_enviada_em É o instante do envio
+    // de verdade (não um ponteiro de estado), então o corte pelo cutover é
+    // exato — GREATEST com o início do período escolhido, o que for mais
+    // recente.
     query(`
       SELECT
         (SELECT count(*)::int FROM email_ia.emails
            WHERE resposta_enviada_em IS NOT NULL
-             AND resposta_enviada_em >= now() - ($1::int || ' days')::interval) AS enviados,
+             AND resposta_enviada_em >= GREATEST(now() - ($1::int || ' days')::interval, $2::timestamptz)) AS enviados,
         (SELECT count(DISTINCT ab.email_id)::int FROM email_ia.aberturas_email ab
            JOIN email_ia.emails e2 ON e2.id = ab.email_id
            WHERE e2.resposta_enviada_em IS NOT NULL
-             AND e2.resposta_enviada_em >= now() - ($1::int || ' days')::interval) AS abertos`, p),
+             AND e2.resposta_enviada_em >= GREATEST(now() - ($1::int || ' days')::interval, $2::timestamptz)) AS abertos`,
+    [dias, PIXEL_ABERTURA_DESDE]),
 
     query(`
       SELECT bucket, count(*)::int AS total FROM (
@@ -449,7 +473,7 @@ function montarPdf(m) {
   barrasHorizontais(doc, m.chat.jornada, { campoRotulo: 'nome', cor: COR.TEAL });
 
   secaoTitulo(doc, 'Taxa de abertura de e-mail', COR.VERDE);
-  subtitulo(doc, 'Régua de pós-venda, por etapa (acumulado desde que o pixel entrou no ar)');
+  subtitulo(doc, 'Régua de pós-venda, por etapa (só pedidos criados depois que o pixel entrou no ar)');
   barrasPercentual(
     doc,
     m.abertura.regua_por_etapa.map((r) => ({
