@@ -35,6 +35,7 @@ import rotasCatalogo from './rotas/catalogo.js';
 import rotasAtendimentos from './rotas/atendimentos.js';
 import rotasEmailIA from './rotas/emailIA.js';
 import rotasEmailIACentral from './rotas/emailIACentral.js';
+import rotasPixel from './rotas/pixel.js';
 
 const PORTA = Number(process.env.API_PORT) || 4400;
 const HOST = process.env.API_HOST || '127.0.0.1';
@@ -336,6 +337,7 @@ await app.register(rotasCatalogo);
 await app.register(rotasAtendimentos);
 await app.register(rotasEmailIA);
 await app.register(rotasEmailIACentral);
+await app.register(rotasPixel);
 
 /* ═══════════════════════════════  subida  ══════════════════════════════ */
 

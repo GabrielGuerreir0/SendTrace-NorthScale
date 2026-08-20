@@ -1374,6 +1374,33 @@ const servidor = http.createServer(async (req, res) => {
       });
     }
 
+    /*
+     * Pixel de rastreamento de abertura — a mesma rota pública da API,
+     * só repassada por aqui para sair com HTTPS e o domínio de verdade
+     * (é o endereço que vai dentro do <img> dos e-mails). ANTES da guarda
+     * de sessão: quem bate aqui é o cliente de e-mail de quem abriu a
+     * mensagem, sem cookie nenhum. Repassa cru para não duplicar a lógica
+     * de validação de token (que já mora só em api/rotas/pixel.js).
+     */
+    if (url.pathname.startsWith('/pixel/')) {
+      try {
+        const alvo = await fetch(`${enderecoApi}${url.pathname}`, {
+          signal: AbortSignal.timeout(5000),
+        });
+        const buffer = Buffer.from(await alvo.arrayBuffer());
+        res.writeHead(200, {
+          'Content-Type': alvo.headers.get('content-type') || 'image/gif',
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+        });
+        return res.end(buffer);
+      } catch {
+        // Mesma regra do lado da API: nunca falhar visivelmente para o
+        // cliente de e-mail — devolve o pixel mesmo se a API estiver fora.
+        res.writeHead(200, { 'Content-Type': 'image/gif', 'Cache-Control': 'no-store' });
+        return res.end(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBTAA7', 'base64'));
+      }
+    }
+
     const sessao = lerSessao(lerCookie(req, COOKIE));
 
     // Tudo daqui em diante fala com a API usando o token DESTA pessoa. Sem
