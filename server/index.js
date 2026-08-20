@@ -1416,8 +1416,18 @@ const servidor = http.createServer(async (req, res) => {
      */
     if (url.pathname.startsWith('/pixel/')) {
       try {
+        // Sem isto, a API grava o IP/user-agent DESTE fetch (o proxy do
+        // painel) em vez dos de quem abriu o e-mail de verdade — foi
+        // exatamente o que aconteceu em produção (todas as aberturas
+        // registradas como IP interno do container, user-agent "node", o
+        // padrão do fetch() do próprio Node). O Caddy já popula
+        // x-forwarded-for com o IP real de quem chegou até aqui.
         const alvo = await fetch(`${enderecoApi}${url.pathname}`, {
           signal: AbortSignal.timeout(5000),
+          headers: {
+            'X-Forwarded-For': req.headers['x-forwarded-for'] || req.socket.remoteAddress || '',
+            'User-Agent': req.headers['user-agent'] || '',
+          },
         });
         const buffer = Buffer.from(await alvo.arrayBuffer());
         res.writeHead(200, {
