@@ -8,6 +8,9 @@
  *   GET  /api/automacao                 → execuções do fluxo n8n de resposta automática (ao vivo)
  *   POST /api/ticket                    → muda o status de um ticket
  *   GET  /api/galeria                   → grade paginada de anexos analisados por IA
+ *   GET  /api/anexo/:id                 → ficha de um anexo: e-mail vinculado, pedido vinculado
+ *                                          e os OUTROS anexos do mesmo e-mail (usado pelo modal
+ *                                          de detalhe da galeria)
  *   GET  /api/imagem/:id                → serve o binário de uma imagem (bytea → bytes)
  *   GET  /api/emails/:id/webmail        → acha o e-mail na caixa real (IMAP) e devolve a URL do webmail
  *   GET  /api/suporte-escalado          → kanban de suporte escalado (lista + KPIs)
@@ -559,6 +562,62 @@ export default async function rotasEmailIACentral(app) {
       [...valores, porPagina, offset],
     );
     return rows[0].resultado;
+  });
+
+  /* ═══════════════════════════════  GET /api/anexo/:id  ══════════════════════════ */
+
+  app.get('/api/anexo/:id', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Ficha de um anexo — e-mail, pedido e os outros anexos do mesmo e-mail',
+      description: 'Alimenta o modal de detalhe da galeria: o anexo em si, o e-mail que o '
+        + 'trouxe (por message_id, sem FK), o pedido vinculado a esse e-mail (via '
+        + 'mv_emails_x_pedidos, se houver) e os DEMAIS anexos do mesmo e-mail — para quando '
+        + 'chegou mais de uma imagem junto.',
+      security: [{ bearerAuth: [] }],
+      params: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] },
+    },
+  }, async (req) => {
+    const { rows } = await query(
+      `SELECT json_build_object(
+         'anexo', (SELECT row_to_json(x) FROM (
+           SELECT id, nome_arquivo, mime_type, tamanho_bytes, tipo_conteudo, descricao_ia,
+                  defeito_visivel, tags, hash_md5, criado_em
+           FROM email_ia.anexos WHERE id = $1
+         ) x),
+         'email', (SELECT row_to_json(x) FROM (
+           SELECT em.id, em.remetente_nome, em.remetente_email, em.assunto, em.data_email,
+                  em.categoria, em.motivo_devolucao, em.produto_mencionado, em.numero_pedido,
+                  em.sentimento, em.urgencia, em.resumo, em.area_problema, em.responsavel,
+                  em.problema_pagamento, em.plataforma_origem, em.corpo_texto
+           FROM email_ia.emails em
+           JOIN email_ia.anexos a ON a.message_id = em.message_id
+           WHERE a.id = $1
+           LIMIT 1
+         ) x),
+         'pedido', (SELECT row_to_json(x) FROM (
+           SELECT mv.transacao_id, mv.cliente_pedido, mv.produto, mv.plataforma,
+                  mv.status_pedido, mv.vinculo, mv.pedido_em
+           FROM email_ia.mv_emails_x_pedidos mv
+           JOIN email_ia.emails em ON em.id = mv.email_id
+           JOIN email_ia.anexos a ON a.message_id = em.message_id
+           WHERE a.id = $1
+           LIMIT 1
+         ) x),
+         'outros_anexos', (SELECT COALESCE(json_agg(x), '[]'::json) FROM (
+           SELECT o.id, o.nome_arquivo, o.mime_type, o.tipo_conteudo
+           FROM email_ia.anexos o
+           JOIN email_ia.anexos a ON a.message_id = o.message_id
+           WHERE a.id = $1 AND o.id <> a.id
+           ORDER BY o.id
+         ) x)
+       ) AS resultado`,
+      [req.params.id],
+    );
+    const resultado = rows[0].resultado;
+    if (!resultado.anexo) throw new ErroHttp(404, 'Anexo não encontrado.');
+    return resultado;
   });
 
   /* ═══════════════════════════════  GET /api/imagem/:id  ═════════════════════════ */
