@@ -1331,6 +1331,24 @@ async function atender(req, res, url, sessao) {
     }
   }
 
+  if (url.pathname === '/api/relatorio/metricas') {
+    return json(res, 200, await obterApi('/api/relatorio/metricas/', { dias: url.searchParams.get('dias') }));
+  }
+
+  // PDF em si: bytes crus, não JSON — não pode passar por obterApi(). A API
+  // já dispara o e-mail para quem está logado ao gerar o PDF (mesmo clique);
+  // aqui só repassa os bytes para o navegador baixar.
+  if (url.pathname === '/api/relatorio/pdf') {
+    const dias = url.searchParams.get('dias') || '30';
+    const { buffer } = await obterBinario(`/api/relatorio/pdf/?dias=${encodeURIComponent(dias)}`);
+    res.writeHead(200, {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="relatorio-metricas-${dias}d.pdf"`,
+    });
+    res.end(buffer);
+    return ATENDIDO;
+  }
+
   // A API é a única dependência do painel agora. `/api/health/` dela é rota
   // pública, então este teste não depende de o token de ninguém estar válido.
   if (url.pathname === '/api/health') {
