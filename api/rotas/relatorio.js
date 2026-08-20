@@ -185,116 +185,311 @@ async function coletarMetricas(dias) {
   };
 }
 
-/* ═══════════════════════════════  PDF  ═══════════════════════════════════ */
+/* ═══════════════════════════════  PDF  ═══════════════════════════════════
+ * Cores tiradas direto de public/styles.css (:root, tema claro) — o PDF é
+ * sempre "modo claro" (papel), então usa a mesma paleta que o painel mostra
+ * fora do modo escuro. AZUL é o `--azul` usado nos e-mails transacionais
+ * (server/email.js) — é a cor que o cliente já vê nos botões de e-mail.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+const COR = {
+  TINTA: '#201f1c',
+  TINTA_2: '#55534e',
+  TINTA_FRACA: '#8b8983',
+  SUPERFICIE_2: '#f1efe9',
+  BORDA: '#e1e0d9',
+  BRANCO: '#ffffff',
+  AZUL: '#415fe5',
+  VERDE: '#0ca30c',
+  TEAL: '#1baf7a',
+  AMBAR: '#fab219',
+  VERMELHO: '#d03b3b',
+};
+
+// Só o suficiente pra não mostrar slug cru (devolucao, pede_cancelamento_reembolso)
+// no relatório — mesma fonte de LABEL_* de public/emailComum.js, mas esse
+// arquivo é do navegador (mexe em `document`) e não dá pra importar aqui.
+const LABEL_CATEGORIA = {
+  devolucao: 'Devolução', reclamacao: 'Reclamação', duvida_produto: 'Dúvida sobre produto',
+  duvida_pedido: 'Dúvida sobre pedido', orcamento: 'Orçamento', elogio: 'Elogio',
+  troca: 'Troca', garantia: 'Garantia', outro: 'Outro',
+};
+const LABEL_AREA_PROBLEMA = {
+  entrega: 'Entrega', produto: 'Produto', codigo_rastreio: 'Código de rastreio',
+  pagamento: 'Pagamento', atendimento: 'Atendimento', anuncio_informacao: 'Anúncio/informação', outro: 'Outro',
+};
+const LABEL_PROBLEMA_PAGAMENTO = {
+  compra_nao_reconhecida: 'Compra não reconhecida', cobranca_duplicada: 'Cobrança duplicada',
+  cobranca_valor_maior: 'Cobrança de valor maior', pede_cancelamento_reembolso: 'Pede cancelamento/reembolso',
+  reembolso_nao_recebido: 'Reembolso não recebido', outro_pagamento: 'Outro', sem_problema_pagamento: 'Sem problema',
+};
+const LABEL_TIPO_CONTEUDO = {
+  foto_produto: 'Foto de produto', defeito: 'Defeito', nota_fiscal: 'Nota fiscal',
+  comprovante: 'Comprovante', print_tela: 'Print de tela', documento: 'Documento', outro: 'Outro',
+  sem_analise: 'Sem análise',
+};
+const rotular = (mapa, v) => (v ? (mapa[v] ?? v) : '—');
 
 const pct = (v) => (v === null || v === undefined ? '—' : `${Math.round(v * 1000) / 10}%`);
+const n = (v) => String(v ?? 0).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 
-function secao(doc, titulo) {
+const PAGINA_L = 595.28;
+const PAGINA_A = 841.89;
+const MARGEM = 44;
+const LARGURA_UTIL = PAGINA_L - MARGEM * 2;
+
+/** Vira a página ANTES de desenhar um bloco que não cabe mais — nunca no meio dele. */
+function garantirEspaco(doc, altura) {
+  if (doc.y + altura > doc.page.height - doc.page.margins.bottom) doc.addPage();
+}
+
+/** Título de seção: pílula colorida, mesma linguagem visual dos chips do painel (.gal-chip/.selo-estado). */
+function secaoTitulo(doc, titulo, cor = COR.AZUL) {
+  garantirEspaco(doc, 46);
   doc.moveDown(1.1);
-  doc.fontSize(14).fillColor('#111827').font('Helvetica-Bold').text(titulo);
+  doc.font('Helvetica-Bold').fontSize(11);
+  const y = doc.y;
+  const largura = doc.widthOfString(titulo) + 22;
+  doc.roundedRect(MARGEM, y, largura, 20, 10).fill(cor);
+  doc.fillColor(COR.BRANCO).text(titulo, MARGEM + 11, y + 5.5, { lineBreak: false });
+  doc.x = MARGEM;
+  doc.y = y + 28;
+  doc.fillColor(COR.TINTA).font('Helvetica').fontSize(9.5);
+}
+
+function subtitulo(doc, texto) {
+  garantirEspaco(doc, 20);
+  doc.font('Helvetica-Bold').fontSize(9.5).fillColor(COR.TINTA_2).text(texto);
   doc.moveDown(0.3);
-  doc.fontSize(10).font('Helvetica').fillColor('#374151');
+  doc.font('Helvetica').fontSize(9.5).fillColor(COR.TINTA);
+}
+
+function vazio(doc, texto = 'Sem dados no período.') {
+  garantirEspaco(doc, 16);
+  doc.fillColor(COR.TINTA_FRACA).fontSize(9).text(texto);
+  doc.fillColor(COR.TINTA).fontSize(9.5);
+  doc.moveDown(0.2);
+}
+
+/** 4 cartões coloridos lado a lado — mesma hierarquia visual do .kpi do painel. */
+function desenharKpis(doc, kpis) {
+  const altura = 68;
+  garantirEspaco(doc, altura + 16);
+  const gap = 10;
+  const larguraCard = (LARGURA_UTIL - gap * (kpis.length - 1)) / kpis.length;
+  const y = doc.y;
+  kpis.forEach((k, i) => {
+    const x = MARGEM + i * (larguraCard + gap);
+    doc.roundedRect(x, y, larguraCard, altura, 8).fill(COR.SUPERFICIE_2);
+    doc.rect(x, y, 3.5, altura).fill(k.cor);
+    doc.fillColor(COR.TINTA_FRACA).font('Helvetica-Bold').fontSize(7)
+      .text(k.rotulo.toUpperCase(), x + 12, y + 12, { width: larguraCard - 22, lineBreak: false });
+    doc.fillColor(COR.TINTA).font('Helvetica-Bold').fontSize(18)
+      .text(k.valor, x + 12, y + 24, { width: larguraCard - 22, lineBreak: false });
+    doc.fillColor(COR.TINTA_FRACA).font('Helvetica').fontSize(7)
+      .text(k.nota, x + 12, y + 47, { width: larguraCard - 22 });
+  });
+  doc.x = MARGEM;
+  doc.y = y + altura + 18;
+  doc.fillColor(COR.TINTA).font('Helvetica').fontSize(9.5);
 }
 
 /**
- * Rótulo à esquerda, valor à direita, na mesma linha. `doc.x`/`doc.y` mudam
- * DEPOIS do primeiro `.text()` (o pdfkit os move ao terminar um bloco) — por
- * isso `x0`/`y0` são capturados ANTES dos dois desenhos, nunca lidos de novo
- * no meio. `lineBreak: false` evita que um rótulo comprido quebre linha e
- * empurre o valor para baixo dele.
+ * Barra horizontal rótulo→número, mesma forma do `.sup-item`/`barraHorizontal`
+ * do painel (public/emailComum.js) — só que desenhada, não HTML.
  */
-function linhaLista(doc, rotulo, valor) {
-  const altura = doc.currentLineHeight(true) + 3;
-  // Sem isto, uma linha bem na borda quebra ao meio: o rótulo sai numa
-  // página e o valor, desalinhado, na página seguinte (aconteceu no teste
-  // manual contra o banco real). Força a virada ANTES de desenhar a linha
-  // inteira, nunca no meio dela.
-  if (doc.y + altura > doc.page.height - doc.page.margins.bottom) doc.addPage();
+function barrasHorizontais(doc, itens, {
+  campoRotulo, campoValor = 'total', cor = COR.AZUL, rotular: fnRotular = (v) => v,
+} = {}) {
+  if (!itens.length) return vazio(doc);
+  const max = Math.max(...itens.map((i) => i[campoValor]));
+  const larguraRotulo = 200;
+  const larguraNum = 46;
+  const larguraBarra = LARGURA_UTIL - larguraRotulo - larguraNum - 10;
 
-  const x0 = doc.x;
-  const y0 = doc.y;
-  doc.text(rotulo, x0, y0, { width: 380, lineBreak: false, ellipsis: true });
-  doc.text(valor, x0 + 380, y0, { width: 120, align: 'right', lineBreak: false });
-  doc.x = x0;
-  doc.y = y0 + altura;
+  for (const item of itens) {
+    const altura = 15;
+    garantirEspaco(doc, altura + 3);
+    const y = doc.y;
+    doc.fillColor(COR.TINTA).font('Helvetica').fontSize(9)
+      .text(fnRotular(item[campoRotulo]), MARGEM, y + 2, { width: larguraRotulo, lineBreak: false, ellipsis: true });
+    doc.roundedRect(MARGEM + larguraRotulo, y + 3, larguraBarra, 7, 2).fill(COR.SUPERFICIE_2);
+    const w = max > 0 ? Math.max(3, (item[campoValor] / max) * larguraBarra) : 0;
+    if (w > 0) doc.roundedRect(MARGEM + larguraRotulo, y + 3, w, 7, 2).fill(cor);
+    doc.fillColor(COR.TINTA).font('Helvetica-Bold').fontSize(9)
+      .text(n(item[campoValor]), MARGEM + larguraRotulo + larguraBarra + 8, y + 2, { width: larguraNum, align: 'right', lineBreak: false });
+    doc.x = MARGEM;
+    doc.y = y + altura;
+  }
+  doc.moveDown(0.3);
 }
 
-function listaVazia(doc) {
-  doc.fillColor('#9ca3af').text('Sem dados no período.');
-  doc.fillColor('#374151');
+/** Barra horizontal de PORCENTAGEM (taxa de abertura) — enche relativo a 100%, não ao maior item. */
+function barrasPercentual(doc, itens, { campoRotulo, campoTaxa, campoDetalhe, cor = COR.VERDE }) {
+  if (!itens.length) return vazio(doc);
+  const larguraRotulo = 230;
+  const larguraNum = 110;
+  const larguraBarra = LARGURA_UTIL - larguraRotulo - larguraNum - 10;
+
+  for (const item of itens) {
+    const altura = 15;
+    garantirEspaco(doc, altura + 3);
+    const y = doc.y;
+    doc.fillColor(COR.TINTA).font('Helvetica').fontSize(9)
+      .text(item[campoRotulo], MARGEM, y + 2, { width: larguraRotulo, lineBreak: false, ellipsis: true });
+    doc.roundedRect(MARGEM + larguraRotulo, y + 3, larguraBarra, 7, 2).fill(COR.SUPERFICIE_2);
+    const taxa = item[campoTaxa] ?? 0;
+    const w = Math.max(taxa > 0 ? 3 : 0, taxa * larguraBarra);
+    if (w > 0) doc.roundedRect(MARGEM + larguraRotulo, y + 3, w, 7, 2).fill(cor);
+    doc.fillColor(COR.TINTA).font('Helvetica-Bold').fontSize(9)
+      .text(`${pct(item[campoTaxa])} (${item[campoDetalhe]})`, MARGEM + larguraRotulo + larguraBarra + 8, y + 2,
+        { width: larguraNum, align: 'right', lineBreak: false });
+    doc.x = MARGEM;
+    doc.y = y + altura;
+  }
+  doc.moveDown(0.3);
+}
+
+/** Gráfico de colunas verticais — mesma ideia do desenharColunas() do painel (public/charts.js). */
+function graficoColunas(doc, dados, { campoRotulo, campoValor = 'total', cor = COR.AZUL, altura = 100 } = {}) {
+  garantirEspaco(doc, altura + 34);
+  if (!dados.length) return vazio(doc);
+  const max = Math.max(...dados.map((d) => d[campoValor]), 1);
+  const y0 = doc.y;
+  const slot = LARGURA_UTIL / dados.length;
+  const largBarra = Math.max(2, Math.min(slot - 4, 30));
+
+  doc.moveTo(MARGEM, y0 + altura).lineTo(MARGEM + LARGURA_UTIL, y0 + altura).lineWidth(0.5).stroke(COR.BORDA);
+  dados.forEach((d, i) => {
+    const val = d[campoValor];
+    if (!val) return;
+    const h = (val / max) * (altura - 8);
+    const x = MARGEM + i * slot + (slot - largBarra) / 2;
+    doc.roundedRect(x, y0 + altura - h, largBarra, h, largBarra > 6 ? 2 : 0).fill(cor);
+  });
+  doc.font('Helvetica').fontSize(6.5).fillColor(COR.TINTA_FRACA);
+  const passo = Math.max(1, Math.ceil(dados.length / 14));
+  dados.forEach((d, i) => {
+    if (i % passo !== 0 && i !== dados.length - 1) return;
+    doc.text(String(d[campoRotulo]), MARGEM + i * slot, y0 + altura + 4, { width: slot, align: 'center', lineBreak: false });
+  });
+  doc.x = MARGEM;
+  doc.y = y0 + altura + 18;
+  doc.fillColor(COR.TINTA).font('Helvetica').fontSize(9.5);
+}
+
+function rodapePaginas(doc) {
+  const range = doc.bufferedPageRange();
+  const total = range.count;
+  for (let i = range.start; i < range.start + total; i += 1) {
+    doc.switchToPage(i);
+    // O texto vai ABAIXO da margem inferior de propósito (é o rodapé) — mas
+    // sem zerar a margem antes, o pdfkit interpreta isso como conteúdo que
+    // não coube e cria uma página nova em branco pra cada página existente
+    // (foi exatamente o que aconteceu no teste: 3 páginas de conteúdo
+    // viraram 6, e o rodapé ainda saía com o total ERRADO, "de 3").
+    const margemInferior = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+    doc.font('Helvetica').fontSize(7.5).fillColor(COR.TINTA_FRACA)
+      .text(`SendTrace · Relatório de métricas · página ${i + 1} de ${total}`,
+        MARGEM, PAGINA_A - 32, { width: LARGURA_UTIL, align: 'center', lineBreak: false });
+    doc.page.margins.bottom = margemInferior;
+  }
 }
 
 function montarPdf(m) {
-  const doc = new PDFDocument({ size: 'A4', margin: 48, bufferPages: true });
+  const doc = new PDFDocument({ size: 'A4', margin: MARGEM, bufferPages: true });
   const pedacos = [];
   doc.on('data', (c) => pedacos.push(c));
   const pronto = new Promise((resolve) => doc.on('end', () => resolve(Buffer.concat(pedacos))));
 
   const agora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
-  doc.fontSize(20).font('Helvetica-Bold').fillColor('#111827')
-    .text('Relatório de métricas — SendTrace');
-  doc.fontSize(10).font('Helvetica').fillColor('#6b7280')
-    .text(`Período: últimos ${m.periodo_dias} dias · Gerado em ${agora}`);
+  // ── faixa do cabeçalho, cor de marca ──
+  const alturaFaixa = 78;
+  doc.rect(0, 0, PAGINA_L, alturaFaixa).fill(COR.TINTA);
+  doc.fillColor(COR.BRANCO).font('Helvetica-Bold').fontSize(9)
+    .text('SENDTRACE', MARGEM, 20, { characterSpacing: 1.5, lineBreak: false });
+  doc.fontSize(19).text('Relatório de Métricas', MARGEM, 34, { lineBreak: false });
+  doc.font('Helvetica').fontSize(9).fillColor('#c3c2b7')
+    .text(`Período: últimos ${m.periodo_dias} dias  ·  Gerado em ${agora}`, MARGEM, 58, { lineBreak: false });
+  doc.y = alturaFaixa + 20;
+  doc.x = MARGEM;
+  doc.fillColor(COR.TINTA).font('Helvetica').fontSize(9.5);
 
-  secao(doc, 'Chat com IA — contatos');
-  linhaLista(doc, 'Total de conversas iniciadas no período', String(m.chat.contatos_total));
-  doc.moveDown(0.4);
-  doc.font('Helvetica-Bold').text('Principais motivos de contato');
-  doc.font('Helvetica');
-  if (!m.chat.motivos.length) listaVazia(doc);
-  for (const r of m.chat.motivos) linhaLista(doc, r.label, String(r.total));
-  doc.moveDown(0.4);
-  doc.font('Helvetica-Bold').text('Onde a jornada gera contato');
-  doc.font('Helvetica');
-  if (!m.chat.jornada.length) listaVazia(doc);
-  for (const r of m.chat.jornada) linhaLista(doc, r.nome, String(r.total));
+  // ── KPIs ──
+  const totalReembolsoEmail = m.email.motivos_reembolso.reduce((a, r) => a + r.total, 0);
+  desenharKpis(doc, [
+    {
+      rotulo: 'Contatos no chat', valor: n(m.chat.contatos_total),
+      nota: `iniciados em ${m.periodo_dias} dias`, cor: COR.AZUL,
+    },
+    {
+      rotulo: 'Abertura automática', valor: pct(m.abertura.resposta_automatica.taxa),
+      nota: `${n(m.abertura.resposta_automatica.abertos)} de ${n(m.abertura.resposta_automatica.enviados)}`, cor: COR.VERDE,
+    },
+    {
+      rotulo: 'Problema de pagamento', valor: n(totalReembolsoEmail),
+      nota: 'no período, excluindo "sem problema"', cor: COR.VERMELHO,
+    },
+    {
+      rotulo: 'Fotos com defeito', valor: n(m.fotos.com_defeito),
+      nota: `de ${n(m.fotos.total_analisadas)} anexos (acumulado)`, cor: COR.AMBAR,
+    },
+  ]);
 
-  secao(doc, 'Taxa de abertura de e-mail');
-  doc.font('Helvetica-Bold').text('Régua de pós-venda, por etapa (acumulado)');
-  doc.font('Helvetica');
-  for (const r of m.abertura.regua_por_etapa) {
-    linhaLista(doc, `Etapa ${r.etapa} — ${r.nome}`, `${pct(r.taxa)} (${r.abertos}/${r.enviados_aprox})`);
-  }
-  doc.moveDown(0.4);
-  doc.font('Helvetica-Bold').text('Resposta automática (período)');
-  doc.font('Helvetica');
-  linhaLista(
-    doc, 'Taxa de abertura',
-    `${pct(m.abertura.resposta_automatica.taxa)} (${m.abertura.resposta_automatica.abertos}/${m.abertura.resposta_automatica.enviados})`,
+  secaoTitulo(doc, 'Chat com IA — contatos', COR.AZUL);
+  subtitulo(doc, `Contatos por dia (total: ${n(m.chat.contatos_total)})`);
+  graficoColunas(doc, m.chat.contatos_serie.map((r) => ({
+    dia: new Date(r.dia).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }), total: r.total,
+  })), { campoRotulo: 'dia', cor: COR.AZUL });
+  subtitulo(doc, 'Principais motivos de contato');
+  barrasHorizontais(doc, m.chat.motivos, { campoRotulo: 'label', cor: COR.AZUL });
+  subtitulo(doc, 'Onde a jornada gera contato');
+  barrasHorizontais(doc, m.chat.jornada, { campoRotulo: 'nome', cor: COR.TEAL });
+
+  secaoTitulo(doc, 'Taxa de abertura de e-mail', COR.VERDE);
+  subtitulo(doc, 'Régua de pós-venda, por etapa (acumulado desde que o pixel entrou no ar)');
+  barrasPercentual(
+    doc,
+    m.abertura.regua_por_etapa.map((r) => ({
+      rotulo: `Etapa ${r.etapa} — ${r.nome}`, taxa: r.taxa, detalhe: `${n(r.abertos)}/${n(r.enviados_aprox)}`,
+    })),
+    { campoRotulo: 'rotulo', campoTaxa: 'taxa', campoDetalhe: 'detalhe', cor: COR.VERDE },
+  );
+  subtitulo(doc, 'Resposta automática (período)');
+  barrasPercentual(
+    doc,
+    [{
+      rotulo: 'Taxa de abertura', taxa: m.abertura.resposta_automatica.taxa,
+      detalhe: `${n(m.abertura.resposta_automatica.abertos)}/${n(m.abertura.resposta_automatica.enviados)}`,
+    }],
+    { campoRotulo: 'rotulo', campoTaxa: 'taxa', campoDetalhe: 'detalhe', cor: COR.VERDE },
   );
 
-  secao(doc, 'Reembolsos por dias após a compra');
-  doc.font('Helvetica-Bold').text('Sinalizados por e-mail');
-  doc.font('Helvetica');
-  for (const r of m.reembolsos_por_dia.email) linhaLista(doc, `${r.bucket} dia(s)`, String(r.total));
-  doc.moveDown(0.4);
-  doc.font('Helvetica-Bold').text('Pedidos no chat de suporte');
-  doc.font('Helvetica');
-  for (const r of m.reembolsos_por_dia.chat) linhaLista(doc, `${r.bucket} dia(s)`, String(r.total));
+  secaoTitulo(doc, 'Reembolsos por dias após a compra', COR.AMBAR);
+  subtitulo(doc, 'Sinalizados por e-mail');
+  graficoColunas(doc, m.reembolsos_por_dia.email, { campoRotulo: 'bucket', cor: COR.AMBAR });
+  subtitulo(doc, 'Pedidos no chat de suporte');
+  graficoColunas(doc, m.reembolsos_por_dia.chat, { campoRotulo: 'bucket', cor: COR.AMBAR });
 
-  secao(doc, 'E-mail — motivos de contato');
-  doc.font('Helvetica-Bold').text('Por categoria');
-  doc.font('Helvetica');
-  if (!m.email.motivos_categoria.length) listaVazia(doc);
-  for (const r of m.email.motivos_categoria) linhaLista(doc, r.categoria, String(r.total));
-  doc.moveDown(0.4);
-  doc.font('Helvetica-Bold').text('Por área do problema');
-  doc.font('Helvetica');
-  if (!m.email.motivos_area.length) listaVazia(doc);
-  for (const r of m.email.motivos_area) linhaLista(doc, r.area_problema, String(r.total));
+  secaoTitulo(doc, 'E-mail — motivos de contato', COR.AZUL);
+  subtitulo(doc, 'Por categoria');
+  barrasHorizontais(doc, m.email.motivos_categoria, { campoRotulo: 'categoria', cor: COR.AZUL, rotular: (v) => rotular(LABEL_CATEGORIA, v) });
+  subtitulo(doc, 'Por área do problema');
+  barrasHorizontais(doc, m.email.motivos_area, { campoRotulo: 'area_problema', cor: COR.AZUL, rotular: (v) => rotular(LABEL_AREA_PROBLEMA, v) });
 
-  secao(doc, 'E-mail — motivos de reembolso');
-  if (!m.email.motivos_reembolso.length) listaVazia(doc);
-  for (const r of m.email.motivos_reembolso) linhaLista(doc, r.problema_pagamento, String(r.total));
+  secaoTitulo(doc, 'E-mail — motivos de reembolso', COR.VERMELHO);
+  barrasHorizontais(doc, m.email.motivos_reembolso, { campoRotulo: 'problema_pagamento', cor: COR.VERMELHO, rotular: (v) => rotular(LABEL_PROBLEMA_PAGAMENTO, v) });
 
-  secao(doc, 'Fotos analisadas nos anexos (acumulado)');
-  linhaLista(doc, 'Total de anexos analisados', String(m.fotos.total_analisadas));
-  linhaLista(doc, 'Com defeito visível identificado', String(m.fotos.com_defeito));
-  doc.moveDown(0.3);
-  if (!m.fotos.por_tipo.length) listaVazia(doc);
-  for (const r of m.fotos.por_tipo) linhaLista(doc, r.tipo_conteudo, String(r.total));
+  secaoTitulo(doc, 'Fotos analisadas nos anexos (acumulado)', COR.TEAL);
+  desenharKpis(doc, [
+    { rotulo: 'Total de anexos analisados', valor: n(m.fotos.total_analisadas), nota: 'acumulado', cor: COR.TEAL },
+    { rotulo: 'Com defeito visível', valor: n(m.fotos.com_defeito), nota: 'identificado pela IA', cor: COR.AMBAR },
+  ]);
+  barrasHorizontais(doc, m.fotos.por_tipo, { campoRotulo: 'tipo_conteudo', cor: COR.TEAL, rotular: (v) => rotular(LABEL_TIPO_CONTEUDO, v) });
 
+  rodapePaginas(doc);
   doc.end();
   return pronto;
 }
