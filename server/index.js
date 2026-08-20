@@ -1314,6 +1314,20 @@ async function atender(req, res, url, sessao) {
     }
   }
 
+  // Ficha de um anexo — o modal de detalhe da galeria (e-mail, pedido e os
+  // outros anexos do mesmo e-mail).
+  const rotaAnexo = /^\/api\/anexo\/(\d+)$/.exec(url.pathname);
+  if (rotaAnexo) {
+    try {
+      return json(res, 200, await obterApi(`/api/anexo/${rotaAnexo[1]}`));
+    } catch (err) {
+      if (err instanceof ErroApi && err.status === 404) {
+        return json(res, 404, { erro: 'Anexo não encontrado.' });
+      }
+      throw err;
+    }
+  }
+
   // Imagem em si: bytes crus, não JSON — não pode passar por obterApi().
   const rotaImagem = /^\/api\/imagem\/(\d+)$/.exec(url.pathname);
   if (rotaImagem) {
