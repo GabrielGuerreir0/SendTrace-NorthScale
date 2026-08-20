@@ -1746,14 +1746,22 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 .gal-card-imagem--generico {
   display: flex; align-items: center; justify-content: center; font-size: 32px; cursor: default;
 }
-/* Mini-galeria (Detalhes → §4.11): o próprio <a> é o cartão, sem corpo/legenda. */
+/* Mini-galeria (Detalhes → §4.11): o cartão é um <a> lá, um <button> no
+   modal de detalhe da galeria (troca a pré-visualização em vez de navegar) —
+   os resets abaixo deixam os dois usos com a mesma cara. */
 .gal-card--mini {
   display: flex; align-items: center; justify-content: center;
-  aspect-ratio: 1 / 1; overflow: hidden;
+  aspect-ratio: 1 / 1; overflow: hidden; appearance: none; padding: 0; font: inherit; cursor: pointer;
   border: 1px solid var(--borda); border-radius: 10px; background: var(--superficie-2);
 }
 .gal-card--mini img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .gal-card--mini .gal-icone { font-size: 22px; }
+.gal-card--mini-ativo { border-color: var(--tinta); box-shadow: 0 0 0 1px var(--tinta) inset; }
+
+/* Cartão da grade principal virou clicável (abre o modal de detalhe). */
+.gal-card--clique { cursor: pointer; }
+.gal-card--clique:hover { box-shadow: var(--sombra-2, var(--sombra-1)); border-color: var(--eixo); }
+.gal-card--clique:focus-visible { outline: 2px solid var(--tinta); outline-offset: 1px; }
 
 .gal-card-corpo { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 5px; }
 .gal-card-chips { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -1773,3 +1781,19 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 }
 .gal-card-tags { font-size: 10.5px; color: var(--tinta-fraca); }
 .gal-card-quem { font-size: 10.5px; color: var(--tinta-fraca); margin-top: auto; padding-top: 2px; }
+
+/* Pré-visualização grande no modal de detalhe (ficha de anexo → renderFicha). */
+.gd-preview { display: flex; flex-direction: column; gap: 8px; }
+.gd-preview-moldura {
+  display: flex; align-items: center; justify-content: center;
+  max-height: 380px; min-height: 140px; border-radius: 10px;
+  border: 1px solid var(--borda); background: var(--superficie-2); overflow: hidden;
+}
+.gd-preview-moldura img { max-width: 100%; max-height: 380px; object-fit: contain; display: block; }
+.gd-preview-icone { font-size: 40px; }
+.gd-preview-rodape {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  font-size: 11.5px; color: var(--tinta-fraca);
+}
+.gd-preview-rodape a { color: var(--eixo); text-decoration: none; }
+.gd-preview-rodape a:hover { text-decoration: underline; }
