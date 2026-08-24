@@ -9,9 +9,25 @@
  */
 import { $, api, kpiCard, barraHorizontal, tooltip, rotularCategoria, rotularMotivo, rotularTipoConteudo } from './emailComum.js';
 import { n, dia } from './format.js';
-import { desenharColunas } from './charts.js';
+import { desenharColunas, desenharPizza } from './charts.js';
 
 const pct = (v) => (v === null || v === undefined ? '—' : `${Math.round(v * 1000) / 10}%`);
+
+/**
+ * Reduz uma lista { campo, total } pra no máximo 6 fatias — a paleta
+ * categórica da pizza só foi validada pra esse tamanho (ver skill de
+ * dataviz). Top 5 nomeados + o resto (incluindo o próprio valor "outro" da
+ * classificação) somado numa fatia "Outros".
+ */
+function topMaisOutros(itens, campo, fnRotular, maxNomeados = 5) {
+  const ordenado = [...itens].sort((a, b) => b.total - a.total);
+  const nomeados = ordenado.slice(0, maxNomeados).map((item) => ({
+    chave: item[campo], rotulo: fnRotular(item[campo]), valor: item.total,
+  }));
+  const resto = ordenado.slice(maxNomeados).reduce((soma, item) => soma + item.total, 0);
+  if (resto > 0) nomeados.push({ chave: '__outros__', rotulo: 'Outros', valor: resto });
+  return nomeados;
+}
 
 let carregando = false;
 
@@ -101,7 +117,11 @@ async function carregar() {
   renderGraficoBuckets($('rel-graf-reembolso-email'), dados.reembolsos_por_dia.email, 'e-mails');
   renderGraficoBuckets($('rel-graf-reembolso-chat'), dados.reembolsos_por_dia.chat, 'conversas');
   barraHorizontal($('rel-motivos-email'), dados.email.motivos_categoria, 'categoria', { rotular: rotularCategoria });
-  barraHorizontal($('rel-motivos-reembolso'), dados.email.motivos_reembolso, 'motivo_devolucao', { rotular: rotularMotivo });
+  desenharPizza(
+    $('rel-motivos-reembolso'),
+    topMaisOutros(dados.email.motivos_reembolso, 'motivo_devolucao', rotularMotivo),
+    { tooltip, unidade: 'e-mails' },
+  );
   barraHorizontal($('rel-fotos'), dados.fotos.por_tipo, 'tipo_conteudo', { rotular: rotularTipoConteudo });
 }
 

@@ -175,3 +175,108 @@ export function desenharColunas(container, data, opts = {}) {
     });
   }
 }
+
+
+/* ────────────────────────────  GRÁFICO DE PIZZA  ──────────────────────── */
+
+const polar = (cx, cy, r, anguloDeg) => {
+  const rad = ((anguloDeg - 90) * Math.PI) / 180;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+};
+
+/** Path de uma fatia de pizza, de anguloIni a anguloFim (graus, 0 = topo, sentido horário). */
+function fatiaPath(cx, cy, r, anguloIni, anguloFim) {
+  const ini = polar(cx, cy, r, anguloFim);
+  const fim = polar(cx, cy, r, anguloIni);
+  const grandeArco = anguloFim - anguloIni > 180 ? 1 : 0;
+  return `M${cx},${cy} L${ini.x},${ini.y} A${r},${r} 0 ${grandeArco} 0 ${fim.x},${fim.y} Z`;
+}
+
+/**
+ * Pizza + legenda lado a lado. Cor por ORDEM FIXA de série (classe
+ * `pizza-fatia-N`, nunca gerada) — quem chama já deve ter reduzido `data`
+ * pra no máximo 6 itens (ex.: top 5 + "Outros") antes de passar aqui; a
+ * paleta categórica só foi validada pra esse tamanho.
+ *
+ * data: [{ chave, rotulo, valor }] — vazio ou tudo zerado mostra o texto
+ * de "sem dados", igual ao gráfico de colunas.
+ */
+export function desenharPizza(container, data, opts = {}) {
+  const { tooltip = null, unidade = 'e-mails', textoVazio = 'Sem dados no período.' } = opts;
+
+  limpar(container);
+  const total = data.reduce((soma, d) => soma + d.valor, 0);
+  if (total <= 0) {
+    const p = document.createElement('p');
+    p.className = 'vazio-suave';
+    p.textContent = textoVazio;
+    container.append(p);
+    return;
+  }
+
+  const envolt = document.createElement('div');
+  envolt.className = 'pizza-envolt';
+  container.append(envolt);
+
+  const raio = 78;
+  const tam = raio * 2 + 8;
+  const svg = svgEl('svg', {
+    class: 'gr pizza-svg', width: tam, height: tam, viewBox: `0 0 ${tam} ${tam}`, role: 'img',
+  }, envolt);
+  const cx = tam / 2;
+  const cy = tam / 2;
+
+  const ul = document.createElement('ul');
+  ul.className = 'pizza-legenda';
+  envolt.append(ul);
+
+  let angulo = 0;
+  data.forEach((d, i) => {
+    const fracao = d.valor / total;
+    const anguloFim = angulo + fracao * 360;
+    const serie = (i % 6) + 1;
+
+    if (d.valor > 0) {
+      const path = svgEl('path', {
+        class: `pizza-fatia pizza-fatia-${serie}`, d: fatiaPath(cx, cy, raio, angulo, anguloFim),
+        tabindex: 0, role: 'img', 'aria-label': `${d.rotulo}: ${n(d.valor)} (${nc(fracao * 100)}%)`,
+      }, svg);
+
+      // Rótulo direto só em fatias grandes o bastante pra caber o texto —
+      // nunca um número espremido em fatia fina, igual à regra do pico.
+      if (fracao >= 0.08) {
+        const meio = polar(cx, cy, raio * 0.62, angulo + (anguloFim - angulo) / 2);
+        svgEl('text', {
+          class: 'pizza-rotulo-pct', x: meio.x, y: meio.y + 3.5, text: `${Math.round(fracao * 100)}%`,
+        }, svg);
+      }
+
+      if (tooltip) {
+        const mostrar = (ev) => tooltip.mostrar(
+          `<strong>${d.rotulo}</strong><span class="tt-linha"><span class="tt-chave">${unidade}</span>`
+          + `<b>${n(d.valor)}</b></span><span class="tt-linha"><span class="tt-chave">do total</span>`
+          + `<b>${nc(fracao * 100)}%</b></span>`,
+          ev.clientX, ev.clientY,
+        );
+        path.addEventListener('pointermove', mostrar);
+        path.addEventListener('pointerenter', mostrar);
+        path.addEventListener('pointerleave', () => tooltip.esconder());
+        path.addEventListener('focus', (ev) => mostrar({ clientX: ev.target.getBoundingClientRect().left, clientY: ev.target.getBoundingClientRect().top }));
+        path.addEventListener('blur', () => tooltip.esconder());
+      }
+    }
+
+    const li = document.createElement('li');
+    li.className = 'pizza-legenda-item';
+    const cor = document.createElement('span');
+    cor.className = `pizza-legenda-cor pizza-fatia-${serie}`;
+    cor.style.background = `var(--serie-${serie})`;
+    const rot = document.createElement('span'); rot.className = 'pizza-legenda-rotulo'; rot.textContent = d.rotulo;
+    const num = document.createElement('span'); num.className = 'pizza-legenda-num'; num.textContent = n(d.valor);
+    const pct = document.createElement('span'); pct.className = 'pizza-legenda-pct'; pct.textContent = `${Math.round(fracao * 100)}%`;
+    li.append(cor, rot, num, pct);
+    ul.append(li);
+
+    angulo = anguloFim;
+  });
+}

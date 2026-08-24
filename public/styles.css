@@ -46,6 +46,16 @@
      rótulo carregam o significado; a cor só separa do verde ao lado. */
   --st-cancelado:   #6f6e78;
 
+  /* Paleta categórica (gráfico de pizza) — validada com o mesmo validador de
+     daltonismo (OKLab ΔE) contra --superficie deste tema. Ordem fixa, nunca
+     ciclada: slot 1 é sempre a mesma cor pra mesma posição no ranking. */
+  --serie-1: #2a78d6;
+  --serie-2: #eb6834;
+  --serie-3: #1baf7a;
+  --serie-4: #eda100;
+  --serie-5: #e87ba4;
+  --serie-6: #4a3aa7;
+
   --sombra-1: 0 1px 2px rgba(11, 11, 11, 0.05), 0 4px 14px rgba(11, 11, 11, 0.05);
   --sombra-no: 0 1px 2px rgba(11, 11, 11, 0.06), 0 6px 18px rgba(11, 11, 11, 0.07);
   --raio: 16px;
@@ -78,6 +88,13 @@
     --st-finalizado:  #0ca30c;
     --st-cancelado:   #9a99a5;
 
+    --serie-1: #3987e5;
+    --serie-2: #d95926;
+    --serie-3: #199e70;
+    --serie-4: #c98500;
+    --serie-5: #d55181;
+    --serie-6: #9085e9;
+
     --sombra-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 26px rgba(0, 0, 0, 0.34);
     --sombra-no: 0 1px 2px rgba(0, 0, 0, 0.55), 0 8px 22px rgba(0, 0, 0, 0.42);
   }
@@ -108,6 +125,13 @@
   --st-travado:     #d03b3b;
   --st-finalizado:  #0ca30c;
   --st-cancelado:   #9a99a5;
+
+  --serie-1: #3987e5;
+  --serie-2: #d95926;
+  --serie-3: #199e70;
+  --serie-4: #c98500;
+  --serie-5: #d55181;
+  --serie-6: #9085e9;
 
   --sombra-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 26px rgba(0, 0, 0, 0.34);
   --sombra-no: 0 1px 2px rgba(0, 0, 0, 0.55), 0 8px 22px rgba(0, 0, 0, 0.42);
@@ -607,6 +631,32 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
 .gr-captura { cursor: crosshair; }
 .gr-agora { stroke: var(--tinta-fraca); stroke-width: 1; }
 .gr-agora-txt { font-size: 9.5px; fill: var(--tinta-fraca); letter-spacing: .06em; }
+
+/* ───────────────────────  gráfico de pizza  ────────────────────── */
+
+.pizza-envolt { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; }
+.pizza-svg { flex: 0 0 auto; }
+/* stroke = cor da superfície do cartão: separa as fatias com um "corte" fino
+   em vez de borda escura, mesmo efeito do vão de 2px entre barras. */
+.pizza-fatia { stroke: var(--superficie); stroke-width: 2px; cursor: pointer; }
+.pizza-fatia:hover, .pizza-fatia:focus-visible { filter: brightness(1.08); outline: none; }
+.pizza-rotulo-pct {
+  font-size: 10.5px; font-weight: 700; fill: #fff; text-anchor: middle;
+  pointer-events: none; paint-order: stroke; stroke: rgba(0, 0, 0, .35); stroke-width: 2.4px;
+}
+.pizza-fatia-1 { fill: var(--serie-1); }
+.pizza-fatia-2 { fill: var(--serie-2); }
+.pizza-fatia-3 { fill: var(--serie-3); }
+.pizza-fatia-4 { fill: var(--serie-4); }
+.pizza-fatia-5 { fill: var(--serie-5); }
+.pizza-fatia-6 { fill: var(--serie-6); }
+
+.pizza-legenda { list-style: none; display: grid; gap: 9px; flex: 1 1 220px; min-width: 200px; }
+.pizza-legenda-item { display: flex; align-items: baseline; gap: 9px; font-size: 12.5px; }
+.pizza-legenda-cor { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; align-self: center; }
+.pizza-legenda-rotulo { color: var(--tinta); flex: 1 1 auto; }
+.pizza-legenda-num { font-variant-numeric: tabular-nums; font-weight: 640; color: var(--tinta-2); white-space: nowrap; }
+.pizza-legenda-pct { font-size: 11px; color: var(--tinta-fraca); white-space: nowrap; min-width: 34px; text-align: right; }
 
 .destaque-atraso {
   display: inline-flex; align-items: center; gap: 8px;
