@@ -28,7 +28,7 @@ export const PLATAFORMAS = [
 ];
 export const MOTIVOS_DEVOLUCAO = [
   'produto_com_defeito', 'produto_errado', 'dano_no_transporte', 'atraso_na_entrega', 'arrependimento',
-  'tamanho_ou_medida_errada', 'diferente_do_anuncio', 'compra_duplicada', 'outro',
+  'tamanho_ou_medida_errada', 'diferente_do_anuncio', 'compra_duplicada', 'sem_resultado_esperado', 'motivo_saude', 'outro',
 ];
 
 function listaValida(bruto, permitidos) {

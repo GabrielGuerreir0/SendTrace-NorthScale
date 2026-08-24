@@ -245,7 +245,8 @@ const LABEL_MOTIVO_DEVOLUCAO = {
   produto_com_defeito: 'Produto com defeito', produto_errado: 'Produto errado',
   dano_no_transporte: 'Dano no transporte', atraso_na_entrega: 'Atraso na entrega',
   arrependimento: 'Arrependimento', tamanho_ou_medida_errada: 'Tamanho/medida errada',
-  diferente_do_anuncio: 'Diferente do anúncio', compra_duplicada: 'Compra duplicada', outro: 'Outro',
+  diferente_do_anuncio: 'Diferente do anúncio', compra_duplicada: 'Compra duplicada',
+  sem_resultado_esperado: 'Sem resultado esperado', motivo_saude: 'Motivo de saúde', outro: 'Outro',
 };
 const LABEL_TIPO_CONTEUDO = {
   foto_produto: 'Foto de produto', defeito: 'Defeito', nota_fiscal: 'Nota fiscal',
