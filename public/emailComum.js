@@ -66,7 +66,7 @@ export const LABEL_MOTIVO_DEVOLUCAO = {
   produto_com_defeito: 'Produto com defeito', produto_errado: 'Produto errado',
   dano_no_transporte: 'Dano no transporte', atraso_na_entrega: 'Atraso na entrega',
   arrependimento: 'Arrependimento', tamanho_ou_medida_errada: 'Tamanho/medida errada',
-  diferente_do_anuncio: 'Diferente do anúncio', outro: 'Outro',
+  diferente_do_anuncio: 'Diferente do anúncio', compra_duplicada: 'Compra duplicada', outro: 'Outro',
 };
 export const LABEL_AREA_PROBLEMA = {
   entrega: 'Entrega', produto: 'Produto', codigo_rastreio: 'Código de rastreio',

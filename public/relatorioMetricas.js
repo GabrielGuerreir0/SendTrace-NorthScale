@@ -7,7 +7,7 @@
  * poucos segundos, para uma tela que ninguém está olhando, seria desperdício.
  * Busca de novo só ao trocar o período ou reabrir a aba.
  */
-import { $, api, kpiCard, barraHorizontal, tooltip, rotularCategoria, rotularPagamento, rotularTipoConteudo } from './emailComum.js';
+import { $, api, kpiCard, barraHorizontal, tooltip, rotularCategoria, rotularMotivo, rotularTipoConteudo } from './emailComum.js';
 import { n, dia } from './format.js';
 import { desenharColunas } from './charts.js';
 
@@ -101,7 +101,7 @@ async function carregar() {
   renderGraficoBuckets($('rel-graf-reembolso-email'), dados.reembolsos_por_dia.email, 'e-mails');
   renderGraficoBuckets($('rel-graf-reembolso-chat'), dados.reembolsos_por_dia.chat, 'conversas');
   barraHorizontal($('rel-motivos-email'), dados.email.motivos_categoria, 'categoria', { rotular: rotularCategoria });
-  barraHorizontal($('rel-motivos-reembolso'), dados.email.motivos_reembolso, 'problema_pagamento', { rotular: rotularPagamento });
+  barraHorizontal($('rel-motivos-reembolso'), dados.email.motivos_reembolso, 'motivo_devolucao', { rotular: rotularMotivo });
   barraHorizontal($('rel-fotos'), dados.fotos.por_tipo, 'tipo_conteudo', { rotular: rotularTipoConteudo });
 }
 

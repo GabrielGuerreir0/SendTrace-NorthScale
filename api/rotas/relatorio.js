@@ -151,12 +151,11 @@ async function coletarMetricas(dias) {
       GROUP BY area_problema ORDER BY total DESC LIMIT 10`, p),
 
     query(`
-      SELECT problema_pagamento, count(*)::int AS total
+      SELECT motivo_devolucao, count(*)::int AS total
       FROM email_ia.emails
       WHERE data_email >= now() - ($1::int || ' days')::interval
-        AND plataforma_origem IS NULL AND problema_pagamento IS NOT NULL
-        AND problema_pagamento <> 'sem_problema_pagamento'
-      GROUP BY problema_pagamento ORDER BY total DESC`, p),
+        AND plataforma_origem IS NULL AND motivo_devolucao IS NOT NULL
+      GROUP BY motivo_devolucao ORDER BY total DESC`, p),
 
     // Sem filtro de período: email_ia.anexos não tem data própria, e juntar
     // com emails.data_email só para isto não valia a complexidade agora.
@@ -242,10 +241,11 @@ const LABEL_AREA_PROBLEMA = {
   entrega: 'Entrega', produto: 'Produto', codigo_rastreio: 'Código de rastreio',
   pagamento: 'Pagamento', atendimento: 'Atendimento', anuncio_informacao: 'Anúncio/informação', outro: 'Outro',
 };
-const LABEL_PROBLEMA_PAGAMENTO = {
-  compra_nao_reconhecida: 'Compra não reconhecida', cobranca_duplicada: 'Cobrança duplicada',
-  cobranca_valor_maior: 'Cobrança de valor maior', pede_cancelamento_reembolso: 'Pede cancelamento/reembolso',
-  reembolso_nao_recebido: 'Reembolso não recebido', outro_pagamento: 'Outro', sem_problema_pagamento: 'Sem problema',
+const LABEL_MOTIVO_DEVOLUCAO = {
+  produto_com_defeito: 'Produto com defeito', produto_errado: 'Produto errado',
+  dano_no_transporte: 'Dano no transporte', atraso_na_entrega: 'Atraso na entrega',
+  arrependimento: 'Arrependimento', tamanho_ou_medida_errada: 'Tamanho/medida errada',
+  diferente_do_anuncio: 'Diferente do anúncio', compra_duplicada: 'Compra duplicada', outro: 'Outro',
 };
 const LABEL_TIPO_CONTEUDO = {
   foto_produto: 'Foto de produto', defeito: 'Defeito', nota_fiscal: 'Nota fiscal',
@@ -504,7 +504,7 @@ function montarPdf(m) {
   barrasHorizontais(doc, m.email.motivos_area, { campoRotulo: 'area_problema', cor: COR.AZUL, rotular: (v) => rotular(LABEL_AREA_PROBLEMA, v) });
 
   secaoTitulo(doc, 'E-mail — motivos de reembolso', COR.VERMELHO);
-  barrasHorizontais(doc, m.email.motivos_reembolso, { campoRotulo: 'problema_pagamento', cor: COR.VERMELHO, rotular: (v) => rotular(LABEL_PROBLEMA_PAGAMENTO, v) });
+  barrasHorizontais(doc, m.email.motivos_reembolso, { campoRotulo: 'motivo_devolucao', cor: COR.VERMELHO, rotular: (v) => rotular(LABEL_MOTIVO_DEVOLUCAO, v) });
 
   secaoTitulo(doc, 'Fotos analisadas nos anexos (acumulado)', COR.TEAL);
   desenharKpis(doc, [
