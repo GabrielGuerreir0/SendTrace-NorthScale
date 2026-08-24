@@ -12,7 +12,7 @@
  */
 
 export const CATEGORIAS = [
-  'devolucao', 'reclamacao', 'duvida_produto', 'duvida_pedido', 'orcamento', 'elogio', 'troca', 'garantia', 'outro',
+  'devolucao', 'reclamacao', 'duvida_produto', 'duvida_pedido', 'orcamento', 'elogio', 'troca', 'garantia', 'cancelamento', 'outro',
 ];
 export const SENTIMENTOS = ['positivo', 'neutro', 'negativo', 'muito_negativo'];
 export const URGENCIAS = ['baixa', 'media', 'alta'];

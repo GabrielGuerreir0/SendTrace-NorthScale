@@ -235,7 +235,7 @@ const COR = {
 const LABEL_CATEGORIA = {
   devolucao: 'Devolução', reclamacao: 'Reclamação', duvida_produto: 'Dúvida sobre produto',
   duvida_pedido: 'Dúvida sobre pedido', orcamento: 'Orçamento', elogio: 'Elogio',
-  troca: 'Troca', garantia: 'Garantia', outro: 'Outro',
+  troca: 'Troca', garantia: 'Garantia', cancelamento: 'Cancelamento', outro: 'Outro',
 };
 const LABEL_AREA_PROBLEMA = {
   entrega: 'Entrega', produto: 'Produto', codigo_rastreio: 'Código de rastreio',

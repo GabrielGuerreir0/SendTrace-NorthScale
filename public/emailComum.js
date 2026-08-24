@@ -60,7 +60,7 @@ export const tooltip = {
 export const LABEL_CATEGORIA = {
   devolucao: 'Devolução', reclamacao: 'Reclamação', duvida_produto: 'Dúvida sobre produto',
   duvida_pedido: 'Dúvida sobre pedido', orcamento: 'Orçamento', elogio: 'Elogio',
-  troca: 'Troca', garantia: 'Garantia', outro: 'Outro',
+  troca: 'Troca', garantia: 'Garantia', cancelamento: 'Cancelamento', outro: 'Outro',
 };
 export const LABEL_MOTIVO_DEVOLUCAO = {
   produto_com_defeito: 'Produto com defeito', produto_errado: 'Produto errado',
