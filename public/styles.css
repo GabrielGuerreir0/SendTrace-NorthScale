@@ -54,7 +54,9 @@
   --serie-3: #1baf7a;
   --serie-4: #eda100;
   --serie-5: #e87ba4;
-  --serie-6: #4a3aa7;
+  --serie-6: #008300;
+  --serie-7: #4a3aa7;
+  --serie-8: #e34948;
 
   --sombra-1: 0 1px 2px rgba(11, 11, 11, 0.05), 0 4px 14px rgba(11, 11, 11, 0.05);
   --sombra-no: 0 1px 2px rgba(11, 11, 11, 0.06), 0 6px 18px rgba(11, 11, 11, 0.07);
@@ -93,7 +95,9 @@
     --serie-3: #199e70;
     --serie-4: #c98500;
     --serie-5: #d55181;
-    --serie-6: #9085e9;
+    --serie-6: #008300;
+    --serie-7: #9085e9;
+    --serie-8: #e66767;
 
     --sombra-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 26px rgba(0, 0, 0, 0.34);
     --sombra-no: 0 1px 2px rgba(0, 0, 0, 0.55), 0 8px 22px rgba(0, 0, 0, 0.42);
@@ -131,7 +135,9 @@
   --serie-3: #199e70;
   --serie-4: #c98500;
   --serie-5: #d55181;
-  --serie-6: #9085e9;
+  --serie-6: #008300;
+  --serie-7: #9085e9;
+  --serie-8: #e66767;
 
   --sombra-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 26px rgba(0, 0, 0, 0.34);
   --sombra-no: 0 1px 2px rgba(0, 0, 0, 0.55), 0 8px 22px rgba(0, 0, 0, 0.42);
@@ -650,6 +656,8 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
 .pizza-fatia-4 { fill: var(--serie-4); }
 .pizza-fatia-5 { fill: var(--serie-5); }
 .pizza-fatia-6 { fill: var(--serie-6); }
+.pizza-fatia-7 { fill: var(--serie-7); }
+.pizza-fatia-8 { fill: var(--serie-8); }
 
 .pizza-legenda { list-style: none; display: grid; gap: 9px; flex: 1 1 220px; min-width: 200px; }
 .pizza-legenda-item { display: flex; align-items: baseline; gap: 9px; font-size: 12.5px; }

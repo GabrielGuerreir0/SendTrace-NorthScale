@@ -14,12 +14,12 @@ import { desenharColunas, desenharPizza } from './charts.js';
 const pct = (v) => (v === null || v === undefined ? '—' : `${Math.round(v * 1000) / 10}%`);
 
 /**
- * Reduz uma lista { campo, total } pra no máximo 6 fatias — a paleta
+ * Reduz uma lista { campo, total } pra no máximo 8 fatias — a paleta
  * categórica da pizza só foi validada pra esse tamanho (ver skill de
- * dataviz). Top 5 nomeados + o resto (incluindo o próprio valor "outro" da
- * classificação) somado numa fatia "Outros".
+ * dataviz). Só agrupa numa fatia "Outros" o que sobrar ALÉM da 8ª (raro,
+ * hoje o próprio "outro" da classificação já entra como fatia nomeada).
  */
-function topMaisOutros(itens, campo, fnRotular, maxNomeados = 5) {
+function topMaisOutros(itens, campo, fnRotular, maxNomeados = 8) {
   const ordenado = [...itens].sort((a, b) => b.total - a.total);
   const nomeados = ordenado.slice(0, maxNomeados).map((item) => ({
     chave: item[campo], rotulo: fnRotular(item[campo]), valor: item.total,

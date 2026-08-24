@@ -195,8 +195,9 @@ function fatiaPath(cx, cy, r, anguloIni, anguloFim) {
 /**
  * Pizza + legenda lado a lado. Cor por ORDEM FIXA de série (classe
  * `pizza-fatia-N`, nunca gerada) — quem chama já deve ter reduzido `data`
- * pra no máximo 6 itens (ex.: top 5 + "Outros") antes de passar aqui; a
- * paleta categórica só foi validada pra esse tamanho.
+ * pra no máximo 8 itens antes de passar aqui; a paleta categórica só foi
+ * validada pra esse tamanho (6-8 fica na faixa "piso CVD", por isso o
+ * rótulo direto + legenda aqui não são opcionais).
  *
  * data: [{ chave, rotulo, valor }] — vazio ou tudo zerado mostra o texto
  * de "sem dados", igual ao gráfico de colunas.
@@ -234,7 +235,7 @@ export function desenharPizza(container, data, opts = {}) {
   data.forEach((d, i) => {
     const fracao = d.valor / total;
     const anguloFim = angulo + fracao * 360;
-    const serie = (i % 6) + 1;
+    const serie = (i % 8) + 1;
 
     if (d.valor > 0) {
       const path = svgEl('path', {
