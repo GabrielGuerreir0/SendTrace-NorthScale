@@ -695,7 +695,10 @@ export default async function rotasEmailIACentral(app) {
       security: [{ bearerAuth: [] }],
       querystring: {
         type: 'object',
-        properties: { q: { type: 'string' } },
+        properties: {
+          q: { type: 'string' },
+          dias: { type: 'integer', description: 'Janela (em dias) das métricas de transição/movimentação — padrão 30.' },
+        },
       },
     },
   }, async (req) => {
@@ -709,8 +712,9 @@ export default async function rotasEmailIACentral(app) {
       i += 1;
     }
     const onde = condicoes.length ? condicoes.join(' AND ') : 'true';
+    const dias = Math.max(1, Number(req.query.dias) || 30);
 
-    const [kpisRes, itensRes] = await Promise.all([
+    const [kpisRes, itensRes, transicoesRes, movimentosRes] = await Promise.all([
       query(
         `SELECT count(*) FILTER (WHERE status = 'pendente')::int            AS pendente,
                 count(*) FILTER (WHERE status = 'iniciado')::int            AS iniciado,
@@ -728,9 +732,54 @@ export default async function rotasEmailIACentral(app) {
          ORDER BY criado_em DESC`,
         valores,
       ),
+      // Tempo médio/mediano gasto em CADA etapa, uma linha por par
+      // (de onde saiu → pra onde foi), calculado a partir do histórico real
+      // de transições (email_ia.suporte_escalado_historico, mantido por
+      // trigger). status_anterior já vem certo em cada linha do histórico —
+      // só falta saber HÁ QUANTO TEMPO essa etapa tinha começado, que é o
+      // mudou_em da transição anterior do mesmo caso (LAG por suporte_escalado_id).
+      query(
+        `WITH eventos AS (
+           SELECT status_anterior, status_novo, mudou_em,
+                  LAG(mudou_em) OVER (PARTITION BY suporte_escalado_id ORDER BY mudou_em) AS entrou_em
+           FROM email_ia.suporte_escalado_historico
+         )
+         SELECT status_anterior, status_novo,
+                avg(extract(epoch FROM (mudou_em - entrou_em)) / 3600.0) AS media_h,
+                percentile_cont(0.5) WITHIN GROUP (
+                  ORDER BY extract(epoch FROM (mudou_em - entrou_em)) / 3600.0
+                ) AS mediana_h,
+                count(*)::int AS amostra
+         FROM eventos
+         WHERE entrou_em IS NOT NULL
+         GROUP BY status_anterior, status_novo
+         ORDER BY media_h DESC NULLS LAST`,
+      ),
+      // Quantos CASOS MUDARAM DE COLUNA por dia (não conta a criação em si) —
+      // é o "quantos e-mails o suporte moveu hoje", útil pra ver ritmo de
+      // atendimento independente de quantos casos novos chegaram.
+      query(
+        `SELECT to_char(date_trunc('day', mudou_em), 'YYYY-MM-DD') AS dia, count(*)::int AS total
+         FROM email_ia.suporte_escalado_historico
+         WHERE status_anterior IS NOT NULL AND mudou_em > now() - ($1 || ' days')::interval
+         GROUP BY 1 ORDER BY 1`,
+        [dias],
+      ),
     ]);
 
-    return { kpis: kpisRes.rows[0], itens: itensRes.rows };
+    const totalMovimentos = movimentosRes.rows.reduce((soma, r) => soma + r.total, 0);
+
+    return {
+      kpis: kpisRes.rows[0],
+      itens: itensRes.rows,
+      transicoes: transicoesRes.rows,
+      movimentos_diarios: movimentosRes.rows,
+      resumo_movimentos: {
+        janela_dias: dias,
+        total: totalMovimentos,
+        media_por_dia: Math.round((totalMovimentos / dias) * 10) / 10,
+      },
+    };
   });
 
   /* ═══════════════════════  POST /api/suporte-escalado/status  ═══════════════ */

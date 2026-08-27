@@ -1267,7 +1267,7 @@ async function atender(req, res, url, sessao) {
 
   if (url.pathname === '/api/suporte-escalado') {
     const q = url.searchParams;
-    return json(res, 200, await obterApi('/api/suporte-escalado', { q: q.get('q') }));
+    return json(res, 200, await obterApi('/api/suporte-escalado', { q: q.get('q'), dias: q.get('dias') }));
   }
 
   if (url.pathname === '/api/suporte-escalado/status' && req.method === 'POST') {

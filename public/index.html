@@ -1397,6 +1397,54 @@
   <section class="kpis kpis--suporte" id="esc-kpis"></section>
 
   <div class="esc-board" id="esc-board"></div>
+
+  <!-- ── métricas de tempo do kanban ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div><h2>Tempo no kanban</h2><p class="cartao-sub">Quanto tempo cada caso leva em cada etapa, e o ritmo de movimentação.</p></div>
+    </header>
+  </section>
+
+  <section class="kpis kpis--suporte" id="esc-kpis-tempo"></section>
+  <p class="rodape-nota">"Até sair de Pendente" e "Fluxo completo" valem para todo o histórico (calculados a
+    partir de quando o caso foi criado/iniciado/finalizado). Já a tabela "Tempo médio por etapa" abaixo e os
+    gráficos de "movidos por dia" só contam a partir de 27/08/2026, quando o histórico de cada mudança de
+    coluna passou a ser registrado — antes disso o banco só guardava 3 datas (criação, saída de Pendente,
+    finalização), não o caminho completo entre elas.</p>
+
+  <div class="grade-3">
+    <section class="cartao">
+      <header class="cartao-cabeca"><div><h2>Casos criados por dia</h2><p class="cartao-sub">últimos 30 dias</p></div></header>
+      <div id="esc-graf-criados"></div>
+    </section>
+    <section class="cartao">
+      <header class="cartao-cabeca"><div><h2>Casos movidos por dia</h2><p class="cartao-sub">mudanças de coluna, últimos 30 dias</p></div></header>
+      <div id="esc-graf-movidos"></div>
+    </section>
+    <section class="cartao">
+      <header class="cartao-cabeca"><div><h2>Casos finalizados por dia</h2><p class="cartao-sub">últimos 30 dias</p></div></header>
+      <div id="esc-graf-finalizados"></div>
+    </section>
+  </div>
+
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div><h2>Tempo médio por etapa</h2><p class="cartao-sub">De qual coluna para qual coluna, e quanto tempo o caso ficou esperando antes de mudar.</p></div>
+    </header>
+    <div class="tabela-envolve">
+      <table class="tabela">
+        <thead>
+          <tr>
+            <th scope="col">Transição</th>
+            <th scope="col">Média</th>
+            <th scope="col">Mediana</th>
+            <th scope="col">Casos</th>
+          </tr>
+        </thead>
+        <tbody id="esc-transicoes-lista"><tr><td colspan="4" class="vazio-suave">carregando…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
 </main>
 
 <!-- ═══════════════════  Central de E-mail IA — Tela 6: Relatório de Métricas  ═══════════════ -->

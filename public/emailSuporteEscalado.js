@@ -9,14 +9,19 @@
  */
 import {
   $, api, debounce, kpiCard, paginar, montarPaginacao, botaoCopiar, abrirFicha,
+  tooltip, renderTabela,
 } from './emailComum.js';
-import { n, relativo, dataHora } from './format.js';
+import { n, relativo, dataHora, duracaoH } from './format.js';
+import { desenharColunas } from './charts.js';
 import { abrirNaTabela } from './emailTickets.js';
 
 /* ═══════════════════════════════  estado  ═══════════════════════════════ */
 
 let itens = [];
 let kpis = {};
+let transicoes = [];
+let movimentosDiarios = [];
+let resumoMovimentos = {};
 let busca = '';
 let ordem = 'recentes'; // 'recentes' | 'antigos'
 const expandidos = new Set();
@@ -58,6 +63,122 @@ function renderKpis() {
       nota: 'atendimento concluído',
     }),
   );
+}
+
+/* ═══════════════════════  métricas de tempo (§ pedido do usuário)  ═══════════════
+   Duas fontes: (1) client-side, a partir de `itens` — que já vem inteiro (sem
+   paginação) a cada carga — pros tempos que os 3 timestamps existentes já dão
+   pra calcular sem ambiguidade (até sair de Pendente; total do fluxo); (2) o
+   servidor, que devolve `transicoes`/`movimentos_diarios` calculados sobre
+   email_ia.suporte_escalado_historico (tabela+trigger novos, 27/08/2026) —
+   só essa registra CADA mudança de status, então só ela sabe separar
+   Iniciado de Esperando resposta de verdade (os timestamps antigos só dizem
+   "saiu de pendente" e "chegou a finalizado", não o caminho no meio). */
+
+function mediana(valores) {
+  if (!valores.length) return null;
+  const s = [...valores].sort((a, b) => a - b);
+  const meio = Math.floor(s.length / 2);
+  return s.length % 2 ? s[meio] : (s[meio - 1] + s[meio]) / 2;
+}
+
+const horasEntre = (a, b) => (new Date(b).getTime() - new Date(a).getTime()) / 3_600_000;
+
+const ROTULO_STATUS = Object.fromEntries(COLUNAS.map((c) => [c.status, c.rotulo]));
+const rotularStatus = (s) => (s === null ? 'criado' : (ROTULO_STATUS[s] ?? s));
+
+function renderKpisTempo() {
+  const ateSair = itens.filter((i) => i.iniciado_em).map((i) => horasEntre(i.criado_em, i.iniciado_em));
+  const totalFluxo = itens.filter((i) => i.finalizado_em).map((i) => horasEntre(i.criado_em, i.finalizado_em));
+  const finalizados = itens.filter((i) => i.finalizado_em).length;
+
+  $('esc-kpis-tempo').replaceChildren(
+    kpiCard({
+      icone: '◔', tom: 'neutro', rotulo: 'Até sair de Pendente',
+      valor: ateSair.length ? duracaoH(mediana(ateSair)) : '—',
+      nota: `mediana · ${n(ateSair.length)} caso${ateSair.length === 1 ? '' : 's'}`,
+    }),
+    kpiCard({
+      icone: '⏱', tom: 'neutro', rotulo: 'Fluxo completo',
+      valor: totalFluxo.length ? duracaoH(mediana(totalFluxo)) : '—',
+      nota: totalFluxo.length
+        ? `mediana, do escalonamento até Finalizado · ${n(totalFluxo.length)} caso${totalFluxo.length === 1 ? '' : 's'}`
+        : 'nenhum caso finalizado ainda',
+    }),
+    kpiCard({
+      icone: '✓', tom: 'finalizado', rotulo: 'Finalizados', valor: n(finalizados),
+      nota: 'no total (todo o histórico)',
+    }),
+    kpiCard({
+      icone: '↔', tom: 'neutro', rotulo: 'Movidos por dia',
+      valor: resumoMovimentos.media_por_dia !== undefined ? String(resumoMovimentos.media_por_dia).replace('.', ',') : '—',
+      nota: `média, últimos ${resumoMovimentos.janela_dias ?? 30} dias · ${n(resumoMovimentos.total ?? 0)} mudanças de coluna`,
+    }),
+  );
+}
+
+/** Últimos 30 dias, um ponto por dia (mesmo padrão de emailTickets.js). */
+function ultimosNDias(nDias) {
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  const lista = [];
+  for (let i = nDias - 1; i >= 0; i -= 1) {
+    const d = new Date(hoje);
+    d.setDate(d.getDate() - i);
+    lista.push(d);
+  }
+  return lista;
+}
+
+function contarPorDia(datas) {
+  const porDia = new Map();
+  for (const iso of datas) {
+    if (!iso) continue;
+    const chave = new Date(iso).toISOString().slice(0, 10);
+    porDia.set(chave, (porDia.get(chave) ?? 0) + 1);
+  }
+  return ultimosNDias(30).map((d) => {
+    const chave = d.toISOString().slice(0, 10);
+    return {
+      chave, valor: porDia.get(chave) ?? 0, data: d,
+      rotulo: d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
+    };
+  });
+}
+
+function renderGraficosTempo() {
+  desenharColunas($('esc-graf-criados'), contarPorDia(itens.map((i) => i.criado_em)), {
+    altura: 170, tooltip, unidade: 'casos', textoVazio: 'Nenhum caso escalado nos últimos 30 dias',
+    rotuloEixoX: (d, i) => (i % 4 === 0 ? d.rotulo : ''),
+  });
+
+  const movidosPorDia = ultimosNDias(30).map((d) => {
+    const chave = d.toISOString().slice(0, 10);
+    const linha = movimentosDiarios.find((m) => m.dia === chave);
+    return {
+      chave, valor: linha?.total ?? 0, data: d,
+      rotulo: d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
+    };
+  });
+  desenharColunas($('esc-graf-movidos'), movidosPorDia, {
+    altura: 170, tooltip, unidade: 'mudanças', textoVazio: 'Nenhuma mudança de coluna registrada nos últimos 30 dias',
+    rotuloEixoX: (d, i) => (i % 4 === 0 ? d.rotulo : ''),
+  });
+
+  desenharColunas($('esc-graf-finalizados'), contarPorDia(itens.filter((i) => i.finalizado_em).map((i) => i.finalizado_em)), {
+    altura: 170, tooltip, unidade: 'casos', textoVazio: 'Nenhum caso finalizado nos últimos 30 dias',
+    rotuloEixoX: (d, i) => (i % 4 === 0 ? d.rotulo : ''),
+  });
+}
+
+function renderTabelaTransicoes() {
+  const linhas = [...transicoes].sort((a, b) => (b.media_h ?? 0) - (a.media_h ?? 0));
+  renderTabela($('esc-transicoes-lista'), linhas, [
+    { classe: 'cel-forte', render: (t) => `${rotularStatus(t.status_anterior)} → ${rotularStatus(t.status_novo)}` },
+    { classe: 'num', render: (t) => duracaoH(t.media_h) },
+    { classe: 'num', render: (t) => duracaoH(t.mediana_h) },
+    { classe: 'num', render: (t) => n(t.amostra) },
+  ], { vazio: 'Ainda sem transições registradas nesta janela.' });
 }
 
 /* ═══════════════════════════════  ações  ═══════════════════════════════ */
@@ -554,8 +675,14 @@ export async function carregarDados() {
     if (!ok) throw new Error(d?.detail ?? d?.erro ?? 'falha ao carregar');
     kpis = d.kpis ?? {};
     itens = d.itens ?? [];
+    transicoes = d.transicoes ?? [];
+    movimentosDiarios = d.movimentos_diarios ?? [];
+    resumoMovimentos = d.resumo_movimentos ?? {};
     renderKpis();
     renderBoard();
+    renderKpisTempo();
+    renderGraficosTempo();
+    renderTabelaTransicoes();
   } catch (err) {
     if (meu !== geracao) return;
     const board = $('esc-board');
