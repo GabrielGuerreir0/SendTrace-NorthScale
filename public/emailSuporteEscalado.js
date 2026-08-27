@@ -38,6 +38,29 @@ const COLUNAS = [
   { status: 'finalizado', rotulo: 'Finalizado' },
 ];
 
+/* ═══════════════════════════  sub-páginas  ═══════════════════════════════
+   Kanban e Tempo no kanban são duas telas grandes disputando espaço na
+   mesma aba — a de métricas ficava sempre embaixo do board, exigindo rolar
+   bastante pra achar. Viram sub-páginas com pílulas de alternância (mesmo
+   desenho do filtro da galeria), lembrando a última escolhida como as abas
+   principais já fazem. As duas continuam recebendo dado a cada recarga
+   (25s) mesmo escondida — só a exibição muda, igual ao padrão do resto do
+   painel (ver comentário no topo do arquivo). */
+const SUBABAS = { kanban: 'esc-subaba-kanban', metricas: 'esc-subaba-metricas' };
+
+function mostrarSubaba(qual) {
+  for (const [nome, id] of Object.entries(SUBABAS)) {
+    $(id).hidden = nome !== qual;
+    $(`esc-subaba-btn-${nome}`).setAttribute('aria-selected', String(nome === qual));
+  }
+  localStorage.setItem('escSubaba', qual);
+}
+
+for (const nome of Object.keys(SUBABAS)) {
+  $(`esc-subaba-btn-${nome}`).addEventListener('click', () => mostrarSubaba(nome));
+}
+mostrarSubaba(SUBABAS[localStorage.getItem('escSubaba')] ? localStorage.getItem('escSubaba') : 'kanban');
+
 /* ═══════════════════════════════  KPIs  ═══════════════════════════════ */
 
 function renderKpis() {

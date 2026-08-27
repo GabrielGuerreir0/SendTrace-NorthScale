@@ -1671,6 +1671,19 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 .esc-notas-form { display: flex; flex-direction: column; gap: 8px; }
 .esc-notas-form .btn-forte { align-self: flex-start; }
 
+/* Sub-páginas do Suporte Escalado (Kanban / Tempo no kanban) — mesmo desenho
+   de pílula do filtro da galeria (.gal-chip-filtro), só que com semântica de
+   aba (role="tab"/aria-selected) em vez de filtro (aria-pressed): aqui é
+   "qual página estou vendo", não "quais itens estão marcados". */
+.subabas { display: flex; gap: 8px; margin-top: 14px; }
+.subaba-btn {
+  appearance: none; cursor: pointer;
+  padding: 7px 15px; font: 560 12.5px/1.35 inherit; color: var(--tinta-2);
+  background: var(--superficie); border: 1px solid var(--borda); border-radius: 999px;
+}
+.subaba-btn:hover { border-color: var(--eixo); }
+.subaba-btn[aria-selected="true"] { color: var(--plano); background: var(--tinta); border-color: var(--tinta); }
+
 /* ═══════════════════════════════  chat com IA  ═════════════════════════════
    Deliberadamente SEM .cartao envolvendo a tela inteira — o visual aqui é o
    de um chat "flutuante" (tipo ChatGPT): topo fino, mensagens soltas no fundo
