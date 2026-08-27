@@ -29,6 +29,7 @@ const COLUNAS = [
   { status: 'pendente', rotulo: 'Pendente' },
   { status: 'iniciado', rotulo: 'Iniciado' },
   { status: 'esperando_resposta', rotulo: 'Esperando resposta' },
+  { status: 'reembolsado', rotulo: 'Reembolsado' },
   { status: 'finalizado', rotulo: 'Finalizado' },
 ];
 
@@ -47,6 +48,10 @@ function renderKpis() {
     kpiCard({
       icone: '●', tom: 'em_dia', rotulo: 'Esperando resposta', valor: n(kpis.esperando_resposta ?? 0),
       nota: 'aguardando o cliente responder',
+    }),
+    kpiCard({
+      icone: '●', tom: 'processando', rotulo: 'Reembolsado', valor: n(kpis.reembolsado ?? 0),
+      nota: 'reembolso já processado',
     }),
     kpiCard({
       icone: '●', tom: 'finalizado', rotulo: 'Finalizado', valor: n(kpis.finalizado ?? 0),

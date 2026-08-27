@@ -679,7 +679,7 @@ export default async function rotasEmailIACentral(app) {
 
   /* ═══════════════════════════  GET /api/suporte-escalado  ═══════════════════ */
 
-  const STATUS_ESCALADO = ['pendente', 'iniciado', 'esperando_resposta', 'finalizado'];
+  const STATUS_ESCALADO = ['pendente', 'iniciado', 'esperando_resposta', 'reembolsado', 'finalizado'];
 
   app.get('/api/suporte-escalado', {
     onRequest: [app.exigirSessao],
@@ -712,6 +712,7 @@ export default async function rotasEmailIACentral(app) {
         `SELECT count(*) FILTER (WHERE status = 'pendente')::int            AS pendente,
                 count(*) FILTER (WHERE status = 'iniciado')::int            AS iniciado,
                 count(*) FILTER (WHERE status = 'esperando_resposta')::int  AS esperando_resposta,
+                count(*) FILTER (WHERE status = 'reembolsado')::int         AS reembolsado,
                 count(*) FILTER (WHERE status = 'finalizado')::int          AS finalizado
          FROM email_ia.suporte_escalado WHERE ${onde}`,
         valores,

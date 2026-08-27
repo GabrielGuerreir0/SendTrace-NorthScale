@@ -1273,7 +1273,7 @@ async function atender(req, res, url, sessao) {
   if (url.pathname === '/api/suporte-escalado/status' && req.method === 'POST') {
     const corpo = await lerJson(req);
     if (!Number.isInteger(corpo.id)) return json(res, 400, { erro: 'Informe o id do caso escalado.' });
-    if (!['pendente', 'iniciado', 'esperando_resposta', 'finalizado'].includes(corpo.status)) {
+    if (!['pendente', 'iniciado', 'esperando_resposta', 'reembolsado', 'finalizado'].includes(corpo.status)) {
       return json(res, 400, { erro: 'Status inválido.' });
     }
     try {
