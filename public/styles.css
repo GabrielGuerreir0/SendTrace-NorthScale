@@ -626,7 +626,12 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
 /* ────────────────────────────  gráficos  ────────────────────────── */
 
 .grafico { width: 100%; }
-.gr { display: block; }
+/* max-width:100% é rede de segurança: o SVG é desenhado com a largura do
+   container medida em JS (desenharColunas, charts.js), que fica errada
+   (fallback de 640px) se o container estiver escondido no momento do
+   desenho — isso não deixa o resultado ficar bonito, mas garante que a
+   página nunca estoura na horizontal por causa disso. */
+.gr { display: block; max-width: 100%; }
 .gr-grade line { stroke: var(--grade); stroke-width: 1; }   /* hairline sólida */
 .gr-base { stroke: var(--eixo); stroke-width: 1; }
 .gr-tick { font-size: 10px; fill: var(--tinta-fraca); font-variant-numeric: tabular-nums; }
@@ -1620,7 +1625,7 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 }
 .esc-card[draggable="true"] { cursor: grab; }
 .esc-card[data-arrastando="sim"] { opacity: .45; }
-.esc-card-nome { font-size: 12.5px; font-weight: 620; }
+.esc-card-nome { font-size: 12.5px; font-weight: 620; overflow-wrap: break-word; }
 .esc-card-email-linha { display: flex; align-items: center; gap: 3px; }
 .esc-card-email { font-size: 11px; color: var(--tinta-fraca); word-break: break-all; }
 .esc-card-motivo {
@@ -1657,8 +1662,11 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
   padding: 9px 11px; border: 1px solid var(--borda); border-radius: 10px;
   background: var(--superficie-2);
 }
-.esc-nota-cabeca { display: flex; align-items: center; gap: 8px; }
-.esc-nota-autor { font-size: 11.5px; font-weight: 620; color: var(--tinta-2); }
+/* flex-wrap: um nome de cliente comprido (autor da nota) não tem por que
+   truncar num app interno de suporte — melhor a linha quebrar do que
+   esconder informação. */
+.esc-nota-cabeca { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.esc-nota-autor { font-size: 11.5px; font-weight: 620; color: var(--tinta-2); overflow-wrap: break-word; }
 .esc-nota-quando { font-size: 10.5px; color: var(--tinta-fraca); margin-right: auto; }
 .esc-nota-texto { margin: 6px 0 0; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; }
 .esc-nota-editar, .esc-notas-form textarea {
@@ -1675,7 +1683,7 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
    de pílula do filtro da galeria (.gal-chip-filtro), só que com semântica de
    aba (role="tab"/aria-selected) em vez de filtro (aria-pressed): aqui é
    "qual página estou vendo", não "quais itens estão marcados". */
-.subabas { display: flex; gap: 8px; margin-top: 14px; }
+.subabas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .subaba-btn {
   appearance: none; cursor: pointer;
   padding: 7px 15px; font: 560 12.5px/1.35 inherit; color: var(--tinta-2);

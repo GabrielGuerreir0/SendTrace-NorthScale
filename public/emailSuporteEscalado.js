@@ -43,9 +43,14 @@ const COLUNAS = [
    mesma aba — a de métricas ficava sempre embaixo do board, exigindo rolar
    bastante pra achar. Viram sub-páginas com pílulas de alternância (mesmo
    desenho do filtro da galeria), lembrando a última escolhida como as abas
-   principais já fazem. As duas continuam recebendo dado a cada recarga
-   (25s) mesmo escondida — só a exibição muda, igual ao padrão do resto do
-   painel (ver comentário no topo do arquivo). */
+   principais já fazem. Os dados continuam chegando a cada recarga (25s)
+   mesmo com a sub-página escondida — só os GRÁFICOS (desenharColunas, em
+   charts.js) precisam ser refeitos ao aparecer: eles medem a largura real
+   do container (`container.clientWidth`) pra desenhar o SVG do tamanho
+   certo, e um container com `hidden` (display:none) mede 0 — o código do
+   gráfico cai num fallback de 640px que não cabe numa tela estreita.
+   Redesenhar no momento em que a sub-página fica visível corrige isso: a
+   essa altura o container já tem largura real pra medir. */
 const SUBABAS = { kanban: 'esc-subaba-kanban', metricas: 'esc-subaba-metricas' };
 
 function mostrarSubaba(qual) {
@@ -54,6 +59,7 @@ function mostrarSubaba(qual) {
     $(`esc-subaba-btn-${nome}`).setAttribute('aria-selected', String(nome === qual));
   }
   localStorage.setItem('escSubaba', qual);
+  if (qual === 'metricas') renderGraficosTempo();
 }
 
 for (const nome of Object.keys(SUBABAS)) {
