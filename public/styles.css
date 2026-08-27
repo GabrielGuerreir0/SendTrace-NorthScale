@@ -1639,7 +1639,7 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
   margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--borda);
 }
 .esc-card-quando { font-size: 10.5px; color: var(--tinta-fraca); }
-/* 4 controles (select + 3 botões-ícone) não cabem numa linha só num cartão de
+/* 5 controles (select + 4 botões-ícone) não cabem numa linha só num cartão de
    280px — por isso viraram linha própria (acima) e podem quebrar (abaixo). */
 .esc-card-acoes { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .esc-card-acoes select {
@@ -1648,6 +1648,28 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
   flex: 1 1 96px; min-width: 0;
 }
 .esc-card-acoes .btn-icone { flex: 0 0 auto; padding: 5px 8px; font-size: 12px; }
+
+/* Notas internas — dentro do modal de detalhes (#modal-ficha), como o último
+   campo "largo" da ficha. Editável sempre: cada nota tem seu próprio botão
+   de editar, e o formulário de nova nota fica sempre visível embaixo. */
+.esc-notas-lista { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.esc-nota {
+  padding: 9px 11px; border: 1px solid var(--borda); border-radius: 10px;
+  background: var(--superficie-2);
+}
+.esc-nota-cabeca { display: flex; align-items: center; gap: 8px; }
+.esc-nota-autor { font-size: 11.5px; font-weight: 620; color: var(--tinta-2); }
+.esc-nota-quando { font-size: 10.5px; color: var(--tinta-fraca); margin-right: auto; }
+.esc-nota-texto { margin: 6px 0 0; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; }
+.esc-nota-editar, .esc-notas-form textarea {
+  width: 100%; resize: vertical; margin-top: 6px; padding: 9px 10px;
+  border: 1px solid var(--borda); border-radius: 9px;
+  background: var(--plano); color: var(--tinta);
+  font: inherit; font-size: 12.5px; line-height: 1.5;
+}
+.esc-nota-editar-acoes { display: flex; gap: 8px; margin-top: 8px; }
+.esc-notas-form { display: flex; flex-direction: column; gap: 8px; }
+.esc-notas-form .btn-forte { align-self: flex-start; }
 
 /* ═══════════════════════════════  chat com IA  ═════════════════════════════
    Deliberadamente SEM .cartao envolvendo a tela inteira — o visual aqui é o

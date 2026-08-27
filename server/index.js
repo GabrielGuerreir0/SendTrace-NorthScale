@@ -1300,6 +1300,43 @@ async function atender(req, res, url, sessao) {
     }
   }
 
+  // Notas internas de um caso escalado — o autor não vem daqui: a API extrai
+  // de quem está autenticado (token desta sessão), não dá pra assinar em
+  // nome de outra pessoa passando um campo no corpo.
+  const rotaNotasCaso = /^\/api\/suporte-escalado\/(\d+)\/notas$/.exec(url.pathname);
+  if (rotaNotasCaso) {
+    const id = rotaNotasCaso[1];
+    if (req.method === 'GET') {
+      return json(res, 200, await obterApi(`/api/suporte-escalado/${id}/notas`));
+    }
+    if (req.method === 'POST') {
+      const corpo = await lerJson(req);
+      if (!String(corpo.nota ?? '').trim()) return json(res, 400, { erro: 'Informe o texto da nota.' });
+      try {
+        return json(res, 200, await criarApi(`/api/suporte-escalado/${id}/notas`, { nota: corpo.nota }));
+      } catch (err) {
+        if (err instanceof ErroApi && err.status === 404) {
+          return json(res, 404, { erro: 'Caso escalado não encontrado.' });
+        }
+        throw err;
+      }
+    }
+  }
+
+  const rotaNotaEditar = /^\/api\/suporte-escalado\/notas\/(\d+)$/.exec(url.pathname);
+  if (rotaNotaEditar && req.method === 'PUT') {
+    const corpo = await lerJson(req);
+    if (!String(corpo.nota ?? '').trim()) return json(res, 400, { erro: 'Informe o texto da nota.' });
+    try {
+      return json(res, 200, await substituirApi(`/api/suporte-escalado/notas/${rotaNotaEditar[1]}`, { nota: corpo.nota }));
+    } catch (err) {
+      if (err instanceof ErroApi && err.status === 404) {
+        return json(res, 404, { erro: 'Nota não encontrada.' });
+      }
+      throw err;
+    }
+  }
+
   // Busca ao vivo no IMAP (não é consulta ao Postgres) — folga a mais no
   // corte de paciência, no mesmo espírito do /api/resposta acima.
   const rotaWebmail = /^\/api\/emails\/(\d+)\/webmail$/.exec(url.pathname);

@@ -8,7 +8,7 @@
  * o Chat com IA, fica fora de ABAS_COM_FILTRO em emailFiltro.js.
  */
 import {
-  $, api, debounce, kpiCard, paginar, montarPaginacao, botaoCopiar,
+  $, api, debounce, kpiCard, paginar, montarPaginacao, botaoCopiar, abrirFicha,
 } from './emailComum.js';
 import { n, relativo, dataHora } from './format.js';
 import { abrirNaTabela } from './emailTickets.js';
@@ -118,6 +118,169 @@ async function reativar(id, nome) {
   await carregarDados();
 }
 
+/* ═══════════════════════════  detalhes + notas  ══════════════════════════
+   Ficha completa do caso (mesmo modal #modal-ficha reaproveitado em toda a
+   Central de E-mail IA) com um campo a mais: notas internas do suporte,
+   sempre editáveis — não é um "resumo" fixo, é um bloco vivo que a pessoa
+   do suporte vai escrevendo/alterando ao longo do atendimento. */
+
+function abrirDetalheEscalado(item) {
+  const notasContainer = document.createElement('div');
+  notasContainer.className = 'esc-notas';
+  notasContainer.textContent = 'Carregando notas…';
+
+  const rotuloStatus = COLUNAS.find((c) => c.status === item.status)?.rotulo ?? item.status;
+
+  abrirFicha({
+    titulo: item.nome || item.remetente_email || '(sem nome)',
+    subtitulo: item.remetente_email || '',
+    campos: [
+      { rotulo: 'Status', valor: rotuloStatus },
+      { rotulo: 'Escalado em', valor: item.criado_em ? dataHora(item.criado_em) : '—' },
+      { rotulo: 'Iniciado em', valor: item.iniciado_em ? dataHora(item.iniciado_em) : '—' },
+      { rotulo: 'Finalizado em', valor: item.finalizado_em ? dataHora(item.finalizado_em) : '—' },
+      { rotulo: 'Motivo do escalonamento', valor: item.motivo_escalonamento || '—', largo: true },
+      { rotulo: 'Resumo da conversa', valor: item.resumo_conversa || '—', largo: true },
+      { rotulo: 'Notas internas', valor: notasContainer, largo: true },
+    ],
+  });
+
+  carregarNotas(item.id, notasContainer);
+}
+
+async function carregarNotas(casoId, container) {
+  let notas = [];
+  let falhou = false;
+  try {
+    const { ok, dados } = await api(`/api/suporte-escalado/${casoId}/notas`);
+    if (ok) notas = dados.notas ?? [];
+    else falhou = true;
+  } catch {
+    falhou = true;
+  }
+  renderNotas(casoId, container, notas, falhou);
+}
+
+function renderNotas(casoId, container, notas, falhou) {
+  container.replaceChildren();
+
+  if (falhou) {
+    const erro = document.createElement('p');
+    erro.className = 'vazio-suave';
+    erro.textContent = 'Não consegui carregar as notas.';
+    container.append(erro);
+  }
+
+  const lista = document.createElement('div');
+  lista.className = 'esc-notas-lista';
+  if (!notas.length) {
+    const vazio = document.createElement('p');
+    vazio.className = 'vazio-suave';
+    vazio.textContent = 'Nenhuma nota registrada ainda.';
+    lista.append(vazio);
+  } else {
+    for (const nota of notas) lista.append(criarNotaItem(casoId, container, nota));
+  }
+
+  const form = document.createElement('form');
+  form.className = 'esc-notas-form';
+  const textarea = document.createElement('textarea');
+  textarea.placeholder = 'Escrever uma nova nota...';
+  textarea.rows = 3;
+  const btnSalvar = document.createElement('button');
+  btnSalvar.type = 'submit';
+  btnSalvar.className = 'btn btn-forte';
+  btnSalvar.textContent = 'Adicionar nota';
+  form.append(textarea, btnSalvar);
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const texto = textarea.value.trim();
+    if (!texto) return;
+    btnSalvar.disabled = true;
+    const { ok, dados: resp } = await api(`/api/suporte-escalado/${casoId}/notas`, {
+      metodo: 'POST', corpo: { nota: texto },
+    });
+    btnSalvar.disabled = false;
+    if (!ok) {
+      window.alert(resp?.erro ?? resp?.detail ?? 'Não consegui salvar a nota.');
+      return;
+    }
+    carregarNotas(casoId, container);
+  });
+
+  container.append(lista, form);
+}
+
+function criarNotaItem(casoId, container, nota) {
+  const item = document.createElement('div');
+  item.className = 'esc-nota';
+
+  const cabeca = document.createElement('div');
+  cabeca.className = 'esc-nota-cabeca';
+  const autor = document.createElement('span');
+  autor.className = 'esc-nota-autor';
+  autor.textContent = nota.autor || 'Sem autor';
+  const editada = nota.atualizado_em && nota.atualizado_em !== nota.criado_em;
+  const quando = document.createElement('span');
+  quando.className = 'esc-nota-quando';
+  quando.textContent = (editada ? 'editada ' : '') + relativo(nota.atualizado_em || nota.criado_em);
+  quando.title = editada
+    ? `Criada em ${dataHora(nota.criado_em)} · editada em ${dataHora(nota.atualizado_em)}`
+    : `Criada em ${dataHora(nota.criado_em)}`;
+  const btnEditar = document.createElement('button');
+  btnEditar.type = 'button';
+  btnEditar.className = 'btn btn-icone';
+  btnEditar.title = 'Editar esta nota';
+  btnEditar.textContent = '✎';
+  cabeca.append(autor, quando, btnEditar);
+
+  const texto = document.createElement('p');
+  texto.className = 'esc-nota-texto';
+  texto.textContent = nota.nota;
+
+  item.append(cabeca, texto);
+
+  btnEditar.addEventListener('click', () => {
+    const textarea = document.createElement('textarea');
+    textarea.className = 'esc-nota-editar';
+    textarea.value = nota.nota;
+    textarea.rows = 3;
+
+    const acoes = document.createElement('div');
+    acoes.className = 'esc-nota-editar-acoes';
+    const btnSalvar = document.createElement('button');
+    btnSalvar.type = 'button';
+    btnSalvar.className = 'btn btn-forte';
+    btnSalvar.textContent = 'Salvar';
+    const btnCancelar = document.createElement('button');
+    btnCancelar.type = 'button';
+    btnCancelar.className = 'btn';
+    btnCancelar.textContent = 'Cancelar';
+    acoes.append(btnSalvar, btnCancelar);
+
+    item.replaceChildren(cabeca, textarea, acoes);
+    textarea.focus();
+
+    btnCancelar.addEventListener('click', () => carregarNotas(casoId, container));
+    btnSalvar.addEventListener('click', async () => {
+      const novoTexto = textarea.value.trim();
+      if (!novoTexto) return;
+      btnSalvar.disabled = true;
+      const { ok, dados: resp } = await api(`/api/suporte-escalado/notas/${nota.id}`, {
+        metodo: 'PUT', corpo: { nota: novoTexto },
+      });
+      btnSalvar.disabled = false;
+      if (!ok) {
+        window.alert(resp?.erro ?? resp?.detail ?? 'Não consegui salvar a nota.');
+        return;
+      }
+      carregarNotas(casoId, container);
+    });
+  });
+
+  return item;
+}
+
 /* ═══════════════════════════════  cartão  ═══════════════════════════════ */
 
 function criarCard(item) {
@@ -198,6 +361,16 @@ function criarCard(item) {
     moverStatus(item.id, sel.value);
   });
 
+  const btnDetalhes = document.createElement('button');
+  btnDetalhes.className = 'btn btn-icone';
+  btnDetalhes.type = 'button';
+  btnDetalhes.title = 'Ver detalhes e notas internas';
+  btnDetalhes.textContent = 'ⓘ';
+  btnDetalhes.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    abrirDetalheEscalado(item);
+  });
+
   const btnAbrir = document.createElement('button');
   btnAbrir.className = 'btn btn-icone';
   btnAbrir.type = 'button';
@@ -234,7 +407,7 @@ function criarCard(item) {
     reativar(item.id, item.nome || item.remetente_email);
   });
 
-  acoesEl.append(sel, btnAbrir, btnWebmail, btnReativar);
+  acoesEl.append(btnDetalhes, sel, btnAbrir, btnWebmail, btnReativar);
   rodape.append(quando, acoesEl);
   card.append(rodape);
 

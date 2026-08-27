@@ -13,13 +13,16 @@
  *                                          de detalhe da galeria)
  *   GET  /api/imagem/:id                → serve o binário de uma imagem (bytea → bytes)
  *   GET  /api/emails/:id/webmail        → acha o e-mail na caixa real (IMAP) e devolve a URL do webmail
- *   GET  /api/suporte-escalado          → kanban de suporte escalado (lista + KPIs)
- *   POST /api/suporte-escalado/status   → move um caso entre colunas do kanban
- *   POST /api/suporte-escalado/reativar → tira o caso do kanban (a IA volta a responder)
+ *   GET  /api/suporte-escalado                → kanban de suporte escalado (lista + KPIs)
+ *   POST /api/suporte-escalado/status         → move um caso entre colunas do kanban
+ *   POST /api/suporte-escalado/reativar       → tira o caso do kanban (a IA volta a responder)
+ *   GET  /api/suporte-escalado/:id/notas      → notas internas de um caso escalado
+ *   POST /api/suporte-escalado/:id/notas      → adiciona uma nota nova
+ *   PUT  /api/suporte-escalado/notas/:notaId  → edita o texto de uma nota já salva
  *
  * As duas rotas que CHAMAM Claude (POST /api/chat e POST /api/resposta)
  * moram em emailIA.js — este arquivo é 100% leitura do banco, exceto
- * POST /api/ticket e as duas de suporte-escalado abaixo.
+ * POST /api/ticket e as de suporte-escalado (status/reativar/notas) abaixo.
  */
 import { query } from '../../server/db.js';
 import { ErroHttp } from '../comum.js';
@@ -785,5 +788,87 @@ export default async function rotasEmailIACentral(app) {
     if (!r.rowCount) throw new ErroHttp(404, 'Caso escalado não encontrado.');
     resposta.code(204);
     return null;
+  });
+
+  /* ═══════════════════════  GET /api/suporte-escalado/:id/notas  ══════════════ */
+
+  app.get('/api/suporte-escalado/:id/notas', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Notas internas de um caso escalado (ordem cronológica)',
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object', required: ['id'], properties: { id: { type: 'integer' } },
+      },
+    },
+  }, async (req) => {
+    const { rows } = await query(
+      `SELECT id, suporte_escalado_id, autor, nota, criado_em, atualizado_em
+       FROM email_ia.suporte_escalado_notas
+       WHERE suporte_escalado_id = $1
+       ORDER BY criado_em ASC`,
+      [req.params.id],
+    );
+    return { notas: rows };
+  });
+
+  /* ═══════════════════════  POST /api/suporte-escalado/:id/notas  ═════════════ */
+
+  app.post('/api/suporte-escalado/:id/notas', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Adiciona uma nota interna a um caso escalado',
+      description: 'O autor vem da sessão de quem chama (não é campo do corpo) — não dá para '
+        + 'assinar uma nota em nome de outra pessoa.',
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object', required: ['id'], properties: { id: { type: 'integer' } },
+      },
+      body: {
+        type: 'object',
+        required: ['nota'],
+        properties: { nota: { type: 'string', minLength: 1, maxLength: 4000 } },
+      },
+    },
+  }, async (req) => {
+    const autor = req.usuario.nome || req.usuario.email || null;
+    const { rows } = await query(
+      `INSERT INTO email_ia.suporte_escalado_notas (suporte_escalado_id, autor, nota)
+       SELECT id, $2, $3 FROM email_ia.suporte_escalado WHERE id = $1
+       RETURNING id, suporte_escalado_id, autor, nota, criado_em, atualizado_em`,
+      [req.params.id, autor, req.body.nota.trim()],
+    );
+    if (!rows[0]) throw new ErroHttp(404, 'Caso escalado não encontrado.');
+    return rows[0];
+  });
+
+  /* ═══════════════════════  PUT /api/suporte-escalado/notas/:notaId  ══════════ */
+
+  app.put('/api/suporte-escalado/notas/:notaId', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Edita o texto de uma nota interna já salva',
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object', required: ['notaId'], properties: { notaId: { type: 'integer' } },
+      },
+      body: {
+        type: 'object',
+        required: ['nota'],
+        properties: { nota: { type: 'string', minLength: 1, maxLength: 4000 } },
+      },
+    },
+  }, async (req) => {
+    const { rows } = await query(
+      `UPDATE email_ia.suporte_escalado_notas SET nota = $1, atualizado_em = now()
+       WHERE id = $2
+       RETURNING id, suporte_escalado_id, autor, nota, criado_em, atualizado_em`,
+      [req.body.nota.trim(), req.params.notaId],
+    );
+    if (!rows[0]) throw new ErroHttp(404, 'Nota não encontrada.');
+    return rows[0];
   });
 }
