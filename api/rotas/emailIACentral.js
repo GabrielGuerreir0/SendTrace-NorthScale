@@ -13,12 +13,15 @@
  *                                          de detalhe da galeria)
  *   GET  /api/imagem/:id                → serve o binário de uma imagem (bytea → bytes)
  *   GET  /api/emails/:id/webmail        → acha o e-mail na caixa real (IMAP) e devolve a URL do webmail
- *   GET  /api/suporte-escalado                → kanban de suporte escalado (lista + KPIs)
+ *   GET  /api/suporte-escalado                → kanban de suporte escalado (colunas + lista + KPIs)
  *   POST /api/suporte-escalado/status         → move um caso entre colunas do kanban
  *   POST /api/suporte-escalado/reativar       → tira o caso do kanban (a IA volta a responder)
  *   GET  /api/suporte-escalado/:id/notas      → notas internas de um caso escalado
  *   POST /api/suporte-escalado/:id/notas      → adiciona uma nota nova
  *   PUT  /api/suporte-escalado/notas/:notaId  → edita o texto de uma nota já salva
+ *   POST /api/suporte-escalado/colunas        → cria uma coluna nova no kanban
+ *   PUT  /api/suporte-escalado/colunas/:id    → renomeia uma coluna (a chave interna não muda)
+ *   DELETE /api/suporte-escalado/colunas/:id  → apaga uma coluna (só se estiver vazia)
  *
  * As duas rotas que CHAMAM Claude (POST /api/chat e POST /api/resposta)
  * moram em emailIA.js — este arquivo é 100% leitura do banco, exceto
@@ -682,8 +685,6 @@ export default async function rotasEmailIACentral(app) {
 
   /* ═══════════════════════════  GET /api/suporte-escalado  ═══════════════════ */
 
-  const STATUS_ESCALADO = ['pendente', 'iniciado', 'esperando_resposta', 'reembolsado', 'finalizado'];
-
   app.get('/api/suporte-escalado', {
     onRequest: [app.exigirSessao],
     schema: {
@@ -714,14 +715,12 @@ export default async function rotasEmailIACentral(app) {
     const onde = condicoes.length ? condicoes.join(' AND ') : 'true';
     const dias = Math.max(1, Number(req.query.dias) || 30);
 
-    const [kpisRes, itensRes, transicoesRes, movimentosRes] = await Promise.all([
+    const [colunasRes, kpisRes, itensRes, transicoesRes, movimentosRes] = await Promise.all([
+      query('SELECT id, chave, rotulo, descricao, ordem FROM email_ia.suporte_escalado_colunas ORDER BY ordem, id'),
       query(
-        `SELECT count(*) FILTER (WHERE status = 'pendente')::int            AS pendente,
-                count(*) FILTER (WHERE status = 'iniciado')::int            AS iniciado,
-                count(*) FILTER (WHERE status = 'esperando_resposta')::int  AS esperando_resposta,
-                count(*) FILTER (WHERE status = 'reembolsado')::int         AS reembolsado,
-                count(*) FILTER (WHERE status = 'finalizado')::int          AS finalizado
-         FROM email_ia.suporte_escalado WHERE ${onde}`,
+        `SELECT status, count(*)::int AS total
+         FROM email_ia.suporte_escalado WHERE ${onde}
+         GROUP BY status`,
         valores,
       ),
       query(
@@ -770,7 +769,8 @@ export default async function rotasEmailIACentral(app) {
     const totalMovimentos = movimentosRes.rows.reduce((soma, r) => soma + r.total, 0);
 
     return {
-      kpis: kpisRes.rows[0],
+      colunas: colunasRes.rows,
+      kpis: Object.fromEntries(kpisRes.rows.map((r) => [r.status, r.total])),
       itens: itensRes.rows,
       transicoes: transicoesRes.rows,
       movimentos_diarios: movimentosRes.rows,
@@ -795,12 +795,16 @@ export default async function rotasEmailIACentral(app) {
         required: ['id', 'status'],
         properties: {
           id: { type: 'integer' },
-          status: { type: 'string', enum: STATUS_ESCALADO },
+          status: { type: 'string', minLength: 1, maxLength: 60 },
         },
       },
     },
   }, async (req) => {
     const { id, status } = req.body;
+    const { rows: colunaRows } = await query(
+      'SELECT 1 FROM email_ia.suporte_escalado_colunas WHERE chave = $1', [status],
+    );
+    if (!colunaRows[0]) throw new ErroHttp(400, 'Coluna inválida.');
     const { rows } = await query(
       `UPDATE email_ia.suporte_escalado SET status = $1,
          iniciado_em = CASE WHEN $1 <> 'pendente' THEN coalesce(iniciado_em, now()) ELSE iniciado_em END,
@@ -835,6 +839,123 @@ export default async function rotasEmailIACentral(app) {
     const { id } = req.body;
     const r = await query('DELETE FROM email_ia.suporte_escalado WHERE id = $1', [id]);
     if (!r.rowCount) throw new ErroHttp(404, 'Caso escalado não encontrado.');
+    resposta.code(204);
+    return null;
+  });
+
+  /* ═══════════════════  POST /api/suporte-escalado/colunas  ═══════════════════
+     Cria uma coluna nova no kanban. `chave` (o que fica gravado em
+     suporte_escalado.status) é derivada do rótulo — minúsculo, sem acento,
+     espaço vira `_` — e nunca muda depois, mesmo que o rótulo seja editado
+     depois (ver comentário da tabela em schema-email-ia.sql). */
+
+  function chaveDaColuna(rotulo, jaUsadas) {
+    const base = rotulo
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 40) || 'coluna';
+    let chave = base;
+    let sufixo = 2;
+    while (jaUsadas.has(chave)) {
+      chave = `${base}_${sufixo}`;
+      sufixo += 1;
+    }
+    return chave;
+  }
+
+  app.post('/api/suporte-escalado/colunas', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Cria uma coluna nova no kanban de suporte escalado',
+      security: [{ bearerAuth: [] }],
+      body: {
+        type: 'object',
+        required: ['rotulo'],
+        properties: {
+          rotulo: { type: 'string', minLength: 1, maxLength: 60 },
+          descricao: { type: 'string', maxLength: 300 },
+        },
+      },
+    },
+  }, async (req) => {
+    const rotulo = req.body.rotulo.trim();
+    if (!rotulo) throw new ErroHttp(400, 'Dê um nome para a coluna.');
+    const descricao = req.body.descricao === undefined ? null : req.body.descricao.trim() || null;
+    const { rows: existentes } = await query('SELECT chave FROM email_ia.suporte_escalado_colunas');
+    const chave = chaveDaColuna(rotulo, new Set(existentes.map((r) => r.chave)));
+    const { rows } = await query(
+      `INSERT INTO email_ia.suporte_escalado_colunas (chave, rotulo, descricao, ordem)
+       SELECT $1, $2, $3, coalesce(max(ordem), 0) + 1 FROM email_ia.suporte_escalado_colunas
+       RETURNING id, chave, rotulo, descricao, ordem`,
+      [chave, rotulo, descricao],
+    );
+    return rows[0];
+  });
+
+  /* ═══════════════════  PUT/DELETE /api/suporte-escalado/colunas/:id  ═════════ */
+
+  app.put('/api/suporte-escalado/colunas/:id', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Renomeia/redescreve uma coluna do kanban de suporte escalado',
+      description: 'Só troca rótulo/descrição exibidos — a chave interna (gravada em suporte_escalado.status) não muda.',
+      security: [{ bearerAuth: [] }],
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } },
+      body: {
+        type: 'object',
+        required: ['rotulo'],
+        properties: {
+          rotulo: { type: 'string', minLength: 1, maxLength: 60 },
+          descricao: { type: 'string', maxLength: 300 },
+        },
+      },
+    },
+  }, async (req) => {
+    const rotulo = req.body.rotulo.trim();
+    if (!rotulo) throw new ErroHttp(400, 'Dê um nome para a coluna.');
+    const descricao = req.body.descricao === undefined ? null : req.body.descricao.trim() || null;
+    const { rows } = await query(
+      `UPDATE email_ia.suporte_escalado_colunas SET rotulo = $1, descricao = $2 WHERE id = $3
+       RETURNING id, chave, rotulo, descricao, ordem`,
+      [rotulo, descricao, req.params.id],
+    );
+    if (!rows[0]) throw new ErroHttp(404, 'Coluna não encontrada.');
+    return rows[0];
+  });
+
+  app.delete('/api/suporte-escalado/colunas/:id', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Apaga uma coluna do kanban de suporte escalado',
+      description: 'Recusa apagar se a coluna tiver algum caso nela, ou se for a coluna "pendente" '
+        + '(é o destino padrão de todo caso escalado novo).',
+      security: [{ bearerAuth: [] }],
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } },
+    },
+  }, async (req, resposta) => {
+    const { rows } = await query(
+      'SELECT chave FROM email_ia.suporte_escalado_colunas WHERE id = $1', [req.params.id],
+    );
+    const coluna = rows[0];
+    if (!coluna) throw new ErroHttp(404, 'Coluna não encontrada.');
+    if (coluna.chave === 'pendente') {
+      throw new ErroHttp(409, 'A coluna "Pendente" é a entrada padrão de todo caso novo — não pode ser apagada.');
+    }
+    const { rows: qtd } = await query(
+      'SELECT count(*)::int AS total FROM email_ia.suporte_escalado WHERE status = $1', [coluna.chave],
+    );
+    if (qtd[0].total > 0) {
+      throw new ErroHttp(
+        409,
+        `Esta coluna tem ${qtd[0].total} caso${qtd[0].total === 1 ? '' : 's'} — mova ou reative antes de apagar.`,
+      );
+    }
+    await query('DELETE FROM email_ia.suporte_escalado_colunas WHERE id = $1', [req.params.id]);
     resposta.code(204);
     return null;
   });

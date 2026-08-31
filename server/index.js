@@ -1273,14 +1273,68 @@ async function atender(req, res, url, sessao) {
   if (url.pathname === '/api/suporte-escalado/status' && req.method === 'POST') {
     const corpo = await lerJson(req);
     if (!Number.isInteger(corpo.id)) return json(res, 400, { erro: 'Informe o id do caso escalado.' });
-    if (!['pendente', 'iniciado', 'esperando_resposta', 'reembolsado', 'finalizado'].includes(corpo.status)) {
-      return json(res, 400, { erro: 'Status inválido.' });
-    }
+    const status = String(corpo.status ?? '').trim();
+    if (!status) return json(res, 400, { erro: 'Informe a coluna de destino.' });
     try {
-      return json(res, 200, await criarApi('/api/suporte-escalado/status', { id: corpo.id, status: corpo.status }));
+      return json(res, 200, await criarApi('/api/suporte-escalado/status', { id: corpo.id, status }));
     } catch (err) {
       if (err instanceof ErroApi && err.status === 404) {
         return json(res, 404, { erro: 'Caso escalado não encontrado.' });
+      }
+      if (err instanceof ErroApi) {
+        return json(res, err.status || 400, { erro: detalharErroApi(err, 'Status inválido.') });
+      }
+      throw err;
+    }
+  }
+
+  /* ── colunas do kanban de suporte escalado: criar/renomear/apagar ──
+     Só apaga se a coluna estiver vazia — a API já recusa com 409 e uma
+     mensagem legível (quantos casos tem, ou "é a coluna Pendente"); aqui só
+     repassa. */
+  if (url.pathname === '/api/suporte-escalado/colunas' && req.method === 'POST') {
+    const corpo = await lerJson(req);
+    const rotulo = String(corpo.rotulo ?? '').trim();
+    if (!rotulo) return json(res, 400, { erro: 'Dê um nome para a coluna.' });
+    const descricao = String(corpo.descricao ?? '').trim();
+    try {
+      return json(res, 200, await criarApi('/api/suporte-escalado/colunas', { rotulo, descricao }));
+    } catch (err) {
+      if (err instanceof ErroApi) {
+        return json(res, err.status || 400, { erro: detalharErroApi(err, 'Não consegui criar a coluna.') });
+      }
+      throw err;
+    }
+  }
+
+  const rotaColunaEscalado = /^\/api\/suporte-escalado\/colunas\/(\d+)$/.exec(url.pathname);
+  if (rotaColunaEscalado && req.method === 'PUT') {
+    const corpo = await lerJson(req);
+    const rotulo = String(corpo.rotulo ?? '').trim();
+    if (!rotulo) return json(res, 400, { erro: 'Dê um nome para a coluna.' });
+    const descricao = String(corpo.descricao ?? '').trim();
+    try {
+      return json(res, 200, await substituirApi(`/api/suporte-escalado/colunas/${rotaColunaEscalado[1]}`, { rotulo, descricao }));
+    } catch (err) {
+      if (err instanceof ErroApi && err.status === 404) {
+        return json(res, 404, { erro: 'Coluna não encontrada.' });
+      }
+      if (err instanceof ErroApi) {
+        return json(res, err.status || 400, { erro: detalharErroApi(err, 'Não consegui renomear a coluna.') });
+      }
+      throw err;
+    }
+  }
+  if (rotaColunaEscalado && req.method === 'DELETE') {
+    try {
+      await apagarApi(`/api/suporte-escalado/colunas/${rotaColunaEscalado[1]}`);
+      return json(res, 200, { ok: true });
+    } catch (err) {
+      if (err instanceof ErroApi && err.status === 404) {
+        return json(res, 404, { erro: 'Coluna não encontrada.' });
+      }
+      if (err instanceof ErroApi) {
+        return json(res, err.status || 400, { erro: detalharErroApi(err, 'Não consegui apagar a coluna.') });
       }
       throw err;
     }
