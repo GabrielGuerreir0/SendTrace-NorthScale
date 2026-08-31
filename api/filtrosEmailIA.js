@@ -26,9 +26,15 @@ export const PLATAFORMAS = [
   'digistore24', 'buygoods', 'jvzoo', 'interno', 'hotmart', 'eduzz', 'monetizze', 'kiwify',
   'clickbank', 'cartpanda', 'braintree', 'paypal', 'stripe', 'shipoffers', 'helpdesk',
 ];
+// Lista nova (31/08/2026, 12 motivos + outro) + os valores legado (a IA não
+// classifica mais com eles, mas e-mails antigos ainda têm — precisam
+// continuar filtráveis). Ver LABEL_MOTIVO_DEVOLUCAO em public/emailComum.js.
 export const MOTIVOS_DEVOLUCAO = [
-  'produto_com_defeito', 'produto_errado', 'dano_no_transporte', 'atraso_na_entrega', 'arrependimento',
-  'tamanho_ou_medida_errada', 'diferente_do_anuncio', 'compra_duplicada', 'sem_resultado_esperado', 'motivo_saude', 'outro',
+  'comprou_por_engano', 'queria_outro_produto', 'quantidade_errada', 'sem_resultado_esperado',
+  'capsulas_com_problema', 'embalagem_com_problema', 'atraso_na_entrega', 'motivo_saude',
+  'propaganda_enganosa', 'compra_sem_permissao', 'acha_que_e_golpe', 'reacao_alergica', 'outro',
+  'produto_com_defeito', 'produto_errado', 'dano_no_transporte', 'arrependimento',
+  'tamanho_ou_medida_errada', 'diferente_do_anuncio', 'compra_duplicada',
 ];
 
 function listaValida(bruto, permitidos) {

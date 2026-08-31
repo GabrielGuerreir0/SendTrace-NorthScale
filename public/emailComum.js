@@ -63,11 +63,18 @@ export const LABEL_CATEGORIA = {
   troca: 'Troca', garantia: 'Garantia', cancelamento: 'Cancelamento', outro: 'Outro',
 };
 export const LABEL_MOTIVO_DEVOLUCAO = {
-  produto_com_defeito: 'Produto com defeito', produto_errado: 'Produto errado',
-  dano_no_transporte: 'Dano no transporte', atraso_na_entrega: 'Atraso na entrega',
-  arrependimento: 'Arrependimento', tamanho_ou_medida_errada: 'Tamanho/medida errada',
-  diferente_do_anuncio: 'Diferente do anúncio', compra_duplicada: 'Compra duplicada',
-  sem_resultado_esperado: 'Sem resultado esperado', motivo_saude: 'Motivo de saúde', outro: 'Outro',
+  // Lista nova (31/08/2026) — a IA só classifica com estes valores daqui pra frente.
+  comprou_por_engano: 'Comprou por engano', queria_outro_produto: 'Queria outro produto',
+  quantidade_errada: 'Quantidade errada', sem_resultado_esperado: 'Sem resultado esperado',
+  capsulas_com_problema: 'Cápsulas com problema', embalagem_com_problema: 'Embalagem com problema',
+  atraso_na_entrega: 'Atraso na entrega', motivo_saude: 'Motivo de saúde',
+  propaganda_enganosa: 'Propaganda enganosa', compra_sem_permissao: 'Compra sem permissão',
+  acha_que_e_golpe: 'Acha que é golpe', reacao_alergica: 'Reação alérgica', outro: 'Outro',
+  // Legado — só aparece em e-mails classificados ANTES da lista nova; a IA não usa mais.
+  produto_com_defeito: 'Produto com defeito (legado)', produto_errado: 'Produto errado (legado)',
+  dano_no_transporte: 'Dano no transporte (legado)', arrependimento: 'Arrependimento (legado)',
+  tamanho_ou_medida_errada: 'Tamanho/medida errada (legado)',
+  diferente_do_anuncio: 'Diferente do anúncio (legado)', compra_duplicada: 'Compra duplicada (legado)',
 };
 export const LABEL_AREA_PROBLEMA = {
   entrega: 'Entrega', produto: 'Produto', codigo_rastreio: 'Código de rastreio',
