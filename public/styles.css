@@ -1577,6 +1577,9 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
   gap: clamp(14px, 1.6vw, 20px);
   align-items: start;
   overflow-x: auto;
+  /* Sem isto o board colava direto embaixo da fileira de KPIs (mesmo espaço
+     que qualquer outro par cartão-a-cartão do painel já tem por padrão). */
+  margin-top: clamp(14px, 1.6vw, 20px);
   padding-bottom: 6px; /* respiro para a barra de rolagem não colar nos cartões */
   scrollbar-width: thin;
   /* Pegar-e-arrastar (mesmo padrão do canvas da régua): mouse comum não tem
@@ -1602,21 +1605,67 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
   border-color: var(--eixo);
   background: color-mix(in srgb, var(--st-em-dia) 6%, var(--superficie));
 }
-.esc-coluna-cabeca { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.esc-coluna-cabeca { display: flex; flex-direction: column; gap: 6px; }
+.esc-coluna-titulo-linha { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .esc-coluna-titulo { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 620; }
 .esc-coluna-titulo i { font-style: normal; font-size: 9px; }
-.esc-coluna[data-status="pendente"]           .esc-coluna-titulo i { color: var(--st-travado); }
-.esc-coluna[data-status="iniciado"]           .esc-coluna-titulo i { color: var(--st-atrasado); }
-.esc-coluna[data-status="esperando_resposta"] .esc-coluna-titulo i { color: var(--st-em-dia); }
-.esc-coluna[data-status="reembolsado"]        .esc-coluna-titulo i { color: var(--st-processando); }
-.esc-coluna[data-status="finalizado"]         .esc-coluna-titulo i { color: var(--st-finalizado); }
+/* A cor do ponto/título cicla por 6 tons (TONS_COLUNA em
+   emailSuporteEscalado.js) em vez de depender do nome da coluna — como o
+   usuário agora cria/renomeia colunas livremente, não dá mais para curar
+   uma cor com significado fixo por `status`. */
+.esc-coluna[data-tom="travado"]     .esc-coluna-titulo i { color: var(--st-travado); }
+.esc-coluna[data-tom="atrasado"]    .esc-coluna-titulo i { color: var(--st-atrasado); }
+.esc-coluna[data-tom="em_dia"]      .esc-coluna-titulo i { color: var(--st-em-dia); }
+.esc-coluna[data-tom="processando"] .esc-coluna-titulo i { color: var(--st-processando); }
+.esc-coluna[data-tom="finalizado"]  .esc-coluna-titulo i { color: var(--st-finalizado); }
+.esc-coluna[data-tom="cancelado"]   .esc-coluna-titulo i { color: var(--st-cancelado); }
 .esc-coluna-qtd { font-size: 11.5px; color: var(--tinta-fraca); font-variant-numeric: tabular-nums; }
+.esc-coluna-descricao { font-size: 11px; line-height: 1.4; color: var(--tinta-fraca); margin: 0; }
+.esc-coluna-acoes { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.esc-coluna-acoes .btn-icone { padding: 4px 7px; font-size: 11px; }
 .esc-coluna-corpo { display: flex; flex-direction: column; gap: 10px; min-height: 48px; }
 .esc-coluna-vazia { font-size: 12px; color: var(--tinta-fraca); text-align: center; padding: 14px 0; }
 /* Coluna estreita (280px) — a paginação padrão (info + botões lado a lado)
    quebra linha em vez de espremer, senão "página 1 de 3 · 8 casos" disputa
    espaço com os dois botões. */
 .esc-coluna .paginacao { flex-wrap: wrap; row-gap: 8px; padding-top: 10px; }
+
+/* Editar coluna (✎ no cabeçalho) — mesmo tratamento visual de
+   .esc-nota-editar/.esc-notas-form, só que compacto o bastante pra caber
+   no espaço apertado do cabeçalho de uma coluna de 280px. */
+.esc-coluna-cabeca--editando { gap: 8px; }
+.esc-coluna-editar-form { display: flex; flex-direction: column; gap: 6px; }
+.esc-coluna-editar-rotulo, .esc-coluna-editar-descricao {
+  width: 100%; padding: 7px 9px;
+  border: 1px solid var(--borda); border-radius: 8px;
+  background: var(--plano); color: var(--tinta);
+  font: inherit; font-size: 12px;
+}
+.esc-coluna-editar-rotulo { font-weight: 620; }
+.esc-coluna-editar-acoes { display: flex; gap: 8px; }
+
+/* "+ Nova coluna" — a última coluna do board, uma placeholder tracejada até
+   ser clicada (mesmo espírito de kanbans como Trello/Linear). */
+.esc-coluna--nova {
+  display: flex; align-items: flex-start; justify-content: center;
+  border-style: dashed;
+  background: transparent; box-shadow: none;
+}
+.esc-coluna-nova-btn {
+  appearance: none; cursor: pointer; width: 100%;
+  padding: 10px; font: 560 12.5px/1.35 inherit; color: var(--tinta-fraca);
+  background: transparent; border: none; border-radius: 10px;
+  transition: color .14s, background-color .14s;
+}
+.esc-coluna-nova-btn:hover { color: var(--tinta); background: var(--superficie-2); }
+.esc-coluna-nova-form { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.esc-coluna-nova-form input {
+  width: 100%; padding: 8px 10px;
+  border: 1px solid var(--borda); border-radius: 8px;
+  background: var(--plano); color: var(--tinta);
+  font: inherit; font-size: 12.5px;
+}
+.esc-coluna-nova-acoes { display: flex; gap: 8px; }
 
 .esc-card {
   display: flex; flex-direction: column; gap: 7px;

@@ -19,6 +19,15 @@ import { abrirNaTabela } from './emailTickets.js';
 
 let itens = [];
 let kpis = {};
+/**
+ * Colunas do kanban — vêm do servidor (email_ia.suporte_escalado_colunas),
+ * não são mais fixas no código: o usuário cria, renomeia e apaga colunas
+ * pela própria tela (ver criarColuna/renomearColuna/apagarColuna abaixo).
+ * Cada item: { id, chave, rotulo, descricao, ordem } — `chave` é o que vale
+ * como `status` de um caso e nunca muda depois de criada; só `rotulo`/
+ * `descricao` (o nome e o "pra que serve" exibidos na tela) são editáveis.
+ */
+let colunas = [];
 let transicoes = [];
 let movimentosDiarios = [];
 let resumoMovimentos = {};
@@ -30,13 +39,11 @@ const POR_PAGINA_COLUNA = 8;
 /** 1 página por coluna, independentes entre si — status → nº da página atual. */
 const paginaColuna = new Map();
 
-const COLUNAS = [
-  { status: 'pendente', rotulo: 'Pendente' },
-  { status: 'iniciado', rotulo: 'Iniciado' },
-  { status: 'esperando_resposta', rotulo: 'Esperando resposta' },
-  { status: 'reembolsado', rotulo: 'Reembolsado' },
-  { status: 'finalizado', rotulo: 'Finalizado' },
-];
+/** Cicla pela mesma paleta de 6 tons que o resto do painel já usa (--st-*)
+ *  — como as colunas agora são livres, não dá mais para curar uma cor com
+ *  significado fixo por coluna (ex.: vermelho pro travado). */
+const TONS_COLUNA = ['travado', 'atrasado', 'em_dia', 'processando', 'finalizado', 'cancelado'];
+const tomColuna = (indice) => TONS_COLUNA[indice % TONS_COLUNA.length];
 
 /* ═══════════════════════════  sub-páginas  ═══════════════════════════════
    Kanban e Tempo no kanban são duas telas grandes disputando espaço na
@@ -71,26 +78,9 @@ mostrarSubaba(SUBABAS[localStorage.getItem('escSubaba')] ? localStorage.getItem(
 
 function renderKpis() {
   $('esc-kpis').replaceChildren(
-    kpiCard({
-      icone: '●', tom: 'travado', rotulo: 'Pendente', valor: n(kpis.pendente ?? 0),
-      nota: 'aguardando o primeiro atendimento',
-    }),
-    kpiCard({
-      icone: '●', tom: 'atrasado', rotulo: 'Iniciado', valor: n(kpis.iniciado ?? 0),
-      nota: 'em atendimento humano',
-    }),
-    kpiCard({
-      icone: '●', tom: 'em_dia', rotulo: 'Esperando resposta', valor: n(kpis.esperando_resposta ?? 0),
-      nota: 'aguardando o cliente responder',
-    }),
-    kpiCard({
-      icone: '●', tom: 'processando', rotulo: 'Reembolsado', valor: n(kpis.reembolsado ?? 0),
-      nota: 'reembolso já processado',
-    }),
-    kpiCard({
-      icone: '●', tom: 'finalizado', rotulo: 'Finalizado', valor: n(kpis.finalizado ?? 0),
-      nota: 'atendimento concluído',
-    }),
+    ...colunas.map((c, i) => kpiCard({
+      icone: '●', tom: tomColuna(i), rotulo: c.rotulo, valor: n(kpis[c.chave] ?? 0), nota: c.descricao ?? '',
+    })),
   );
 }
 
@@ -113,8 +103,7 @@ function mediana(valores) {
 
 const horasEntre = (a, b) => (new Date(b).getTime() - new Date(a).getTime()) / 3_600_000;
 
-const ROTULO_STATUS = Object.fromEntries(COLUNAS.map((c) => [c.status, c.rotulo]));
-const rotularStatus = (s) => (s === null ? 'criado' : (ROTULO_STATUS[s] ?? s));
+const rotularStatus = (s) => (s === null ? 'criado' : (colunas.find((c) => c.chave === s)?.rotulo ?? s));
 
 function renderKpisTempo() {
   const ateSair = itens.filter((i) => i.iniciado_em).map((i) => horasEntre(i.criado_em, i.iniciado_em));
@@ -268,6 +257,48 @@ async function reativar(id, nome) {
   await carregarDados();
 }
 
+/* ═══════════════════════════  colunas do kanban  ═════════════════════════
+   Criar/renomear/apagar coluna. Apagar é bloqueado no servidor se a coluna
+   tiver algum caso (ou for a coluna "pendente") — aqui só desabilita o botão
+   de antemão (doColuna.length, calculado no renderBoard) e mostra a
+   mensagem de erro que a API mandar se, mesmo assim, a chamada for tentada
+   (ex.: outra aba moveu um caso pra cá entre o render e o clique). */
+
+async function criarColuna(rotulo, descricao) {
+  const { ok, dados: resp } = await api('/api/suporte-escalado/colunas', {
+    metodo: 'POST', corpo: { rotulo, descricao },
+  });
+  if (!ok) {
+    window.alert(resp?.detail ?? resp?.erro ?? resp?.message ?? 'Não consegui criar a coluna.');
+    return false;
+  }
+  await carregarDados();
+  return true;
+}
+
+async function editarColuna(id, rotulo, descricao) {
+  const { ok, dados: resp } = await api(`/api/suporte-escalado/colunas/${id}`, {
+    metodo: 'PUT', corpo: { rotulo, descricao },
+  });
+  if (!ok) {
+    window.alert(resp?.detail ?? resp?.erro ?? resp?.message ?? 'Não consegui salvar a coluna.');
+    return false;
+  }
+  await carregarDados();
+  return true;
+}
+
+async function apagarColuna(id, rotulo) {
+  const confirmou = window.confirm(`Apagar a coluna "${rotulo}"?\n\nEssa ação não pode ser desfeita.`);
+  if (!confirmou) return;
+  const { ok, dados: resp } = await api(`/api/suporte-escalado/colunas/${id}`, { metodo: 'DELETE' });
+  if (!ok) {
+    window.alert(resp?.detail ?? resp?.erro ?? resp?.message ?? 'Não consegui apagar a coluna.');
+    return;
+  }
+  await carregarDados();
+}
+
 /* ═══════════════════════════  detalhes + notas  ══════════════════════════
    Ficha completa do caso (mesmo modal #modal-ficha reaproveitado em toda a
    Central de E-mail IA) com um campo a mais: notas internas do suporte,
@@ -279,7 +310,7 @@ function abrirDetalheEscalado(item) {
   notasContainer.className = 'esc-notas';
   notasContainer.textContent = 'Carregando notas…';
 
-  const rotuloStatus = COLUNAS.find((c) => c.status === item.status)?.rotulo ?? item.status;
+  const rotuloStatus = rotularStatus(item.status);
 
   abrirFicha({
     titulo: item.nome || item.remetente_email || '(sem nome)',
@@ -498,11 +529,11 @@ function criarCard(item) {
 
   const sel = document.createElement('select');
   sel.setAttribute('aria-label', `Mover ${item.nome || item.remetente_email} para outra coluna`);
-  for (const c of COLUNAS) {
+  for (const c of colunas) {
     const opt = document.createElement('option');
-    opt.value = c.status;
+    opt.value = c.chave;
     opt.textContent = c.rotulo;
-    if (c.status === item.status) opt.selected = true;
+    if (c.chave === item.status) opt.selected = true;
     sel.append(opt);
   }
   sel.addEventListener('click', (ev) => ev.stopPropagation());
@@ -623,21 +654,85 @@ function itensFiltrados() {
   });
 }
 
+/**
+ * Troca o cabeçalho de uma coluna pelo modo de edição (nome + descrição,
+ * com Salvar/Cancelar) — chamado pelo botão ✎. `flag.feito` evita rodar
+ * commit() duas vezes (Enter chama commit direto; blur do input também
+ * dispara commit; sem a trava, Escape+blur poderia mandar a chamada
+ * duas vezes ou reabrir a coluna já cancelada).
+ */
+function editarCabecaColuna(c, cabeca) {
+  cabeca.replaceChildren();
+  cabeca.classList.add('esc-coluna-cabeca--editando');
+
+  const form = document.createElement('form');
+  form.className = 'esc-coluna-editar-form';
+
+  const inputRotulo = document.createElement('input');
+  inputRotulo.type = 'text';
+  inputRotulo.className = 'esc-coluna-editar-rotulo';
+  inputRotulo.value = c.rotulo;
+  inputRotulo.maxLength = 60;
+  inputRotulo.placeholder = 'Nome da coluna';
+  inputRotulo.required = true;
+
+  const inputDescricao = document.createElement('input');
+  inputDescricao.type = 'text';
+  inputDescricao.className = 'esc-coluna-editar-descricao';
+  inputDescricao.value = c.descricao ?? '';
+  inputDescricao.maxLength = 300;
+  inputDescricao.placeholder = 'Pra que serve esta coluna (opcional)';
+
+  const acoes = document.createElement('div');
+  acoes.className = 'esc-coluna-editar-acoes';
+  const btnSalvar = document.createElement('button');
+  btnSalvar.type = 'submit';
+  btnSalvar.className = 'btn btn-forte';
+  btnSalvar.textContent = 'Salvar';
+  const btnCancelar = document.createElement('button');
+  btnCancelar.type = 'button';
+  btnCancelar.className = 'btn';
+  btnCancelar.textContent = 'Cancelar';
+  acoes.append(btnSalvar, btnCancelar);
+
+  form.append(inputRotulo, inputDescricao, acoes);
+  cabeca.append(form);
+  inputRotulo.focus();
+  inputRotulo.select();
+
+  const flag = { feito: false };
+  btnCancelar.addEventListener('click', () => { flag.feito = true; renderBoard(); });
+  form.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') { ev.preventDefault(); flag.feito = true; renderBoard(); }
+  });
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    if (flag.feito) return;
+    flag.feito = true;
+    const rotulo = inputRotulo.value.trim();
+    if (!rotulo) { renderBoard(); return; }
+    btnSalvar.disabled = true;
+    const ok = await editarColuna(c.id, rotulo, inputDescricao.value.trim());
+    if (!ok) renderBoard();
+  });
+}
+
 function renderBoard() {
   const lista = itensFiltrados();
   const board = $('esc-board');
   board.replaceChildren();
 
-  for (const c of COLUNAS) {
-    const doColuna = lista.filter((i) => i.status === c.status);
+  colunas.forEach((c, indice) => {
+    const doColuna = lista.filter((i) => i.status === c.chave);
     const { pagina: paginaAtual, totalPaginas, fatia } = paginar(
-      doColuna, paginaColuna.get(c.status) ?? 1, POR_PAGINA_COLUNA,
+      doColuna, paginaColuna.get(c.chave) ?? 1, POR_PAGINA_COLUNA,
     );
-    paginaColuna.set(c.status, paginaAtual);
+    paginaColuna.set(c.chave, paginaAtual);
 
     const coluna = document.createElement('div');
     coluna.className = 'cartao esc-coluna';
-    coluna.dataset.status = c.status;
+    coluna.dataset.status = c.chave;
+    coluna.dataset.tom = tomColuna(indice);
 
     coluna.addEventListener('dragover', (ev) => {
       ev.preventDefault();
@@ -647,11 +742,14 @@ function renderBoard() {
     coluna.addEventListener('drop', (ev) => {
       ev.preventDefault();
       delete coluna.dataset.arrasteSobre;
-      if (arrastandoId != null) moverStatus(arrastandoId, c.status);
+      if (arrastandoId != null) moverStatus(arrastandoId, c.chave);
     });
 
     const cabeca = document.createElement('div');
     cabeca.className = 'esc-coluna-cabeca';
+
+    const tituloLinha = document.createElement('div');
+    tituloLinha.className = 'esc-coluna-titulo-linha';
     const titulo = document.createElement('div');
     titulo.className = 'esc-coluna-titulo';
     const dot = document.createElement('i');
@@ -660,7 +758,36 @@ function renderBoard() {
     const qtd = document.createElement('span');
     qtd.className = 'esc-coluna-qtd';
     qtd.textContent = n(doColuna.length);
-    cabeca.append(titulo, qtd);
+    tituloLinha.append(titulo, qtd);
+
+    const acoesColuna = document.createElement('div');
+    acoesColuna.className = 'esc-coluna-acoes';
+    const btnEditarColuna = document.createElement('button');
+    btnEditarColuna.type = 'button';
+    btnEditarColuna.className = 'btn btn-icone';
+    btnEditarColuna.title = 'Editar nome e descrição desta coluna';
+    btnEditarColuna.textContent = '✎';
+    btnEditarColuna.addEventListener('click', () => editarCabecaColuna(c, cabeca));
+    const btnApagarColuna = document.createElement('button');
+    btnApagarColuna.type = 'button';
+    btnApagarColuna.className = 'btn btn-icone';
+    btnApagarColuna.textContent = '🗑';
+    if (doColuna.length) {
+      btnApagarColuna.disabled = true;
+      btnApagarColuna.title = `Só dá para apagar uma coluna vazia — esta tem ${n(doColuna.length)} caso${doColuna.length === 1 ? '' : 's'}.`;
+    } else {
+      btnApagarColuna.title = 'Apagar esta coluna';
+      btnApagarColuna.addEventListener('click', () => apagarColuna(c.id, c.rotulo));
+    }
+    acoesColuna.append(btnEditarColuna, btnApagarColuna);
+
+    cabeca.append(tituloLinha, acoesColuna);
+    if (c.descricao) {
+      const descricao = document.createElement('p');
+      descricao.className = 'esc-coluna-descricao';
+      descricao.textContent = c.descricao;
+      cabeca.append(descricao);
+    }
 
     const corpo = document.createElement('div');
     corpo.className = 'esc-coluna-corpo';
@@ -680,14 +807,72 @@ function renderBoard() {
       montarPaginacao(pag, {
         pagina: paginaAtual, totalPaginas, total: doColuna.length, rotuloItem: 'caso',
       }, (novaPagina) => {
-        paginaColuna.set(c.status, novaPagina);
+        paginaColuna.set(c.chave, novaPagina);
         renderBoard();
       });
       coluna.append(pag);
     }
 
     board.append(coluna);
-  }
+  });
+
+  board.append(criarColunaFantasma());
+}
+
+/** Última "coluna" do board — não é uma coluna de verdade, é o formulário
+ *  de criar uma nova (mesmo padrão de "+ Nova coluna" de kanbans conhecidos:
+ *  um botão fantasma que vira formulário ao clicar). */
+function criarColunaFantasma() {
+  const coluna = document.createElement('div');
+  coluna.className = 'cartao esc-coluna esc-coluna--nova';
+
+  const btnAbrir = document.createElement('button');
+  btnAbrir.type = 'button';
+  btnAbrir.className = 'esc-coluna-nova-btn';
+  btnAbrir.textContent = '+ Nova coluna';
+
+  const form = document.createElement('form');
+  form.className = 'esc-coluna-nova-form';
+  form.hidden = true;
+  const inputRotulo = document.createElement('input');
+  inputRotulo.type = 'text';
+  inputRotulo.placeholder = 'Nome da coluna';
+  inputRotulo.maxLength = 60;
+  inputRotulo.required = true;
+  const inputDescricao = document.createElement('input');
+  inputDescricao.type = 'text';
+  inputDescricao.placeholder = 'Pra que serve esta coluna (opcional)';
+  inputDescricao.maxLength = 300;
+  const acoes = document.createElement('div');
+  acoes.className = 'esc-coluna-nova-acoes';
+  const btnSalvar = document.createElement('button');
+  btnSalvar.type = 'submit';
+  btnSalvar.className = 'btn btn-forte';
+  btnSalvar.textContent = 'Criar';
+  const btnCancelar = document.createElement('button');
+  btnCancelar.type = 'button';
+  btnCancelar.className = 'btn';
+  btnCancelar.textContent = 'Cancelar';
+  acoes.append(btnSalvar, btnCancelar);
+  form.append(inputRotulo, inputDescricao, acoes);
+
+  btnAbrir.addEventListener('click', () => {
+    btnAbrir.hidden = true;
+    form.hidden = false;
+    inputRotulo.focus();
+  });
+  btnCancelar.addEventListener('click', () => renderBoard());
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const rotulo = inputRotulo.value.trim();
+    if (!rotulo) return;
+    btnSalvar.disabled = true;
+    const ok = await criarColuna(rotulo, inputDescricao.value.trim());
+    if (!ok) btnSalvar.disabled = false;
+  });
+
+  coluna.append(btnAbrir, form);
+  return coluna;
 }
 
 /* ═══════════════════════════════  carregamento  ═══════════════════════════ */
@@ -702,6 +887,7 @@ export async function carregarDados() {
     const { ok, dados: d } = await api(`/api/suporte-escalado?${p}`);
     if (meu !== geracao) return;
     if (!ok) throw new Error(d?.detail ?? d?.erro ?? 'falha ao carregar');
+    colunas = d.colunas ?? [];
     kpis = d.kpis ?? {};
     itens = d.itens ?? [];
     transicoes = d.transicoes ?? [];
