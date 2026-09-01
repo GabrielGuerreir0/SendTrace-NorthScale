@@ -38,6 +38,15 @@ let arrastandoId = null;
 const POR_PAGINA_COLUNA = 8;
 /** 1 página por coluna, independentes entre si — status → nº da página atual. */
 const paginaColuna = new Map();
+/** Estado do formulário "+ Nova coluna" — precisa sobreviver ao renderBoard()
+ *  automático (a tela recarrega os dados a cada 25s, ver carregarDados no fim
+ *  do arquivo); sem isso o formulário fechava e o que a pessoa tinha digitado
+ *  sumia no meio da digitação. */
+let novaColunaAberta = false;
+let novaColunaRascunho = { rotulo: '', descricao: '' };
+/** Mesma ideia para o formulário de renomear uma coluna existente. */
+let colunaEditandoId = null;
+let colunaEditandoRascunho = { rotulo: '', descricao: '' };
 
 /** Cicla pela mesma paleta de 6 tons que o resto do painel já usa (--st-*)
  *  — como as colunas agora são livres, não dá mais para curar uma cor com
@@ -656,12 +665,25 @@ function itensFiltrados() {
 
 /**
  * Troca o cabeçalho de uma coluna pelo modo de edição (nome + descrição,
- * com Salvar/Cancelar) — chamado pelo botão ✎. `flag.feito` evita rodar
- * commit() duas vezes (Enter chama commit direto; blur do input também
- * dispara commit; sem a trava, Escape+blur poderia mandar a chamada
- * duas vezes ou reabrir a coluna já cancelada).
+ * com Salvar/Cancelar) — chamado pelo botão ✎, e também de novo a cada
+ * renderBoard() automático enquanto `colunaEditandoId` apontar pra essa
+ * coluna (ver comentário de `colunaEditandoId` lá em cima): o formulário
+ * (e o que já foi digitado, via `colunaEditandoRascunho`) sobrevive ao
+ * refresh de 25s em vez de fechar sozinho no meio da digitação.
+ * `focar` só é true na abertura pelo clique — nos re-renders automáticos
+ * não deve roubar o foco nem re-selecionar o texto (senão a próxima tecla
+ * digitada apagaria tudo de novo).
+ * `flag.feito` evita rodar commit() duas vezes (Enter chama commit direto;
+ * blur do input também dispara commit; sem a trava, Escape+blur poderia
+ * mandar a chamada duas vezes ou reabrir a coluna já cancelada).
  */
-function editarCabecaColuna(c, cabeca) {
+function editarCabecaColuna(c, cabeca, { focar = false } = {}) {
+  colunaEditandoId = c.id;
+  if (colunaEditandoRascunho.id !== c.id) {
+    colunaEditandoRascunho = { id: c.id, rotulo: c.rotulo, descricao: c.descricao ?? '' };
+  }
+  const rascunho = colunaEditandoRascunho;
+
   cabeca.replaceChildren();
   cabeca.classList.add('esc-coluna-cabeca--editando');
 
@@ -671,17 +693,19 @@ function editarCabecaColuna(c, cabeca) {
   const inputRotulo = document.createElement('input');
   inputRotulo.type = 'text';
   inputRotulo.className = 'esc-coluna-editar-rotulo';
-  inputRotulo.value = c.rotulo;
+  inputRotulo.value = rascunho.rotulo;
   inputRotulo.maxLength = 60;
   inputRotulo.placeholder = 'Nome da coluna';
   inputRotulo.required = true;
+  inputRotulo.addEventListener('input', () => { rascunho.rotulo = inputRotulo.value; });
 
   const inputDescricao = document.createElement('input');
   inputDescricao.type = 'text';
   inputDescricao.className = 'esc-coluna-editar-descricao';
-  inputDescricao.value = c.descricao ?? '';
+  inputDescricao.value = rascunho.descricao;
   inputDescricao.maxLength = 300;
   inputDescricao.placeholder = 'Pra que serve esta coluna (opcional)';
+  inputDescricao.addEventListener('input', () => { rascunho.descricao = inputDescricao.value; });
 
   const acoes = document.createElement('div');
   acoes.className = 'esc-coluna-editar-acoes';
@@ -697,23 +721,28 @@ function editarCabecaColuna(c, cabeca) {
 
   form.append(inputRotulo, inputDescricao, acoes);
   cabeca.append(form);
-  inputRotulo.focus();
-  inputRotulo.select();
+  if (focar) { inputRotulo.focus(); inputRotulo.select(); }
+
+  const fecharEdicao = () => {
+    colunaEditandoId = null;
+    colunaEditandoRascunho = { rotulo: '', descricao: '' };
+  };
 
   const flag = { feito: false };
-  btnCancelar.addEventListener('click', () => { flag.feito = true; renderBoard(); });
+  btnCancelar.addEventListener('click', () => { flag.feito = true; fecharEdicao(); renderBoard(); });
   form.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape') { ev.preventDefault(); flag.feito = true; renderBoard(); }
+    if (ev.key === 'Escape') { ev.preventDefault(); flag.feito = true; fecharEdicao(); renderBoard(); }
   });
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     if (flag.feito) return;
     flag.feito = true;
     const rotulo = inputRotulo.value.trim();
-    if (!rotulo) { renderBoard(); return; }
+    if (!rotulo) { fecharEdicao(); renderBoard(); return; }
     btnSalvar.disabled = true;
     const ok = await editarColuna(c.id, rotulo, inputDescricao.value.trim());
-    if (!ok) renderBoard();
+    if (ok) fecharEdicao();
+    else { flag.feito = false; btnSalvar.disabled = false; }
   });
 }
 
@@ -748,45 +777,49 @@ function renderBoard() {
     const cabeca = document.createElement('div');
     cabeca.className = 'esc-coluna-cabeca';
 
-    const tituloLinha = document.createElement('div');
-    tituloLinha.className = 'esc-coluna-titulo-linha';
-    const titulo = document.createElement('div');
-    titulo.className = 'esc-coluna-titulo';
-    const dot = document.createElement('i');
-    dot.textContent = '●';
-    titulo.append(dot, document.createTextNode(c.rotulo));
-    const qtd = document.createElement('span');
-    qtd.className = 'esc-coluna-qtd';
-    qtd.textContent = n(doColuna.length);
-    tituloLinha.append(titulo, qtd);
-
-    const acoesColuna = document.createElement('div');
-    acoesColuna.className = 'esc-coluna-acoes';
-    const btnEditarColuna = document.createElement('button');
-    btnEditarColuna.type = 'button';
-    btnEditarColuna.className = 'btn btn-icone';
-    btnEditarColuna.title = 'Editar nome e descrição desta coluna';
-    btnEditarColuna.textContent = '✎';
-    btnEditarColuna.addEventListener('click', () => editarCabecaColuna(c, cabeca));
-    const btnApagarColuna = document.createElement('button');
-    btnApagarColuna.type = 'button';
-    btnApagarColuna.className = 'btn btn-icone';
-    btnApagarColuna.textContent = '🗑';
-    if (doColuna.length) {
-      btnApagarColuna.disabled = true;
-      btnApagarColuna.title = `Só dá para apagar uma coluna vazia — esta tem ${n(doColuna.length)} caso${doColuna.length === 1 ? '' : 's'}.`;
+    if (colunaEditandoId === c.id) {
+      editarCabecaColuna(c, cabeca);
     } else {
-      btnApagarColuna.title = 'Apagar esta coluna';
-      btnApagarColuna.addEventListener('click', () => apagarColuna(c.id, c.rotulo));
-    }
-    acoesColuna.append(btnEditarColuna, btnApagarColuna);
+      const tituloLinha = document.createElement('div');
+      tituloLinha.className = 'esc-coluna-titulo-linha';
+      const titulo = document.createElement('div');
+      titulo.className = 'esc-coluna-titulo';
+      const dot = document.createElement('i');
+      dot.textContent = '●';
+      titulo.append(dot, document.createTextNode(c.rotulo));
+      const qtd = document.createElement('span');
+      qtd.className = 'esc-coluna-qtd';
+      qtd.textContent = n(doColuna.length);
+      tituloLinha.append(titulo, qtd);
 
-    cabeca.append(tituloLinha, acoesColuna);
-    if (c.descricao) {
-      const descricao = document.createElement('p');
-      descricao.className = 'esc-coluna-descricao';
-      descricao.textContent = c.descricao;
-      cabeca.append(descricao);
+      const acoesColuna = document.createElement('div');
+      acoesColuna.className = 'esc-coluna-acoes';
+      const btnEditarColuna = document.createElement('button');
+      btnEditarColuna.type = 'button';
+      btnEditarColuna.className = 'btn btn-icone';
+      btnEditarColuna.title = 'Editar nome e descrição desta coluna';
+      btnEditarColuna.textContent = '✎';
+      btnEditarColuna.addEventListener('click', () => editarCabecaColuna(c, cabeca, { focar: true }));
+      const btnApagarColuna = document.createElement('button');
+      btnApagarColuna.type = 'button';
+      btnApagarColuna.className = 'btn btn-icone';
+      btnApagarColuna.textContent = '🗑';
+      if (doColuna.length) {
+        btnApagarColuna.disabled = true;
+        btnApagarColuna.title = `Só dá para apagar uma coluna vazia — esta tem ${n(doColuna.length)} caso${doColuna.length === 1 ? '' : 's'}.`;
+      } else {
+        btnApagarColuna.title = 'Apagar esta coluna';
+        btnApagarColuna.addEventListener('click', () => apagarColuna(c.id, c.rotulo));
+      }
+      acoesColuna.append(btnEditarColuna, btnApagarColuna);
+
+      cabeca.append(tituloLinha, acoesColuna);
+      if (c.descricao) {
+        const descricao = document.createElement('p');
+        descricao.className = 'esc-coluna-descricao';
+        descricao.textContent = c.descricao;
+        cabeca.append(descricao);
+      }
     }
 
     const corpo = document.createElement('div');
@@ -821,7 +854,12 @@ function renderBoard() {
 
 /** Última "coluna" do board — não é uma coluna de verdade, é o formulário
  *  de criar uma nova (mesmo padrão de "+ Nova coluna" de kanbans conhecidos:
- *  um botão fantasma que vira formulário ao clicar). */
+ *  um botão fantasma que vira formulário ao clicar).
+ *  Aberto/fechado e o que já foi digitado ficam em `novaColunaAberta` /
+ *  `novaColunaRascunho` (module-level) porque essa função é recriada do
+ *  zero a cada renderBoard() — inclusive nos automáticos, a cada 25s (ver
+ *  carregarDados) — e sem isso o formulário fechava e o texto digitado
+ *  sumia no meio do caminho. */
 function criarColunaFantasma() {
   const coluna = document.createElement('div');
   coluna.className = 'cartao esc-coluna esc-coluna--nova';
@@ -830,19 +868,24 @@ function criarColunaFantasma() {
   btnAbrir.type = 'button';
   btnAbrir.className = 'esc-coluna-nova-btn';
   btnAbrir.textContent = '+ Nova coluna';
+  btnAbrir.hidden = novaColunaAberta;
 
   const form = document.createElement('form');
   form.className = 'esc-coluna-nova-form';
-  form.hidden = true;
+  form.hidden = !novaColunaAberta;
   const inputRotulo = document.createElement('input');
   inputRotulo.type = 'text';
   inputRotulo.placeholder = 'Nome da coluna';
   inputRotulo.maxLength = 60;
   inputRotulo.required = true;
+  inputRotulo.value = novaColunaRascunho.rotulo;
+  inputRotulo.addEventListener('input', () => { novaColunaRascunho.rotulo = inputRotulo.value; });
   const inputDescricao = document.createElement('input');
   inputDescricao.type = 'text';
   inputDescricao.placeholder = 'Pra que serve esta coluna (opcional)';
   inputDescricao.maxLength = 300;
+  inputDescricao.value = novaColunaRascunho.descricao;
+  inputDescricao.addEventListener('input', () => { novaColunaRascunho.descricao = inputDescricao.value; });
   const acoes = document.createElement('div');
   acoes.className = 'esc-coluna-nova-acoes';
   const btnSalvar = document.createElement('button');
@@ -857,18 +900,28 @@ function criarColunaFantasma() {
   form.append(inputRotulo, inputDescricao, acoes);
 
   btnAbrir.addEventListener('click', () => {
+    novaColunaAberta = true;
     btnAbrir.hidden = true;
     form.hidden = false;
     inputRotulo.focus();
   });
-  btnCancelar.addEventListener('click', () => renderBoard());
+  btnCancelar.addEventListener('click', () => {
+    novaColunaAberta = false;
+    novaColunaRascunho = { rotulo: '', descricao: '' };
+    renderBoard();
+  });
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const rotulo = inputRotulo.value.trim();
     if (!rotulo) return;
     btnSalvar.disabled = true;
     const ok = await criarColuna(rotulo, inputDescricao.value.trim());
-    if (!ok) btnSalvar.disabled = false;
+    if (ok) {
+      novaColunaAberta = false;
+      novaColunaRascunho = { rotulo: '', descricao: '' };
+    } else {
+      btnSalvar.disabled = false;
+    }
   });
 
   coluna.append(btnAbrir, form);
