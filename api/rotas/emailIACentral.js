@@ -922,9 +922,10 @@ export default async function rotasEmailIACentral(app) {
       query(
         `SELECT s.id, s.remetente_email, s.nome, s.resumo_conversa, s.motivo_escalonamento, s.status,
                 s.email_id, s.criado_em, s.atualizado_em, s.iniciado_em, s.finalizado_em,
-                s.board_id, b.nome AS board_nome
+                s.board_id, b.nome AS board_nome, mv.produto AS produto_pedido
          FROM email_ia.suporte_escalado s
          LEFT JOIN email_ia.suporte_escalado_boards b ON b.id = s.board_id
+         LEFT JOIN email_ia.mv_emails_x_pedidos mv ON mv.email_id = s.email_id
          ORDER BY s.criado_em DESC`,
       ),
       query(
@@ -1018,12 +1019,12 @@ export default async function rotasEmailIACentral(app) {
     if (!board) throw new ErroHttp(404, 'Board não encontrado.');
     if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este board não é seu.');
 
-    const condicoes = ['board_id = $1'];
+    const condicoes = ['s.board_id = $1'];
     const valores = [boardId];
     let i = 2;
     if (req.query.q) {
-      condicoes.push(`(nome ILIKE $${i} OR remetente_email ILIKE $${i}
-        OR resumo_conversa ILIKE $${i} OR motivo_escalonamento ILIKE $${i})`);
+      condicoes.push(`(s.nome ILIKE $${i} OR s.remetente_email ILIKE $${i}
+        OR s.resumo_conversa ILIKE $${i} OR s.motivo_escalonamento ILIKE $${i})`);
       valores.push(`%${req.query.q}%`);
       i += 1;
     }
@@ -1035,17 +1036,19 @@ export default async function rotasEmailIACentral(app) {
         [boardId],
       ),
       query(
-        `SELECT status, count(*)::int AS total
-         FROM email_ia.suporte_escalado WHERE ${onde}
-         GROUP BY status`,
+        `SELECT s.status, count(*)::int AS total
+         FROM email_ia.suporte_escalado s WHERE ${onde}
+         GROUP BY s.status`,
         valores,
       ),
       query(
-        `SELECT id, remetente_email, nome, resumo_conversa, motivo_escalonamento, status,
-                email_id, criado_em, atualizado_em, iniciado_em, finalizado_em
-         FROM email_ia.suporte_escalado
+        `SELECT s.id, s.remetente_email, s.nome, s.resumo_conversa, s.motivo_escalonamento, s.status,
+                s.email_id, s.criado_em, s.atualizado_em, s.iniciado_em, s.finalizado_em,
+                s.data_entrega, mv.produto AS produto_pedido
+         FROM email_ia.suporte_escalado s
+         LEFT JOIN email_ia.mv_emails_x_pedidos mv ON mv.email_id = s.email_id
          WHERE ${onde}
-         ORDER BY criado_em DESC`,
+         ORDER BY s.criado_em DESC`,
         valores,
       ),
       // Tempo médio/mediano gasto em CADA etapa, uma linha por par
@@ -1053,16 +1056,18 @@ export default async function rotasEmailIACentral(app) {
       // de transições (email_ia.suporte_escalado_historico, mantido por
       // trigger). status_anterior já vem certo em cada linha do histórico —
       // só falta saber HÁ QUANTO TEMPO essa etapa tinha começado, que é o
-      // mudou_em da transição anterior do mesmo caso (LAG por suporte_escalado_id).
-      // Filtrado por board via JOIN em suporte_escalado (a própria tabela de
-      // histórico não sabe de qual board é cada linha).
+      // mudou_em da transição anterior do mesmo caso (LAG por suporte_escalado_id,
+      // não filtrado por board — o tempo ENTRE duas transições do mesmo caso
+      // vale igual não importa quem era o dono em cada ponta). Filtrado por
+      // `h.board_id` (não `s.board_id` do caso hoje) — cada linha do
+      // histórico já grava o board de quando aquela transição aconteceu, o
+      // que importa quando um caso é TRANSFERIDO: o tempo de resposta velho
+      // continua contando pro board antigo, não pro novo.
       query(
         `WITH eventos AS (
-           SELECT h.status_anterior, h.status_novo, h.mudou_em,
+           SELECT h.board_id, h.status_anterior, h.status_novo, h.mudou_em,
                   LAG(h.mudou_em) OVER (PARTITION BY h.suporte_escalado_id ORDER BY h.mudou_em) AS entrou_em
            FROM email_ia.suporte_escalado_historico h
-           JOIN email_ia.suporte_escalado s ON s.id = h.suporte_escalado_id
-           WHERE s.board_id = $1
          )
          SELECT status_anterior, status_novo,
                 avg(extract(epoch FROM (mudou_em - entrou_em)) / 3600.0) AS media_h,
@@ -1071,7 +1076,7 @@ export default async function rotasEmailIACentral(app) {
                 ) AS mediana_h,
                 count(*)::int AS amostra
          FROM eventos
-         WHERE entrou_em IS NOT NULL
+         WHERE entrou_em IS NOT NULL AND board_id = $1
          GROUP BY status_anterior, status_novo
          ORDER BY media_h DESC NULLS LAST`,
         [boardId],
@@ -1080,11 +1085,10 @@ export default async function rotasEmailIACentral(app) {
       // é o "quantos e-mails o suporte moveu hoje", útil pra ver ritmo de
       // atendimento independente de quantos casos novos chegaram.
       query(
-        `SELECT to_char(date_trunc('day', h.mudou_em), 'YYYY-MM-DD') AS dia, count(*)::int AS total
-         FROM email_ia.suporte_escalado_historico h
-         JOIN email_ia.suporte_escalado s ON s.id = h.suporte_escalado_id
-         WHERE s.board_id = $2 AND h.status_anterior IS NOT NULL
-           AND h.mudou_em > now() - ($1 || ' days')::interval
+        `SELECT to_char(date_trunc('day', mudou_em), 'YYYY-MM-DD') AS dia, count(*)::int AS total
+         FROM email_ia.suporte_escalado_historico
+         WHERE board_id = $2 AND status_anterior IS NOT NULL
+           AND mudou_em > now() - ($1 || ' days')::interval
          GROUP BY 1 ORDER BY 1`,
         [dias, boardId],
       ),
@@ -1142,6 +1146,50 @@ export default async function rotasEmailIACentral(app) {
        RETURNING id, remetente_email, nome, resumo_conversa, motivo_escalonamento, status,
                  email_id, criado_em, atualizado_em, iniciado_em, finalizado_em`,
       [status, id],
+    );
+    if (!rows[0]) throw new ErroHttp(404, 'Caso escalado não encontrado.');
+    return rows[0];
+  });
+
+  /* ═══════════════════════  POST /api/suporte-escalado/transferir  ════════════
+     Manda um caso pro board de outro responsável — só admin (é uma decisão de
+     gestão, não algo que o dono de um board faz sozinho). O caso entra no
+     board novo como se tivesse acabado de ser escalado: volta pra "pendente"
+     e perde iniciado_em/finalizado_em (quem está começando a atender agora é
+     outra pessoa, não faz sentido herdar prazos de quem tratou antes). O
+     histórico de ANTES da transferência não é reescrito — cada linha de
+     suporte_escalado_historico já grava o board de quando aconteceu (ver
+     schema-email-ia.sql, migração de 02/09), então as métricas de tempo do
+     board antigo continuam corretas mesmo depois do caso sair de lá. */
+
+  app.post('/api/suporte-escalado/transferir', {
+    onRequest: [app.exigirAdmin],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Transfere um caso escalado para o board de outro responsável',
+      description: 'Só administradores. O caso reinicia no board de destino: '
+        + 'volta para a coluna "Pendente" e perde iniciado_em/finalizado_em.',
+      security: [{ bearerAuth: [] }],
+      body: {
+        type: 'object',
+        required: ['id', 'board_id'],
+        properties: {
+          id: { type: 'integer' },
+          board_id: { type: 'integer' },
+        },
+      },
+    },
+  }, async (req) => {
+    const { id, board_id: boardIdDestino } = req.body;
+    const destino = await boardPorId(boardIdDestino);
+    if (!destino) throw new ErroHttp(404, 'Board de destino não encontrado.');
+    const { rows } = await query(
+      `UPDATE email_ia.suporte_escalado
+       SET board_id = $1, status = 'pendente', iniciado_em = NULL, finalizado_em = NULL, atualizado_em = now()
+       WHERE id = $2
+       RETURNING id, remetente_email, nome, resumo_conversa, motivo_escalonamento, status,
+                 email_id, criado_em, atualizado_em, iniciado_em, finalizado_em, board_id`,
+      [boardIdDestino, id],
     );
     if (!rows[0]) throw new ErroHttp(404, 'Caso escalado não encontrado.');
     return rows[0];
@@ -1306,6 +1354,96 @@ export default async function rotasEmailIACentral(app) {
     await query('DELETE FROM email_ia.suporte_escalado_colunas WHERE id = $1', [req.params.id]);
     resposta.code(204);
     return null;
+  });
+
+  /* ═══════════════════════  GET /api/suporte-escalado/:id/contexto  ═══════════
+     Ficha de compra do cliente, pro modal de detalhes do card: quem é, qual(is)
+     pedido(s) fez, produto, status do pedido, quando comprou, quando mandou o
+     primeiro e-mail. Tudo derivado ao vivo de tabelas que já existem — não
+     duplica dado nenhum aqui. A ÚNICA coisa gravada localmente é
+     `data_entrega`, porque não existe fonte nenhuma de rastreio/entrega no
+     sistema hoje (nem transportadora integrada) — é digitada à mão pelo
+     atendente (ver PUT .../data-entrega logo abaixo). */
+
+  app.get('/api/suporte-escalado/:id/contexto', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Ficha de compra do cliente de um caso escalado (cliente, pedido(s), produto, status)',
+      security: [{ bearerAuth: [] }],
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } },
+    },
+  }, async (req) => {
+    const board = await boardDoCaso(req.params.id);
+    if (!board) throw new ErroHttp(404, 'Caso escalado não encontrado.');
+    if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este caso não é de um board seu.');
+
+    const { rows: casoRows } = await query(
+      'SELECT remetente_email, nome, email_id, data_entrega FROM email_ia.suporte_escalado WHERE id = $1',
+      [req.params.id],
+    );
+    const caso = casoRows[0];
+
+    const [principalRes, pedidosRes, ticketRes] = await Promise.all([
+      // O pedido que a IA já vinculou a ESTE e-mail específico (mesma lógica
+      // de match — número do pedido citado, e-mail, telefone ou nome — usada
+      // em toda a Central de E-mail IA), quando o caso tem um email_id.
+      caso.email_id
+        ? query(
+          `SELECT transacao_id, produto, plataforma, status_pedido, pedido_em
+           FROM email_ia.mv_emails_x_pedidos WHERE email_id = $1`,
+          [caso.email_id],
+        )
+        : Promise.resolve({ rows: [] }),
+      // TODOS os pedidos deste cliente (pode ter mais de um) — por e-mail,
+      // mesmo índice que a tela de Tickets já usa.
+      query(
+        `SELECT transacao_id, produto, plataforma, status AS status_pedido, criado_em AS pedido_em
+         FROM disparos_pos_venda WHERE lower(email) = lower($1) ORDER BY criado_em DESC`,
+        [caso.remetente_email],
+      ),
+      query(
+        'SELECT primeiro_email_em FROM email_ia.tickets WHERE lower(remetente_email) = lower($1)',
+        [caso.remetente_email],
+      ),
+    ]);
+
+    return {
+      cliente: { nome: caso.nome, email: caso.remetente_email },
+      data_entrega: caso.data_entrega,
+      primeiro_email_em: ticketRes.rows[0]?.primeiro_email_em ?? null,
+      pedido_principal: principalRes.rows[0] ?? null,
+      pedidos: pedidosRes.rows,
+    };
+  });
+
+  /* ═══════════════════  PUT /api/suporte-escalado/:id/data-entrega  ═══════════ */
+
+  app.put('/api/suporte-escalado/:id/data-entrega', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Registra a data de entrega de um caso escalado (digitada à mão)',
+      description: 'Não existe integração de rastreio/transportadora — este campo é preenchido '
+        + 'manualmente pelo atendente. Envie `data_entrega: null` para limpar.',
+      security: [{ bearerAuth: [] }],
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } },
+      body: {
+        type: 'object',
+        required: ['data_entrega'],
+        properties: { data_entrega: { type: ['string', 'null'], format: 'date' } },
+      },
+    },
+  }, async (req) => {
+    const board = await boardDoCaso(req.params.id);
+    if (!board) throw new ErroHttp(404, 'Caso escalado não encontrado.');
+    if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este caso não é de um board seu.');
+    const { rows } = await query(
+      `UPDATE email_ia.suporte_escalado SET data_entrega = $1, atualizado_em = now()
+       WHERE id = $2 RETURNING id, data_entrega`,
+      [req.body.data_entrega, req.params.id],
+    );
+    return rows[0];
   });
 
   /* ═══════════════════════  GET /api/suporte-escalado/:id/notas  ══════════════ */

@@ -1345,6 +1345,61 @@ async function atender(req, res, url, sessao) {
     }
   }
 
+  /* ── transferir um caso pro board de outro responsável (só admin) ── */
+  if (url.pathname === '/api/suporte-escalado/transferir' && req.method === 'POST') {
+    if (!usuario.admin) return json(res, 403, { erro: 'Só administradores transferem casos entre boards.' });
+    const corpo = await lerJson(req);
+    if (!Number.isInteger(corpo.id)) return json(res, 400, { erro: 'Informe o id do caso escalado.' });
+    if (!Number.isInteger(corpo.board_id)) return json(res, 400, { erro: 'Informe o board de destino.' });
+    try {
+      return json(res, 200, await criarApi('/api/suporte-escalado/transferir', { id: corpo.id, board_id: corpo.board_id }));
+    } catch (err) {
+      if (err instanceof ErroApi && err.status === 404) {
+        return json(res, 404, { erro: detalharErroApi(err, 'Caso ou board não encontrado.') });
+      }
+      if (err instanceof ErroApi) {
+        return json(res, err.status || 400, { erro: detalharErroApi(err, 'Não consegui transferir o caso.') });
+      }
+      throw err;
+    }
+  }
+
+  /* ── ficha de compra (cliente/pedido/produto/status) + data de entrega ── */
+  const rotaContexto = /^\/api\/suporte-escalado\/(\d+)\/contexto$/.exec(url.pathname);
+  if (rotaContexto && req.method === 'GET') {
+    try {
+      return json(res, 200, await obterApi(`/api/suporte-escalado/${rotaContexto[1]}/contexto`));
+    } catch (err) {
+      if (err instanceof ErroApi && err.status === 404) {
+        return json(res, 404, { erro: 'Caso escalado não encontrado.' });
+      }
+      if (err instanceof ErroApi && err.status === 403) {
+        return json(res, 403, { erro: 'Este caso não é de um board seu.' });
+      }
+      throw err;
+    }
+  }
+
+  const rotaDataEntrega = /^\/api\/suporte-escalado\/(\d+)\/data-entrega$/.exec(url.pathname);
+  if (rotaDataEntrega && req.method === 'PUT') {
+    const corpo = await lerJson(req);
+    const dataEntrega = corpo.data_entrega === undefined || corpo.data_entrega === '' ? null : corpo.data_entrega;
+    try {
+      return json(res, 200, await substituirApi(`/api/suporte-escalado/${rotaDataEntrega[1]}/data-entrega`, { data_entrega: dataEntrega }));
+    } catch (err) {
+      if (err instanceof ErroApi && err.status === 404) {
+        return json(res, 404, { erro: 'Caso escalado não encontrado.' });
+      }
+      if (err instanceof ErroApi && err.status === 403) {
+        return json(res, 403, { erro: 'Este caso não é de um board seu.' });
+      }
+      if (err instanceof ErroApi) {
+        return json(res, err.status || 400, { erro: detalharErroApi(err, 'Não consegui salvar a data de entrega.') });
+      }
+      throw err;
+    }
+  }
+
   /* ── colunas do kanban de suporte escalado: criar/renomear/apagar ──
      Só apaga se a coluna estiver vazia — a API já recusa com 409 e uma
      mensagem legível (quantos casos tem, ou "é a coluna Pendente"); aqui só

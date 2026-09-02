@@ -9,7 +9,7 @@
  */
 import {
   $, api, debounce, kpiCard, paginar, montarPaginacao, botaoCopiar, abrirFicha,
-  tooltip, renderTabela,
+  tooltip, renderTabela, rotularPlataforma,
 } from './emailComum.js';
 import { n, relativo, dataHora, duracaoH } from './format.js';
 import { desenharColunas } from './charts.js';
@@ -484,6 +484,21 @@ async function reativar(id, nome) {
   await carregarDados();
 }
 
+/** Transfere um caso pro board de outro responsável — só admin (botão só
+ *  aparece pra quem é admin, ver criarCard). O caso some do board atual (a
+ *  tela recarrega e ele já não está mais na lista) e entra como "novo" —
+ *  pendente — no board de destino. */
+async function transferirCaso(id, boardIdDestino) {
+  const { ok, dados: resp } = await api('/api/suporte-escalado/transferir', {
+    metodo: 'POST', corpo: { id, board_id: boardIdDestino },
+  });
+  if (!ok) {
+    window.alert(resp?.erro ?? resp?.detail ?? 'Não consegui transferir o caso.');
+    return;
+  }
+  await carregarDados();
+}
+
 /* ═══════════════════════════  colunas do kanban  ═════════════════════════
    Criar/renomear/apagar coluna. Apagar é bloqueado no servidor se a coluna
    tiver algum caso (ou for a coluna "pendente") — aqui só desabilita o botão
@@ -533,6 +548,10 @@ async function apagarColuna(id, rotulo) {
    do suporte vai escrevendo/alterando ao longo do atendimento. */
 
 function abrirDetalheEscalado(item) {
+  const contextoContainer = document.createElement('div');
+  contextoContainer.className = 'esc-contexto';
+  contextoContainer.textContent = 'Carregando dados do pedido…';
+
   const notasContainer = document.createElement('div');
   notasContainer.className = 'esc-notas';
   notasContainer.textContent = 'Carregando notas…';
@@ -543,17 +562,109 @@ function abrirDetalheEscalado(item) {
     titulo: item.nome || item.remetente_email || '(sem nome)',
     subtitulo: item.remetente_email || '',
     campos: [
-      { rotulo: 'Status', valor: rotuloStatus },
+      { rotulo: 'Status no kanban', valor: rotuloStatus },
       { rotulo: 'Escalado em', valor: item.criado_em ? dataHora(item.criado_em) : '—' },
       { rotulo: 'Iniciado em', valor: item.iniciado_em ? dataHora(item.iniciado_em) : '—' },
       { rotulo: 'Finalizado em', valor: item.finalizado_em ? dataHora(item.finalizado_em) : '—' },
+      { rotulo: 'Dados do pedido', valor: contextoContainer, largo: true },
+      { rotulo: 'Mensagem da cliente — foco da reclamação', valor: item.resumo_conversa || '—', largo: true },
       { rotulo: 'Motivo do escalonamento', valor: item.motivo_escalonamento || '—', largo: true },
-      { rotulo: 'Resumo da conversa', valor: item.resumo_conversa || '—', largo: true },
       { rotulo: 'Notas internas', valor: notasContainer, largo: true },
     ],
   });
 
+  carregarContexto(item, contextoContainer);
   carregarNotas(item.id, notasContainer);
+}
+
+/* ═══════════════════════════  dados do pedido  ═══════════════════════════
+   Ficha de compra (cliente/pedido/produto/status), carregada sob demanda ao
+   abrir os detalhes — mesmo padrão de carregarNotas logo abaixo. Tudo vem de
+   GET .../contexto, EXCETO "Data de entrega": não existe fonte nenhuma desse
+   dado no sistema hoje (sem rastreio/transportadora integrados), então é
+   digitada à mão aqui mesmo e salva via PUT .../data-entrega. */
+
+async function carregarContexto(item, container) {
+  try {
+    const { ok, dados } = await api(`/api/suporte-escalado/${item.id}/contexto`);
+    if (!ok) throw new Error('falha ao carregar');
+    renderContexto(item, container, dados);
+  } catch {
+    container.replaceChildren();
+    const erro = document.createElement('p');
+    erro.className = 'vazio-suave';
+    erro.textContent = 'Não consegui carregar os dados do pedido.';
+    container.append(erro);
+  }
+}
+
+function renderContexto(item, container, ctx) {
+  container.replaceChildren();
+
+  const lista = document.createElement('dl');
+  lista.className = 'esc-contexto-lista';
+  const linha = (rotulo, valor) => {
+    const dt = document.createElement('dt');
+    dt.textContent = rotulo;
+    const dd = document.createElement('dd');
+    if (valor instanceof Node) dd.append(valor);
+    else dd.textContent = valor || '—';
+    lista.append(dt, dd);
+  };
+
+  const cliente = ctx.cliente ?? {};
+  linha('Cliente', `${cliente.nome || item.nome || '(sem nome)'} · ${cliente.email || item.remetente_email || '—'}`);
+
+  const pedidos = ctx.pedidos ?? [];
+  const principal = ctx.pedido_principal ?? pedidos[0] ?? null;
+  linha('Número do(s) pedido(s)', pedidos.length ? pedidos.map((p) => p.transacao_id).join(', ') : '—');
+  linha('Data de compra', principal?.pedido_em ? dataHora(principal.pedido_em) : '—');
+  const produtos = [...new Set(pedidos.map((p) => p.produto).filter(Boolean))];
+  linha('Produto', produtos.length ? produtos.join(', ') : (principal?.produto || '—'));
+  linha('Plataforma', principal?.plataforma ? rotularPlataforma(principal.plataforma) : '—');
+  linha('Status do pedido', principal?.status_pedido || '—');
+  linha('Data do primeiro e-mail', ctx.primeiro_email_em ? dataHora(ctx.primeiro_email_em) : '—');
+
+  linha('Data de entrega', criarCampoDataEntrega(item.id, ctx.data_entrega));
+
+  container.append(lista);
+}
+
+/** "Data de entrega" é o único campo desta ficha SEM fonte automática no
+ *  sistema — vira um <input type="date"> editável na hora, com Salvar
+ *  próprio (não depende de nenhum outro formulário da tela). */
+function criarCampoDataEntrega(casoId, dataEntregaIso) {
+  const envolve = document.createElement('div');
+  envolve.className = 'esc-contexto-entrega';
+
+  const input = document.createElement('input');
+  input.type = 'date';
+  input.value = dataEntregaIso ? dataEntregaIso.slice(0, 10) : '';
+
+  const btnSalvar = document.createElement('button');
+  btnSalvar.type = 'button';
+  btnSalvar.className = 'btn btn-forte';
+  btnSalvar.textContent = 'Salvar';
+
+  const status = document.createElement('span');
+  status.className = 'esc-contexto-entrega-status';
+
+  btnSalvar.addEventListener('click', async () => {
+    btnSalvar.disabled = true;
+    status.textContent = '';
+    const { ok, dados: resp } = await api(`/api/suporte-escalado/${casoId}/data-entrega`, {
+      metodo: 'PUT', corpo: { data_entrega: input.value || null },
+    });
+    btnSalvar.disabled = false;
+    if (!ok) {
+      window.alert(resp?.erro ?? resp?.detail ?? 'Não consegui salvar a data de entrega.');
+      return;
+    }
+    status.textContent = 'salvo ✓';
+  });
+
+  envolve.append(input, btnSalvar, status);
+  return envolve;
 }
 
 async function carregarNotas(casoId, container) {
@@ -722,6 +833,13 @@ function criarCard(item) {
     card.append(linhaEmail);
   }
 
+  if (item.produto_pedido) {
+    const produto = document.createElement('div');
+    produto.className = 'esc-card-produto';
+    produto.textContent = `🛒 ${item.produto_pedido}`;
+    card.append(produto);
+  }
+
   if (item.motivo_escalonamento) {
     const motivo = document.createElement('div');
     motivo.className = 'esc-card-motivo';
@@ -816,6 +934,40 @@ function criarCard(item) {
   });
 
   acoesEl.append(btnDetalhes, sel, btnAbrir, btnWebmail, btnReativar);
+
+  // Transferir pra outro board — só admin, e só faz sentido existindo pra
+  // onde mandar (outro board além do que já está aberto). Igual ao select
+  // de mover coluna: some no card sem virar um modal à parte.
+  if (souAdmin && boards.length > 1) {
+    const selTransferir = document.createElement('select');
+    selTransferir.className = 'esc-card-transferir-select';
+    selTransferir.setAttribute('aria-label', `Transferir ${item.nome || item.remetente_email} para outro board`);
+    const optPlaceholder = document.createElement('option');
+    optPlaceholder.value = '';
+    optPlaceholder.textContent = 'Transferir para…';
+    selTransferir.append(optPlaceholder);
+    for (const b of boards) {
+      if (b.id === boardId) continue;
+      const opt = document.createElement('option');
+      opt.value = String(b.id);
+      opt.textContent = b.nome;
+      selTransferir.append(opt);
+    }
+    selTransferir.addEventListener('click', (ev) => ev.stopPropagation());
+    selTransferir.addEventListener('change', (ev) => {
+      ev.stopPropagation();
+      const destino = boards.find((b) => b.id === Number(selTransferir.value));
+      if (!destino) return;
+      const confirmou = window.confirm(
+        `Transferir ${item.nome || item.remetente_email} para o board "${destino.nome}"?\n\n`
+        + 'O caso volta pra coluna "Pendente" nesse board (perde iniciado/finalizado daqui).',
+      );
+      if (!confirmou) { selTransferir.value = ''; return; }
+      transferirCaso(item.id, destino.id);
+    });
+    acoesEl.append(selTransferir);
+  }
+
   rodape.append(quando, acoesEl);
   card.append(rodape);
 
