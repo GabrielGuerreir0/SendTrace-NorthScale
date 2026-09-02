@@ -63,6 +63,33 @@ $('btn-tema').addEventListener('click', () => {
 });
 pintarBotaoTema();
 
+/* ══════════════════════════  fechar modal clicando fora  ═════════════════
+   Todo <dialog> (.janela, modal-ficha, os de e-mail IA) fecha clicando no
+   fundo escurecido — sem isso, o único jeito era achar o botão ✕ lá em
+   cima, ruim em modais compridos que abrem rolados pro meio/fim. Um clique
+   no backdrop tem como `target` o próprio elemento <dialog> (o conteúdo
+   real mora em filhos como .janela-cabeca/.janela-corpo, que são o target
+   quando o clique é DENTRO) — checar `ev.target === dialogo` distingue os
+   dois casos sem precisar calcular posição/bounding box.
+
+   Em vez de chamar dialogo.close() direto, simula um clique no próprio
+   botão "Fechar" do modal (title/aria-label="Fechar", padrão em todo
+   <dialog> desta tela): a pré-visualização de mensagem (janela-previa,
+   previa.js) tem um guard de "alteração não salva" nesse botão — fechar
+   direto pelo backdrop ignoraria esse aviso e perderia trabalho em
+   silêncio. Reaproveitar o botão garante que qualquer guard futuro em
+   qualquer modal também vale pro clique de fora, sem duplicar lógica aqui.
+   Aplicado uma vez a TODO <dialog> da página (são só 9, todos estáticos no
+   index.html) — nenhum modal precisa repetir isso individualmente. */
+for (const dialogo of document.querySelectorAll('dialog')) {
+  dialogo.addEventListener('click', (ev) => {
+    if (ev.target !== dialogo) return;
+    const botaoFechar = dialogo.querySelector('[title="Fechar"], [aria-label="Fechar"]');
+    if (botaoFechar) botaoFechar.click();
+    else dialogo.close();
+  });
+}
+
 /* ════════════════════════════  tooltip  ═════════════════════════════ */
 
 const elTooltip = $('tooltip');
