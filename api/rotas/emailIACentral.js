@@ -790,18 +790,24 @@ export default async function rotasEmailIACentral(app) {
     return rows[0] ?? null;
   }
 
-  /** Cria as 5 colunas padrão de todo board novo (mesmo ponto de partida do
-   *  board da Vitória) — inclusive a `pendente`, obrigatória: o trigger de
-   *  roteamento automático (email_ia.trg_suporte_escalado_rotear) só elege
-   *  um board se ele tiver alguém pra receber o caso, e o kanban em si exige
-   *  que toda coluna 'pendente' exista e nunca seja apagável. */
+  /** Cria as 6 colunas padrão de todo board novo (mesmo ponto de partida dos
+   *  boards da Vitória/Rodrigo) — inclusive a `pendente`, obrigatória: o
+   *  trigger de roteamento automático (email_ia.trg_suporte_escalado_rotear)
+   *  só elege um board se ele tiver alguém pra receber o caso, e o kanban em
+   *  si exige que toda coluna 'pendente' exista e nunca seja apagável.
+   *  `formulario` (02/09/2026) também é tratada como fixa na prática — é pra
+   *  onde o fluxo n8n manda todo caso em que a IA já enviou um formulário
+   *  pro cliente (cenário_reembolso: insistencia_reembolso/ja_devolveu_produto/
+   *  pede_endereco_devolucao) — mas só a `pendente` tem essa trava reforçada
+   *  no código (DELETE .../colunas/:id). */
   async function semearColunasPadrao(boardId) {
     const padrao = [
       ['pendente', 'Pendente', 'Caso acabou de ser escalado pela IA — ainda ninguém olhou.', 1],
-      ['iniciado', 'Iniciado', 'Um humano já está atendendo este caso.', 2],
-      ['esperando_resposta', 'Esperando resposta', 'A bola está com o cliente — aguardando ele responder.', 3],
-      ['reembolsado', 'Reembolsado', 'O reembolso já foi processado.', 4],
-      ['finalizado', 'Finalizado', 'Atendimento concluído.', 5],
+      ['formulario', 'Formulário', 'Esperando responder formulário.', 2],
+      ['iniciado', 'Iniciado', 'Um humano já está atendendo este caso.', 3],
+      ['esperando_resposta', 'Esperando resposta', 'A bola está com o cliente — aguardando ele responder.', 4],
+      ['reembolsado', 'Reembolsado', 'O reembolso já foi processado.', 5],
+      ['finalizado', 'Finalizado', 'Atendimento concluído.', 6],
     ];
     await Promise.all(padrao.map(([chave, rotulo, descricao, ordem]) => query(
       `INSERT INTO email_ia.suporte_escalado_colunas (board_id, chave, rotulo, descricao, ordem)
@@ -815,7 +821,7 @@ export default async function rotasEmailIACentral(app) {
     schema: {
       tags: ['Central de E-mail IA'],
       summary: 'Cria um board novo no kanban de suporte escalado',
-      description: 'Só administradores. Nasce com as mesmas 5 colunas padrão (incluindo a '
+      description: 'Só administradores. Nasce com as mesmas 6 colunas padrão (incluindo a '
         + '"Pendente", fixa) e pode já vir vinculado a um usuário — cada usuário só pode ter '
         + 'um board.',
       security: [{ bearerAuth: [] }],
