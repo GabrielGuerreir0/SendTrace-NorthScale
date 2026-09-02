@@ -258,36 +258,55 @@ async function pendentes(qs) {
 
 /**
  * Quem já reclamou/pediu devolução e o pedido correspondente — cancelado ou
- * não. Já junta mv_emails_x_pedidos por conta própria, então produto/loja
- * entram direto no WHERE (via o `m` já disponível) em vez de chamar
- * condicaoProdutoLoja, que criaria um segundo EXISTS redundante.
+ * não. mv_emails_x_pedidos tem uma linha por E-MAIL (não por pedido), então
+ * juntar direto `emails` (reclamações) com `mv_emails_x_pedidos` por
+ * remetente_email multiplica linhas (todo e-mail de reclamação × todo e-mail
+ * com pedido daquele cliente) — em cliente com histórico longo isso passava
+ * de 400 mil linhas intermediárias e estourava o `statement_timeout` do
+ * Postgres. Agrega as reclamações por cliente ANTES do join, e reduz
+ * mv_emails_x_pedidos a um pedido por linha (DISTINCT), pra o join nunca
+ * multiplicar por e-mail — só por pedido de fato.
  */
 async function reclamantes(qs) {
-  const condicoes = ["e.categoria IN ('devolucao', 'troca', 'reclamacao')"];
+  const condicoesPedidos = [];
   const valores = [];
   let i = 1;
-  if (qs.produto) { condicoes.push(`m.produto = $${i}`); valores.push(String(qs.produto)); i += 1; }
-  if (qs.loja) { condicoes.push(`m.plataforma = $${i}`); valores.push(String(qs.loja)); i += 1; }
+  if (qs.produto) { condicoesPedidos.push(`produto = $${i}`); valores.push(String(qs.produto)); i += 1; }
+  if (qs.loja) { condicoesPedidos.push(`plataforma = $${i}`); valores.push(String(qs.loja)); i += 1; }
+  const whereM = condicoesPedidos.length ? `WHERE ${condicoesPedidos.join(' AND ')}` : '';
 
   const { rows } = await query(
-    `SELECT lower(m.remetente_email) AS remetente_email, max(e.remetente_nome) AS nome,
-            m.transacao_id AS pedido, max(m.produto) AS produto, max(m.plataforma) AS plataforma,
-            string_agg(DISTINCT e.motivo_devolucao, ', ') AS motivos,
-            count(*)::int AS emails, max(e.data_email) AS ultimo_email,
+    `WITH reclamantes_emails AS (
+       SELECT lower(remetente_email) AS remetente_email,
+              max(remetente_nome) AS nome,
+              string_agg(DISTINCT motivo_devolucao, ', ') AS motivos,
+              count(*)::int AS emails,
+              max(data_email) AS ultimo_email
+       FROM email_ia.emails
+       WHERE categoria IN ('devolucao', 'troca', 'reclamacao')
+       GROUP BY lower(remetente_email)
+     ),
+     pedidos AS (
+       SELECT DISTINCT lower(remetente_email) AS remetente_email, transacao_id, produto, plataforma, status_pedido
+       FROM email_ia.mv_emails_x_pedidos
+       ${whereM}
+     )
+     SELECT re.remetente_email, re.nome, p.transacao_id AS pedido,
+            max(p.produto) AS produto, max(p.plataforma) AS plataforma,
+            re.motivos, re.emails, re.ultimo_email,
             CASE
-              WHEN m.transacao_id IS NULL THEN 'sem_pedido_vinculado'
-              WHEN bool_or(m.status_pedido = 'cancelado') THEN 'ja_cancelado'
+              WHEN p.transacao_id IS NULL THEN 'sem_pedido_vinculado'
+              WHEN bool_or(p.status_pedido = 'cancelado') THEN 'ja_cancelado'
               ELSE 'nao_cancelado'
             END AS situacao
-     FROM email_ia.emails e
-     JOIN email_ia.mv_emails_x_pedidos m ON lower(m.remetente_email) = lower(e.remetente_email)
-     WHERE ${condicoes.join(' AND ')}
-     GROUP BY lower(m.remetente_email), m.transacao_id
+     FROM reclamantes_emails re
+     JOIN pedidos p ON p.remetente_email = re.remetente_email
+     GROUP BY re.remetente_email, re.nome, p.transacao_id, re.motivos, re.emails, re.ultimo_email
      ORDER BY CASE
-       WHEN m.transacao_id IS NULL THEN 2
-       WHEN bool_or(m.status_pedido = 'cancelado') THEN 3
+       WHEN p.transacao_id IS NULL THEN 2
+       WHEN bool_or(p.status_pedido = 'cancelado') THEN 3
        ELSE 1
-     END, max(e.data_email) DESC
+     END, re.ultimo_email DESC
      LIMIT 300`,
     valores,
   );
