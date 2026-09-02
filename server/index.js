@@ -1265,9 +1265,63 @@ async function atender(req, res, url, sessao) {
     }));
   }
 
+  /* ── boards do kanban de suporte escalado: um por responsável ──
+     Criar/vincular/ativar-desativar é só admin (mesmo padrão inline de
+     rotasUsuarios, linha ~653) — a API já recusa com 403 se tentarem sem
+     ser admin, mas checar aqui também evita a viagem de rede à toa. */
+  if (url.pathname === '/api/suporte-escalado/boards' && req.method === 'GET') {
+    return json(res, 200, await obterApi('/api/suporte-escalado/boards'));
+  }
+  if (url.pathname === '/api/suporte-escalado/boards' && req.method === 'POST') {
+    if (!usuario.admin) return json(res, 403, { erro: 'Só administradores criam boards.' });
+    const corpo = await lerJson(req);
+    const nome = String(corpo.nome ?? '').trim();
+    if (!nome) return json(res, 400, { erro: 'Dê um nome para o board.' });
+    try {
+      return json(res, 200, await criarApi('/api/suporte-escalado/boards', {
+        nome, usuario_id: corpo.usuario_id ?? null,
+      }));
+    } catch (err) {
+      if (err instanceof ErroApi) {
+        return json(res, err.status || 400, { erro: detalharErroApi(err, 'Não consegui criar o board.') });
+      }
+      throw err;
+    }
+  }
+  const rotaBoardEscalado = /^\/api\/suporte-escalado\/boards\/(\d+)$/.exec(url.pathname);
+  if (rotaBoardEscalado && req.method === 'PATCH') {
+    if (!usuario.admin) return json(res, 403, { erro: 'Só administradores alteram boards.' });
+    const corpo = await lerJson(req);
+    const alteracoes = {};
+    if (corpo.nome !== undefined) alteracoes.nome = String(corpo.nome ?? '').trim();
+    if (corpo.usuario_id !== undefined) alteracoes.usuario_id = corpo.usuario_id;
+    if (corpo.ativo !== undefined) alteracoes.ativo = Boolean(corpo.ativo);
+    try {
+      return json(res, 200, await remendarApi(`/api/suporte-escalado/boards/${rotaBoardEscalado[1]}`, alteracoes));
+    } catch (err) {
+      if (err instanceof ErroApi && err.status === 404) {
+        return json(res, 404, { erro: 'Board não encontrado.' });
+      }
+      if (err instanceof ErroApi) {
+        return json(res, err.status || 400, { erro: detalharErroApi(err, 'Não consegui alterar o board.') });
+      }
+      throw err;
+    }
+  }
+
   if (url.pathname === '/api/suporte-escalado') {
     const q = url.searchParams;
-    return json(res, 200, await obterApi('/api/suporte-escalado', { q: q.get('q'), dias: q.get('dias') }));
+    if (!q.get('board_id')) return json(res, 400, { erro: 'Informe o board.' });
+    try {
+      return json(res, 200, await obterApi('/api/suporte-escalado', {
+        board_id: q.get('board_id'), q: q.get('q'), dias: q.get('dias'),
+      }));
+    } catch (err) {
+      if (err instanceof ErroApi && (err.status === 403 || err.status === 404)) {
+        return json(res, err.status, { erro: detalharErroApi(err, 'Board não encontrado.') });
+      }
+      throw err;
+    }
   }
 
   if (url.pathname === '/api/suporte-escalado/status' && req.method === 'POST') {
@@ -1281,6 +1335,9 @@ async function atender(req, res, url, sessao) {
       if (err instanceof ErroApi && err.status === 404) {
         return json(res, 404, { erro: 'Caso escalado não encontrado.' });
       }
+      if (err instanceof ErroApi && err.status === 403) {
+        return json(res, 403, { erro: 'Este caso não é de um board seu.' });
+      }
       if (err instanceof ErroApi) {
         return json(res, err.status || 400, { erro: detalharErroApi(err, 'Status inválido.') });
       }
@@ -1291,15 +1348,20 @@ async function atender(req, res, url, sessao) {
   /* ── colunas do kanban de suporte escalado: criar/renomear/apagar ──
      Só apaga se a coluna estiver vazia — a API já recusa com 409 e uma
      mensagem legível (quantos casos tem, ou "é a coluna Pendente"); aqui só
-     repassa. */
+     repassa. Só o dono do board (+ admin) mexe nas colunas dele — a API
+     recusa com 403 quem tentar noutro board. */
   if (url.pathname === '/api/suporte-escalado/colunas' && req.method === 'POST') {
     const corpo = await lerJson(req);
+    if (!Number.isInteger(corpo.board_id)) return json(res, 400, { erro: 'Informe o board.' });
     const rotulo = String(corpo.rotulo ?? '').trim();
     if (!rotulo) return json(res, 400, { erro: 'Dê um nome para a coluna.' });
     const descricao = String(corpo.descricao ?? '').trim();
     try {
-      return json(res, 200, await criarApi('/api/suporte-escalado/colunas', { rotulo, descricao }));
+      return json(res, 200, await criarApi('/api/suporte-escalado/colunas', { board_id: corpo.board_id, rotulo, descricao }));
     } catch (err) {
+      if (err instanceof ErroApi && err.status === 403) {
+        return json(res, 403, { erro: 'Este board não é seu.' });
+      }
       if (err instanceof ErroApi) {
         return json(res, err.status || 400, { erro: detalharErroApi(err, 'Não consegui criar a coluna.') });
       }
@@ -1319,6 +1381,9 @@ async function atender(req, res, url, sessao) {
       if (err instanceof ErroApi && err.status === 404) {
         return json(res, 404, { erro: 'Coluna não encontrada.' });
       }
+      if (err instanceof ErroApi && err.status === 403) {
+        return json(res, 403, { erro: 'Este board não é seu.' });
+      }
       if (err instanceof ErroApi) {
         return json(res, err.status || 400, { erro: detalharErroApi(err, 'Não consegui renomear a coluna.') });
       }
@@ -1332,6 +1397,9 @@ async function atender(req, res, url, sessao) {
     } catch (err) {
       if (err instanceof ErroApi && err.status === 404) {
         return json(res, 404, { erro: 'Coluna não encontrada.' });
+      }
+      if (err instanceof ErroApi && err.status === 403) {
+        return json(res, 403, { erro: 'Este board não é seu.' });
       }
       if (err instanceof ErroApi) {
         return json(res, err.status || 400, { erro: detalharErroApi(err, 'Não consegui apagar a coluna.') });
@@ -1350,6 +1418,9 @@ async function atender(req, res, url, sessao) {
       if (err instanceof ErroApi && err.status === 404) {
         return json(res, 404, { erro: 'Caso escalado não encontrado.' });
       }
+      if (err instanceof ErroApi && err.status === 403) {
+        return json(res, 403, { erro: 'Este caso não é de um board seu.' });
+      }
       throw err;
     }
   }
@@ -1361,7 +1432,17 @@ async function atender(req, res, url, sessao) {
   if (rotaNotasCaso) {
     const id = rotaNotasCaso[1];
     if (req.method === 'GET') {
-      return json(res, 200, await obterApi(`/api/suporte-escalado/${id}/notas`));
+      try {
+        return json(res, 200, await obterApi(`/api/suporte-escalado/${id}/notas`));
+      } catch (err) {
+        if (err instanceof ErroApi && err.status === 403) {
+          return json(res, 403, { erro: 'Este caso não é de um board seu.' });
+        }
+        if (err instanceof ErroApi && err.status === 404) {
+          return json(res, 404, { erro: 'Caso escalado não encontrado.' });
+        }
+        throw err;
+      }
     }
     if (req.method === 'POST') {
       const corpo = await lerJson(req);
@@ -1371,6 +1452,9 @@ async function atender(req, res, url, sessao) {
       } catch (err) {
         if (err instanceof ErroApi && err.status === 404) {
           return json(res, 404, { erro: 'Caso escalado não encontrado.' });
+        }
+        if (err instanceof ErroApi && err.status === 403) {
+          return json(res, 403, { erro: 'Este caso não é de um board seu.' });
         }
         throw err;
       }
@@ -1386,6 +1470,9 @@ async function atender(req, res, url, sessao) {
     } catch (err) {
       if (err instanceof ErroApi && err.status === 404) {
         return json(res, 404, { erro: 'Nota não encontrada.' });
+      }
+      if (err instanceof ErroApi && err.status === 403) {
+        return json(res, 403, { erro: 'Este caso não é de um board seu.' });
       }
       throw err;
     }

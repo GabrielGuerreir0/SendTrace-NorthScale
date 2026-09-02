@@ -48,6 +48,224 @@ let novaColunaRascunho = { rotulo: '', descricao: '' };
 let colunaEditandoId = null;
 let colunaEditandoRascunho = { rotulo: '', descricao: '' };
 
+/* ═══════════════════════════════  boards  ═══════════════════════════════
+ * Cada responsável tem seu próprio kanban (02/09/2026). `boardId` é QUAL
+ * board está sendo exibido agora — nada carrega sem ele (ver carregarDados).
+ * `boards` vem de GET /api/suporte-escalado/boards: administrador recebe
+ * TODOS os boards (+ quantos casos ficaram "órfãos", sem board, quando o
+ * roteamento automático não achou ninguém elegível); quem não é
+ * administrador só recebe o próprio (lista vazia se ainda não tiver um
+ * vinculado). `admin` vem nessa mesma resposta — não precisa descobrir por
+ * outro caminho. */
+/** `boardId` é o id de um board, OU o literal 'todos' — a visão geral,
+ *  admin-only, que agrega TODOS os boards (sem drag-and-drop: cada board
+ *  tem suas próprias colunas, não dá pra misturar num board só; ver
+ *  renderVisaoGeral). */
+let boardId = null;
+let boards = [];
+let souAdmin = false;
+let orfaos = 0;
+/** Resumo por board (dono, pendentes, total) — só preenchido quando
+ *  `boardId === 'todos'`; é o que renderVisaoGeral() usa no lugar do
+ *  drag-and-drop de sempre. */
+let boardsResumo = null;
+/** null = formulário fechado; 'novo' = criando; um id = editando aquele board. */
+let boardFormAberto = null;
+/** Lista de usuários pro <select> de vincular — carregada uma vez (admin),
+ *  cacheada porque não muda durante a sessão do jeito que os boards mudam. */
+let usuariosCache = null;
+
+async function usuariosParaSelect() {
+  if (usuariosCache) return usuariosCache;
+  const { ok, dados } = await api('/api/usuarios');
+  usuariosCache = ok ? (dados.usuarios ?? []) : [];
+  return usuariosCache;
+}
+
+function renderControlesBoard() {
+  const campoSel = $('esc-board-campo');
+  const sel = $('esc-board-seletor');
+  const btnNovo = $('esc-board-novo');
+  const btnEditar = $('esc-board-editar');
+  const avisoOrfaos = $('esc-orfaos-aviso');
+
+  sel.replaceChildren();
+  if (souAdmin) {
+    const optGeral = document.createElement('option');
+    optGeral.value = 'todos';
+    optGeral.textContent = '▣ Visão geral (todos os boards)';
+    if (boardId === 'todos') optGeral.selected = true;
+    sel.append(optGeral);
+  }
+  for (const b of boards) {
+    const opt = document.createElement('option');
+    opt.value = String(b.id);
+    opt.textContent = b.nome + (b.ativo === false ? ' (inativo)' : '');
+    if (b.id === boardId) opt.selected = true;
+    sel.append(opt);
+  }
+  // Usuário comum com um só board nunca precisa escolher; admin sempre pode
+  // trocar (mesmo com 1 board só, pra já deixar o controle no lugar quando
+  // criar o segundo, e pra sempre poder chegar na visão geral).
+  campoSel.hidden = !(souAdmin || boards.length > 1);
+
+  btnNovo.hidden = !souAdmin;
+  btnEditar.hidden = !(souAdmin && boardId && boardId !== 'todos');
+
+  if (souAdmin && orfaos > 0) {
+    avisoOrfaos.hidden = false;
+    avisoOrfaos.textContent = `⚠ ${n(orfaos)} caso${orfaos === 1 ? '' : 's'} escalado${orfaos === 1 ? '' : 's'} `
+      + 'sem board (nenhum responsável ativo elegível no momento em que o roteamento automático rodou).';
+  } else {
+    avisoOrfaos.hidden = true;
+  }
+}
+
+async function renderFormBoard() {
+  const container = $('esc-board-form');
+  if (!boardFormAberto) {
+    container.hidden = true;
+    container.replaceChildren();
+    return;
+  }
+  container.hidden = false;
+  container.replaceChildren();
+
+  const editando = boardFormAberto !== 'novo';
+  const boardAtual = editando ? boards.find((b) => b.id === boardFormAberto) : null;
+  const usuarios = await usuariosParaSelect();
+
+  const form = document.createElement('form');
+  form.className = 'esc-board-form cartao';
+
+  const inputNome = document.createElement('input');
+  inputNome.type = 'text';
+  inputNome.placeholder = 'Nome do board';
+  inputNome.maxLength = 120;
+  inputNome.required = true;
+  inputNome.value = editando ? (boardAtual?.nome ?? '') : '';
+
+  const selectUsuario = document.createElement('select');
+  const optNenhum = document.createElement('option');
+  optNenhum.value = '';
+  optNenhum.textContent = '— sem responsável vinculado —';
+  selectUsuario.append(optNenhum);
+  for (const u of usuarios) {
+    const opt = document.createElement('option');
+    opt.value = String(u.id);
+    opt.textContent = u.nome || u.email;
+    if (editando && boardAtual?.usuario_id === u.id) opt.selected = true;
+    selectUsuario.append(opt);
+  }
+
+  form.append(inputNome, selectUsuario);
+
+  let checkAtivo;
+  if (editando) {
+    const labelAtivo = document.createElement('label');
+    labelAtivo.className = 'esc-board-form-ativo';
+    checkAtivo = document.createElement('input');
+    checkAtivo.type = 'checkbox';
+    checkAtivo.checked = boardAtual?.ativo !== false;
+    labelAtivo.append(checkAtivo, document.createTextNode(' Ativo — recebe casos novos automaticamente'));
+    form.append(labelAtivo);
+  }
+
+  const acoes = document.createElement('div');
+  acoes.className = 'esc-board-form-acoes';
+  const btnSalvar = document.createElement('button');
+  btnSalvar.type = 'submit';
+  btnSalvar.className = 'btn btn-forte';
+  btnSalvar.textContent = editando ? 'Salvar' : 'Criar board';
+  const btnCancelar = document.createElement('button');
+  btnCancelar.type = 'button';
+  btnCancelar.className = 'btn';
+  btnCancelar.textContent = 'Cancelar';
+  acoes.append(btnSalvar, btnCancelar);
+  form.append(acoes);
+
+  btnCancelar.addEventListener('click', () => { boardFormAberto = null; renderFormBoard(); });
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const nome = inputNome.value.trim();
+    if (!nome) return;
+    btnSalvar.disabled = true;
+    const usuarioId = selectUsuario.value ? Number(selectUsuario.value) : null;
+    const ok = editando
+      ? await editarBoard(boardAtual.id, { nome, usuario_id: usuarioId, ativo: checkAtivo.checked })
+      : await criarBoard(nome, usuarioId);
+    if (!ok) btnSalvar.disabled = false;
+  });
+
+  container.append(form);
+}
+
+async function criarBoard(nome, usuarioId) {
+  const { ok, dados: resp } = await api('/api/suporte-escalado/boards', {
+    metodo: 'POST', corpo: { nome, usuario_id: usuarioId },
+  });
+  if (!ok) {
+    window.alert(resp?.erro ?? resp?.detail ?? 'Não consegui criar o board.');
+    return false;
+  }
+  boardFormAberto = null;
+  boardId = resp.id;
+  localStorage.setItem('escBoardId', String(boardId));
+  await carregarBoards();
+  return true;
+}
+
+async function editarBoard(id, corpo) {
+  const { ok, dados: resp } = await api(`/api/suporte-escalado/boards/${id}`, {
+    metodo: 'PATCH', corpo,
+  });
+  if (!ok) {
+    window.alert(resp?.erro ?? resp?.detail ?? 'Não consegui salvar o board.');
+    return false;
+  }
+  boardFormAberto = null;
+  await carregarBoards();
+  return true;
+}
+
+/** Escolhe qual board mostrar: o salvo em localStorage se ainda existir e a
+ *  pessoa puder vê-lo, senão o único que ela tem — senão nenhum (força
+ *  escolher, ou mostra o aviso de "ainda sem board"). */
+async function carregarBoards() {
+  const { ok, dados } = await api('/api/suporte-escalado/boards');
+  if (!ok) {
+    boards = [];
+    souAdmin = false;
+    orfaos = 0;
+    boardId = null;
+    renderControlesBoard();
+    await carregarDados();
+    return;
+  }
+  boards = dados.boards ?? [];
+  souAdmin = Boolean(dados.admin);
+  orfaos = dados.orfaos ?? 0;
+
+  const salvoRaw = localStorage.getItem('escBoardId');
+  if (salvoRaw === 'todos' && souAdmin) {
+    boardId = 'todos';
+  } else {
+    const salvo = Number(salvoRaw);
+    if (salvo && boards.some((b) => b.id === salvo)) {
+      boardId = salvo;
+    } else if (boards.length === 1) {
+      boardId = boards[0].id;
+    } else {
+      boardId = null;
+    }
+  }
+  if (boardId) localStorage.setItem('escBoardId', String(boardId));
+
+  renderControlesBoard();
+  await renderFormBoard();
+  await carregarDados();
+}
+
 /** Cicla pela mesma paleta de 6 tons que o resto do painel já usa (--st-*)
  *  — como as colunas agora são livres, não dá mais para curar uma cor com
  *  significado fixo por coluna (ex.: vermelho pro travado). */
@@ -275,7 +493,7 @@ async function reativar(id, nome) {
 
 async function criarColuna(rotulo, descricao) {
   const { ok, dados: resp } = await api('/api/suporte-escalado/colunas', {
-    metodo: 'POST', corpo: { rotulo, descricao },
+    metodo: 'POST', corpo: { board_id: boardId, rotulo, descricao },
   });
   if (!ok) {
     window.alert(resp?.detail ?? resp?.erro ?? resp?.message ?? 'Não consegui criar a coluna.');
@@ -932,11 +1150,92 @@ function criarColunaFantasma() {
 
 let geracao = 0;
 
+/** Mensagem no lugar do board quando ainda não há um `boardId` resolvido —
+ *  três casos possíveis: quem não é admin e não tem board vinculado (pede
+ *  pra um admin criar), admin sem nenhum board criado ainda (aponta o botão
+ *  "+ Novo board"), ou quem tem/vê mais de um board e precisa escolher no
+ *  seletor. A aba continua visível nos três casos — nunca se esconde. */
+function renderSemBoard() {
+  const board = $('esc-board');
+  board.replaceChildren();
+  const p = document.createElement('p');
+  p.className = 'vazio-suave';
+  if (!souAdmin && !boards.length) {
+    p.textContent = 'Você ainda não tem um kanban vinculado — peça a um administrador para criar um board para você.';
+  } else if (souAdmin && !boards.length) {
+    p.textContent = 'Nenhum board criado ainda — use "+ Novo board" para criar o primeiro.';
+  } else {
+    p.textContent = 'Escolha um board acima para ver o kanban.';
+  }
+  board.append(p);
+}
+
+/** Visão geral (admin, boardId === 'todos'): não existe drag-and-drop porque
+ *  cada board tem suas próprias colunas — em vez disso, uma tabela com o
+ *  resumo de cada board. Os KPIs do topo e a aba "Tempo no kanban" (mediana
+ *  até sair de Pendente, transições, movidos por dia…) continuam os mesmos
+ *  componentes de sempre, só que alimentados com dados agregados de todos
+ *  os boards — não precisam de nenhuma mudança pra funcionar aqui. */
+function renderVisaoGeral() {
+  const board = $('esc-board');
+  board.replaceChildren();
+  if (!boardsResumo || !boardsResumo.length) {
+    const vazio = document.createElement('p');
+    vazio.className = 'vazio-suave';
+    vazio.textContent = 'Nenhum board criado ainda.';
+    board.append(vazio);
+    return;
+  }
+  const envolve = document.createElement('div');
+  envolve.className = 'tabela-envolve';
+  const tabela = document.createElement('table');
+  tabela.className = 'tabela';
+  const thead = document.createElement('thead');
+  thead.innerHTML = '<tr><th scope="col">Board</th><th scope="col">Responsável</th>'
+    + '<th scope="col">Pendentes</th><th scope="col">Total de casos</th></tr>';
+  const corpo = document.createElement('tbody');
+  for (const b of boardsResumo) {
+    const tr = document.createElement('tr');
+    const tdNome = document.createElement('td');
+    tdNome.className = 'cel-forte';
+    tdNome.textContent = b.nome + (b.ativo === false ? ' (inativo)' : '');
+    const tdResp = document.createElement('td');
+    tdResp.textContent = b.usuario_nome || b.usuario_email || '—';
+    const tdPend = document.createElement('td');
+    tdPend.className = 'num';
+    tdPend.textContent = n(b.pendentes);
+    const tdTotal = document.createElement('td');
+    tdTotal.className = 'num';
+    tdTotal.textContent = n(b.total);
+    tr.append(tdNome, tdResp, tdPend, tdTotal);
+    corpo.append(tr);
+  }
+  tabela.append(thead, corpo);
+  envolve.append(tabela);
+  board.append(envolve);
+}
+
 export async function carregarDados() {
   const meu = ++geracao;
+  if (!boardId) {
+    colunas = [];
+    kpis = {};
+    itens = [];
+    transicoes = [];
+    movimentosDiarios = [];
+    resumoMovimentos = {};
+    boardsResumo = null;
+    renderKpis();
+    renderSemBoard();
+    renderKpisTempo();
+    renderGraficosTempo();
+    renderTabelaTransicoes();
+    return;
+  }
   try {
     const p = new URLSearchParams();
-    if (busca) p.set('q', busca);
+    p.set('board_id', boardId);
+    if (busca && boardId !== 'todos') p.set('q', busca);
     const { ok, dados: d } = await api(`/api/suporte-escalado?${p}`);
     if (meu !== geracao) return;
     if (!ok) throw new Error(d?.detail ?? d?.erro ?? 'falha ao carregar');
@@ -946,8 +1245,9 @@ export async function carregarDados() {
     transicoes = d.transicoes ?? [];
     movimentosDiarios = d.movimentos_diarios ?? [];
     resumoMovimentos = d.resumo_movimentos ?? {};
+    boardsResumo = d.boards_resumo ?? null;
     renderKpis();
-    renderBoard();
+    if (boardId === 'todos') renderVisaoGeral(); else renderBoard();
     renderKpisTempo();
     renderGraficosTempo();
     renderTabelaTransicoes();
@@ -970,10 +1270,28 @@ $('esc-busca').addEventListener('input', debounce((e) => {
 $('esc-ordem').addEventListener('change', (e) => {
   ordem = e.target.value || 'recentes';
   paginaColuna.clear();
-  renderBoard();
+  if (boardId && boardId !== 'todos') renderBoard();
+});
+
+$('esc-board-seletor').addEventListener('change', (e) => {
+  boardId = e.target.value === 'todos' ? 'todos' : (Number(e.target.value) || null);
+  if (boardId) localStorage.setItem('escBoardId', String(boardId));
+  paginaColuna.clear();
+  expandidos.clear();
+  renderControlesBoard();
+  carregarDados();
+});
+$('esc-board-novo').addEventListener('click', () => {
+  boardFormAberto = 'novo';
+  renderFormBoard();
+});
+$('esc-board-editar').addEventListener('click', () => {
+  if (!boardId) return;
+  boardFormAberto = boardId;
+  renderFormBoard();
 });
 
 ligarArrastoBoard($('esc-board'));
 
-carregarDados();
+carregarBoards();
 setInterval(carregarDados, 25 * 1000);

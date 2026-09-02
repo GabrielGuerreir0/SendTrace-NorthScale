@@ -8,6 +8,14 @@ import { n } from './format.js';
 
 export const $ = (id) => document.getElementById(id);
 
+/* ══════════════════════════  quem está logado  ═══════════════════════════
+   app.js é quem sabe de verdade (é ele quem recebe a resposta do login) —
+   aqui é só um espelho pras 4 telas da Central de E-mail IA lerem sem criar
+   import circular (elas importam utilitário; app.js importa elas). */
+let usuario = null;
+export const setUsuarioAtual = (u) => { usuario = u; };
+export const usuarioAtual = () => usuario;
+
 /* ══════════════════════════  requisição autenticada  ═════════════════════ */
 
 /**

@@ -5,7 +5,7 @@ import { validarMensagem, medirSms } from './copy.js';
 import { desenharColunas, svgEl } from './charts.js';
 import { n, nc, relativo, dataHora, dia, hora, truncar, duracaoH } from './format.js';
 import { paraEsperaH, deEsperaH } from './tempo.js';
-import { renderFicha } from './emailComum.js';
+import { renderFicha, setUsuarioAtual } from './emailComum.js';
 // A aba principal (Suporte IA) vive em módulo próprio; importá-lo também liga
 // os botões de aba — de TODAS as abas, régua e Central de E-mail IA incluídas
 // (ver suporte.js). Aqui só acoplamos o carregamento aos ciclos do painel.
@@ -1403,6 +1403,7 @@ async function api(rota, { metodo = 'GET', corpo } = {}) {
 
 function renderUsuario(u) {
   estado.usuario = u;
+  setUsuarioAtual(u);
   const inicial = (u.nome || u.email).trim()[0]?.toUpperCase() ?? '·';
   $('usuario-inicial').textContent = inicial;
   $('usuario-nome').textContent = u.nome || u.email;

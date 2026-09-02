@@ -1379,6 +1379,12 @@
         <p class="cartao-sub">Casos que a IA tirou de si — ela não responde mais a estes clientes até alguém reativar.</p>
       </div>
       <div class="tk-filtros">
+        <label class="campo" id="esc-board-campo" hidden>
+          <span>Board</span>
+          <select id="esc-board-seletor"></select>
+        </label>
+        <button type="button" class="btn btn-icone" id="esc-board-editar" title="Editar este board" hidden>✎</button>
+        <button type="button" class="btn" id="esc-board-novo" hidden>+ Novo board</button>
         <label class="campo campo--cresce">
           <span class="sr">Buscar nome, e-mail ou resumo</span>
           <input type="text" id="esc-busca" placeholder="Buscar nome, e-mail ou resumo…">
@@ -1392,6 +1398,8 @@
         </label>
       </div>
     </header>
+    <p class="rodape-nota" id="esc-orfaos-aviso" hidden></p>
+    <div id="esc-board-form" hidden></div>
     <div class="subabas" role="tablist" aria-label="Visão do Suporte Escalado">
       <button class="subaba-btn" id="esc-subaba-btn-kanban" type="button" role="tab" aria-selected="true">Kanban</button>
       <button class="subaba-btn" id="esc-subaba-btn-metricas" type="button" role="tab" aria-selected="false">Tempo no kanban</button>

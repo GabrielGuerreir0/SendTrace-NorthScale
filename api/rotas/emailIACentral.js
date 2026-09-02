@@ -13,7 +13,7 @@
  *                                          de detalhe da galeria)
  *   GET  /api/imagem/:id                → serve o binário de uma imagem (bytea → bytes)
  *   GET  /api/emails/:id/webmail        → acha o e-mail na caixa real (IMAP) e devolve a URL do webmail
- *   GET  /api/suporte-escalado                → kanban de suporte escalado (colunas + lista + KPIs)
+ *   GET  /api/suporte-escalado                → kanban de suporte escalado (colunas + lista + KPIs) de UM board
  *   POST /api/suporte-escalado/status         → move um caso entre colunas do kanban
  *   POST /api/suporte-escalado/reativar       → tira o caso do kanban (a IA volta a responder)
  *   GET  /api/suporte-escalado/:id/notas      → notas internas de um caso escalado
@@ -22,10 +22,23 @@
  *   POST /api/suporte-escalado/colunas        → cria uma coluna nova no kanban
  *   PUT  /api/suporte-escalado/colunas/:id    → renomeia uma coluna (a chave interna não muda)
  *   DELETE /api/suporte-escalado/colunas/:id  → apaga uma coluna (só se estiver vazia)
+ *   GET  /api/suporte-escalado/boards         → lista boards (admin vê todos; não-admin só o próprio)
+ *   POST /api/suporte-escalado/boards         → cria um board novo e vincula a um usuário (só admin)
+ *   PATCH /api/suporte-escalado/boards/:id    → renomeia/revincula/ativa-desativa um board (só admin)
  *
  * As duas rotas que CHAMAM Claude (POST /api/chat e POST /api/resposta)
  * moram em emailIA.js — este arquivo é 100% leitura do banco, exceto
- * POST /api/ticket e as de suporte-escalado (status/reativar/notas) abaixo.
+ * POST /api/ticket e as de suporte-escalado (status/reativar/notas/boards) abaixo.
+ *
+ * BOARDS (02/09/2026): cada responsável tem seu próprio kanban — colunas e
+ * casos são isolados por `board_id`. Um caso novo escalado pelo fluxo n8n
+ * entra sem board_id; um trigger no Postgres (email_ia.trg_suporte_escalado_rotear,
+ * ver schema-email-ia.sql) escolhe o board automaticamente por sorteio
+ * ponderado (mais rápido + menos casos hoje pesa mais). Aqui na API, toda
+ * rota que lê/escreve um caso ou uma coluna precisa saber de QUAL board —
+ * `board_id` na querystring/body para leitura, resolvido a partir do caso
+ * para escrita — e aplicar a mesma regra de dono: só o usuário vinculado ao
+ * board (usuario_id) ou um admin pode mexer nos cards/colunas dele.
  */
 import { query } from '../../server/db.js';
 import { ErroHttp } from '../comum.js';
@@ -702,40 +715,325 @@ export default async function rotasEmailIACentral(app) {
     return { url: urlWebmail(achado.pasta, achado.uid), pasta: achado.pasta };
   });
 
+  /* ═══════════════════  boards do kanban de suporte escalado  ═════════════════
+     Cada responsável tem o seu. Só admin cria/vincula/ativa-desativa (ver rotas
+     abaixo); dono do board (+ admin) move cards, cria/edita/apaga colunas e
+     escreve notas — as funções aqui embaixo aplicam essa regra em toda rota
+     que precisa saber "de quem é este board/caso". */
+
+  async function boardPorId(id) {
+    const { rows } = await query(
+      'SELECT id, nome, usuario_id, ativo FROM email_ia.suporte_escalado_boards WHERE id = $1', [id],
+    );
+    return rows[0] ?? null;
+  }
+
+  function podeGerenciarBoard(req, board) {
+    return req.usuario.admin || (board && board.usuario_id === req.usuario.user_id);
+  }
+
+  /** Board do caso escalado `casoId` — usado pelas rotas que recebem o id do
+   *  CASO (mover status, reativar, notas), não o id do board. */
+  async function boardDoCaso(casoId) {
+    const { rows } = await query(
+      `SELECT b.id, b.nome, b.usuario_id, b.ativo
+       FROM email_ia.suporte_escalado s
+       JOIN email_ia.suporte_escalado_boards b ON b.id = s.board_id
+       WHERE s.id = $1`,
+      [casoId],
+    );
+    return rows[0] ?? null;
+  }
+
+  app.get('/api/suporte-escalado/boards', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Lista os boards do kanban de suporte escalado',
+      description: 'Administrador vê todos os boards (com o dono de cada um e quantos casos '
+        + 'ainda não têm board — "órfãos", quando o roteamento automático não achou ninguém '
+        + 'elegível). Quem não é administrador só vê o próprio board (lista vazia se ainda não '
+        + 'tiver um vinculado).',
+      security: [{ bearerAuth: [] }],
+    },
+  }, async (req) => {
+    // `admin` vai na resposta pra a tela não depender de descobrir isso por
+    // outro caminho — é o mesmo request que já sabe, via a sessão, se pode
+    // gerenciar boards ou só ver/usar o próprio.
+    if (req.usuario.admin) {
+      const [{ rows: boards }, { rows: orfaosRows }] = await Promise.all([
+        query(
+          `SELECT b.id, b.nome, b.usuario_id, b.ativo, b.criado_em, u.email AS usuario_email, u.nome AS usuario_nome
+           FROM email_ia.suporte_escalado_boards b
+           LEFT JOIN public.painel_usuarios u ON u.id = b.usuario_id
+           ORDER BY b.nome`,
+        ),
+        query('SELECT count(*)::int AS total FROM email_ia.suporte_escalado WHERE board_id IS NULL'),
+      ]);
+      return {
+        admin: true, boards, orfaos: orfaosRows[0].total,
+      };
+    }
+    const board = await boardPorUsuario(req.usuario.user_id);
+    return { admin: false, boards: board ? [board] : [], orfaos: 0 };
+  });
+
+  async function boardPorUsuario(usuarioId) {
+    if (!usuarioId) return null;
+    const { rows } = await query(
+      `SELECT b.id, b.nome, b.usuario_id, b.ativo, b.criado_em, u.email AS usuario_email, u.nome AS usuario_nome
+       FROM email_ia.suporte_escalado_boards b
+       LEFT JOIN public.painel_usuarios u ON u.id = b.usuario_id
+       WHERE b.usuario_id = $1`,
+      [usuarioId],
+    );
+    return rows[0] ?? null;
+  }
+
+  /** Cria as 5 colunas padrão de todo board novo (mesmo ponto de partida do
+   *  board da Vitória) — inclusive a `pendente`, obrigatória: o trigger de
+   *  roteamento automático (email_ia.trg_suporte_escalado_rotear) só elege
+   *  um board se ele tiver alguém pra receber o caso, e o kanban em si exige
+   *  que toda coluna 'pendente' exista e nunca seja apagável. */
+  async function semearColunasPadrao(boardId) {
+    const padrao = [
+      ['pendente', 'Pendente', 'Caso acabou de ser escalado pela IA — ainda ninguém olhou.', 1],
+      ['iniciado', 'Iniciado', 'Um humano já está atendendo este caso.', 2],
+      ['esperando_resposta', 'Esperando resposta', 'A bola está com o cliente — aguardando ele responder.', 3],
+      ['reembolsado', 'Reembolsado', 'O reembolso já foi processado.', 4],
+      ['finalizado', 'Finalizado', 'Atendimento concluído.', 5],
+    ];
+    await Promise.all(padrao.map(([chave, rotulo, descricao, ordem]) => query(
+      `INSERT INTO email_ia.suporte_escalado_colunas (board_id, chave, rotulo, descricao, ordem)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [boardId, chave, rotulo, descricao, ordem],
+    )));
+  }
+
+  app.post('/api/suporte-escalado/boards', {
+    onRequest: [app.exigirAdmin],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Cria um board novo no kanban de suporte escalado',
+      description: 'Só administradores. Nasce com as mesmas 5 colunas padrão (incluindo a '
+        + '"Pendente", fixa) e pode já vir vinculado a um usuário — cada usuário só pode ter '
+        + 'um board.',
+      security: [{ bearerAuth: [] }],
+      body: {
+        type: 'object',
+        required: ['nome'],
+        properties: {
+          nome: { type: 'string', minLength: 1, maxLength: 120 },
+          usuario_id: { type: ['integer', 'null'] },
+        },
+      },
+    },
+  }, async (req) => {
+    const nome = req.body.nome.trim();
+    if (!nome) throw new ErroHttp(400, 'Dê um nome para o board.');
+    const usuarioId = req.body.usuario_id ?? null;
+    let board;
+    try {
+      const { rows } = await query(
+        `INSERT INTO email_ia.suporte_escalado_boards (nome, usuario_id, criado_por)
+         VALUES ($1, $2, $3)
+         RETURNING id, nome, usuario_id, ativo, criado_em`,
+        [nome, usuarioId, req.usuario.user_id],
+      );
+      [board] = rows;
+    } catch (err) {
+      if (err.code === '23505') throw new ErroHttp(409, 'Este usuário já tem um board.');
+      throw err;
+    }
+    await semearColunasPadrao(board.id);
+    return board;
+  });
+
+  app.patch('/api/suporte-escalado/boards/:id', {
+    onRequest: [app.exigirAdmin],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Renomeia, vincula a um usuário ou ativa/desativa um board',
+      description: 'Só administradores. Desativar (`ativo: false`) só tira o board do '
+        + 'roteamento automático de casos novos — nunca apaga colunas nem casos. Não existe '
+        + 'endpoint para apagar um board.',
+      security: [{ bearerAuth: [] }],
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } },
+      body: {
+        type: 'object',
+        properties: {
+          nome: { type: 'string', minLength: 1, maxLength: 120 },
+          usuario_id: { type: ['integer', 'null'] },
+          ativo: { type: 'boolean' },
+        },
+      },
+    },
+  }, async (req) => {
+    const corpo = req.body ?? {};
+    const campos = [];
+    const valores = [];
+    let i = 1;
+    if (corpo.nome !== undefined) {
+      const nome = corpo.nome.trim();
+      if (!nome) throw new ErroHttp(400, 'Dê um nome para o board.');
+      campos.push(`nome = $${i}`); valores.push(nome); i += 1;
+    }
+    if (corpo.usuario_id !== undefined) {
+      campos.push(`usuario_id = $${i}`); valores.push(corpo.usuario_id); i += 1;
+    }
+    if (corpo.ativo !== undefined) {
+      campos.push(`ativo = $${i}`); valores.push(corpo.ativo); i += 1;
+    }
+    if (!campos.length) throw new ErroHttp(400, 'Nada para alterar.');
+    valores.push(req.params.id);
+    let rows;
+    try {
+      ({ rows } = await query(
+        `UPDATE email_ia.suporte_escalado_boards SET ${campos.join(', ')} WHERE id = $${i}
+         RETURNING id, nome, usuario_id, ativo, criado_em`,
+        valores,
+      ));
+    } catch (err) {
+      if (err.code === '23505') throw new ErroHttp(409, 'Este usuário já tem um board.');
+      throw err;
+    }
+    if (!rows[0]) throw new ErroHttp(404, 'Board não encontrado.');
+    return rows[0];
+  });
+
   /* ═══════════════════════════  GET /api/suporte-escalado  ═══════════════════ */
+
+  /* Visão geral (só admin): mesmas 5 métricas de sempre, mas somando TODOS
+     os boards — não existe drag-and-drop aqui (cada board tem suas próprias
+     colunas, não dá pra misturar num board só), então em vez de `colunas`
+     pensadas pra um kanban único, o extra `boards_resumo` dá um resumo por
+     board (dono, pendentes, total) pra uma tabela. `colunas` ainda volta
+     preenchida — 1 linha por `chave` distinta entre todos os boards — só
+     pra alimentar os KPIs do topo (mesmo componente de sempre) e os rótulos
+     da tabela de transições. */
+  async function visaoGeralBoards(dias) {
+    const [colunasRes, kpisRes, itensRes, transicoesRes, movimentosRes, resumoBoardsRes] = await Promise.all([
+      query(
+        `SELECT DISTINCT ON (chave) chave, rotulo, descricao
+         FROM email_ia.suporte_escalado_colunas
+         ORDER BY chave, ordem`,
+      ),
+      query('SELECT status, count(*)::int AS total FROM email_ia.suporte_escalado GROUP BY status'),
+      query(
+        `SELECT s.id, s.remetente_email, s.nome, s.resumo_conversa, s.motivo_escalonamento, s.status,
+                s.email_id, s.criado_em, s.atualizado_em, s.iniciado_em, s.finalizado_em,
+                s.board_id, b.nome AS board_nome
+         FROM email_ia.suporte_escalado s
+         LEFT JOIN email_ia.suporte_escalado_boards b ON b.id = s.board_id
+         ORDER BY s.criado_em DESC`,
+      ),
+      query(
+        `WITH eventos AS (
+           SELECT status_anterior, status_novo, mudou_em,
+                  LAG(mudou_em) OVER (PARTITION BY suporte_escalado_id ORDER BY mudou_em) AS entrou_em
+           FROM email_ia.suporte_escalado_historico
+         )
+         SELECT status_anterior, status_novo,
+                avg(extract(epoch FROM (mudou_em - entrou_em)) / 3600.0) AS media_h,
+                percentile_cont(0.5) WITHIN GROUP (
+                  ORDER BY extract(epoch FROM (mudou_em - entrou_em)) / 3600.0
+                ) AS mediana_h,
+                count(*)::int AS amostra
+         FROM eventos
+         WHERE entrou_em IS NOT NULL
+         GROUP BY status_anterior, status_novo
+         ORDER BY media_h DESC NULLS LAST`,
+      ),
+      query(
+        `SELECT to_char(date_trunc('day', mudou_em), 'YYYY-MM-DD') AS dia, count(*)::int AS total
+         FROM email_ia.suporte_escalado_historico
+         WHERE status_anterior IS NOT NULL AND mudou_em > now() - ($1 || ' days')::interval
+         GROUP BY 1 ORDER BY 1`,
+        [dias],
+      ),
+      query(
+        `SELECT b.id, b.nome, b.ativo, u.nome AS usuario_nome, u.email AS usuario_email,
+                count(s.id)::int AS total,
+                count(s.id) FILTER (WHERE s.status = 'pendente')::int AS pendentes
+         FROM email_ia.suporte_escalado_boards b
+         LEFT JOIN public.painel_usuarios u ON u.id = b.usuario_id
+         LEFT JOIN email_ia.suporte_escalado s ON s.board_id = b.id
+         GROUP BY b.id, b.nome, b.ativo, u.nome, u.email
+         ORDER BY b.nome`,
+      ),
+    ]);
+
+    const totalMovimentos = movimentosRes.rows.reduce((soma, r) => soma + r.total, 0);
+
+    return {
+      board: null,
+      geral: true,
+      colunas: colunasRes.rows,
+      kpis: Object.fromEntries(kpisRes.rows.map((r) => [r.status, r.total])),
+      itens: itensRes.rows,
+      transicoes: transicoesRes.rows,
+      movimentos_diarios: movimentosRes.rows,
+      resumo_movimentos: {
+        janela_dias: dias,
+        total: totalMovimentos,
+        media_por_dia: Math.round((totalMovimentos / dias) * 10) / 10,
+      },
+      boards_resumo: resumoBoardsRes.rows,
+    };
+  }
 
   app.get('/api/suporte-escalado', {
     onRequest: [app.exigirSessao],
     schema: {
       tags: ['Central de E-mail IA'],
-      summary: 'Kanban de suporte escalado — lista + KPIs por coluna',
+      summary: 'Kanban de suporte escalado — lista + KPIs por coluna, de UM board (ou geral)',
       description: 'Casos que a IA tirou de si (nunca mais responde este remetente até alguém '
-        + 'reativar). `q` busca em nome, e-mail, resumo da conversa e motivo do escalonamento — '
-        + 'os KPIs refletem o mesmo recorte da busca.',
+        + 'reativar). `board_id` é obrigatório — o id de um board, ou o literal `todos` (só '
+        + 'administrador) pra uma visão agregada de todos os boards, sem drag-and-drop (cada '
+        + 'board tem colunas próprias — não dá pra misturar num board só). `q` busca em nome, '
+        + 'e-mail, resumo da conversa e motivo do escalonamento — os KPIs refletem o mesmo '
+        + 'recorte da busca (ignorado na visão geral).',
       security: [{ bearerAuth: [] }],
       querystring: {
         type: 'object',
+        required: ['board_id'],
         properties: {
+          board_id: { type: 'string' },
           q: { type: 'string' },
           dias: { type: 'integer', description: 'Janela (em dias) das métricas de transição/movimentação — padrão 30.' },
         },
       },
     },
   }, async (req) => {
-    const condicoes = [];
-    const valores = [];
-    let i = 1;
+    const dias = Math.max(1, Number(req.query.dias) || 30);
+
+    if (req.query.board_id === 'todos') {
+      if (!req.usuario.admin) throw new ErroHttp(403, 'Só administradores veem a visão geral de todos os boards.');
+      return visaoGeralBoards(dias);
+    }
+
+    const boardId = Number(req.query.board_id);
+    if (!Number.isInteger(boardId)) throw new ErroHttp(400, 'board_id inválido.');
+    const board = await boardPorId(boardId);
+    if (!board) throw new ErroHttp(404, 'Board não encontrado.');
+    if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este board não é seu.');
+
+    const condicoes = ['board_id = $1'];
+    const valores = [boardId];
+    let i = 2;
     if (req.query.q) {
       condicoes.push(`(nome ILIKE $${i} OR remetente_email ILIKE $${i}
         OR resumo_conversa ILIKE $${i} OR motivo_escalonamento ILIKE $${i})`);
       valores.push(`%${req.query.q}%`);
       i += 1;
     }
-    const onde = condicoes.length ? condicoes.join(' AND ') : 'true';
-    const dias = Math.max(1, Number(req.query.dias) || 30);
+    const onde = condicoes.join(' AND ');
 
     const [colunasRes, kpisRes, itensRes, transicoesRes, movimentosRes] = await Promise.all([
-      query('SELECT id, chave, rotulo, descricao, ordem FROM email_ia.suporte_escalado_colunas ORDER BY ordem, id'),
+      query(
+        'SELECT id, chave, rotulo, descricao, ordem FROM email_ia.suporte_escalado_colunas WHERE board_id = $1 ORDER BY ordem, id',
+        [boardId],
+      ),
       query(
         `SELECT status, count(*)::int AS total
          FROM email_ia.suporte_escalado WHERE ${onde}
@@ -756,11 +1054,15 @@ export default async function rotasEmailIACentral(app) {
       // trigger). status_anterior já vem certo em cada linha do histórico —
       // só falta saber HÁ QUANTO TEMPO essa etapa tinha começado, que é o
       // mudou_em da transição anterior do mesmo caso (LAG por suporte_escalado_id).
+      // Filtrado por board via JOIN em suporte_escalado (a própria tabela de
+      // histórico não sabe de qual board é cada linha).
       query(
         `WITH eventos AS (
-           SELECT status_anterior, status_novo, mudou_em,
-                  LAG(mudou_em) OVER (PARTITION BY suporte_escalado_id ORDER BY mudou_em) AS entrou_em
-           FROM email_ia.suporte_escalado_historico
+           SELECT h.status_anterior, h.status_novo, h.mudou_em,
+                  LAG(h.mudou_em) OVER (PARTITION BY h.suporte_escalado_id ORDER BY h.mudou_em) AS entrou_em
+           FROM email_ia.suporte_escalado_historico h
+           JOIN email_ia.suporte_escalado s ON s.id = h.suporte_escalado_id
+           WHERE s.board_id = $1
          )
          SELECT status_anterior, status_novo,
                 avg(extract(epoch FROM (mudou_em - entrou_em)) / 3600.0) AS media_h,
@@ -772,22 +1074,26 @@ export default async function rotasEmailIACentral(app) {
          WHERE entrou_em IS NOT NULL
          GROUP BY status_anterior, status_novo
          ORDER BY media_h DESC NULLS LAST`,
+        [boardId],
       ),
       // Quantos CASOS MUDARAM DE COLUNA por dia (não conta a criação em si) —
       // é o "quantos e-mails o suporte moveu hoje", útil pra ver ritmo de
       // atendimento independente de quantos casos novos chegaram.
       query(
-        `SELECT to_char(date_trunc('day', mudou_em), 'YYYY-MM-DD') AS dia, count(*)::int AS total
-         FROM email_ia.suporte_escalado_historico
-         WHERE status_anterior IS NOT NULL AND mudou_em > now() - ($1 || ' days')::interval
+        `SELECT to_char(date_trunc('day', h.mudou_em), 'YYYY-MM-DD') AS dia, count(*)::int AS total
+         FROM email_ia.suporte_escalado_historico h
+         JOIN email_ia.suporte_escalado s ON s.id = h.suporte_escalado_id
+         WHERE s.board_id = $2 AND h.status_anterior IS NOT NULL
+           AND h.mudou_em > now() - ($1 || ' days')::interval
          GROUP BY 1 ORDER BY 1`,
-        [dias],
+        [dias, boardId],
       ),
     ]);
 
     const totalMovimentos = movimentosRes.rows.reduce((soma, r) => soma + r.total, 0);
 
     return {
+      board,
       colunas: colunasRes.rows,
       kpis: Object.fromEntries(kpisRes.rows.map((r) => [r.status, r.total])),
       itens: itensRes.rows,
@@ -820,8 +1126,11 @@ export default async function rotasEmailIACentral(app) {
     },
   }, async (req) => {
     const { id, status } = req.body;
+    const board = await boardDoCaso(id);
+    if (!board) throw new ErroHttp(404, 'Caso escalado não encontrado.');
+    if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este caso não é de um board seu.');
     const { rows: colunaRows } = await query(
-      'SELECT 1 FROM email_ia.suporte_escalado_colunas WHERE chave = $1', [status],
+      'SELECT 1 FROM email_ia.suporte_escalado_colunas WHERE board_id = $1 AND chave = $2', [board.id, status],
     );
     if (!colunaRows[0]) throw new ErroHttp(400, 'Coluna inválida.');
     const { rows } = await query(
@@ -856,6 +1165,9 @@ export default async function rotasEmailIACentral(app) {
     },
   }, async (req, resposta) => {
     const { id } = req.body;
+    const board = await boardDoCaso(id);
+    if (!board) throw new ErroHttp(404, 'Caso escalado não encontrado.');
+    if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este caso não é de um board seu.');
     const r = await query('DELETE FROM email_ia.suporte_escalado WHERE id = $1', [id]);
     if (!r.rowCount) throw new ErroHttp(404, 'Caso escalado não encontrado.');
     resposta.code(204);
@@ -892,29 +1204,43 @@ export default async function rotasEmailIACentral(app) {
       security: [{ bearerAuth: [] }],
       body: {
         type: 'object',
-        required: ['rotulo'],
+        required: ['board_id', 'rotulo'],
         properties: {
+          board_id: { type: 'integer' },
           rotulo: { type: 'string', minLength: 1, maxLength: 60 },
           descricao: { type: 'string', maxLength: 300 },
         },
       },
     },
   }, async (req) => {
+    const board = await boardPorId(req.body.board_id);
+    if (!board) throw new ErroHttp(404, 'Board não encontrado.');
+    if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este board não é seu.');
     const rotulo = req.body.rotulo.trim();
     if (!rotulo) throw new ErroHttp(400, 'Dê um nome para a coluna.');
     const descricao = req.body.descricao === undefined ? null : req.body.descricao.trim() || null;
-    const { rows: existentes } = await query('SELECT chave FROM email_ia.suporte_escalado_colunas');
+    const { rows: existentes } = await query(
+      'SELECT chave FROM email_ia.suporte_escalado_colunas WHERE board_id = $1', [board.id],
+    );
     const chave = chaveDaColuna(rotulo, new Set(existentes.map((r) => r.chave)));
     const { rows } = await query(
-      `INSERT INTO email_ia.suporte_escalado_colunas (chave, rotulo, descricao, ordem)
-       SELECT $1, $2, $3, coalesce(max(ordem), 0) + 1 FROM email_ia.suporte_escalado_colunas
-       RETURNING id, chave, rotulo, descricao, ordem`,
-      [chave, rotulo, descricao],
+      `INSERT INTO email_ia.suporte_escalado_colunas (board_id, chave, rotulo, descricao, ordem)
+       SELECT $1, $2, $3, $4, coalesce(max(ordem), 0) + 1 FROM email_ia.suporte_escalado_colunas WHERE board_id = $1
+       RETURNING id, board_id, chave, rotulo, descricao, ordem`,
+      [board.id, chave, rotulo, descricao],
     );
     return rows[0];
   });
 
   /* ═══════════════════  PUT/DELETE /api/suporte-escalado/colunas/:id  ═════════ */
+
+  async function colunaPorId(id) {
+    const { rows } = await query(
+      'SELECT id, board_id, chave, rotulo, descricao, ordem FROM email_ia.suporte_escalado_colunas WHERE id = $1',
+      [id],
+    );
+    return rows[0] ?? null;
+  }
 
   app.put('/api/suporte-escalado/colunas/:id', {
     onRequest: [app.exigirSessao],
@@ -934,15 +1260,18 @@ export default async function rotasEmailIACentral(app) {
       },
     },
   }, async (req) => {
+    const coluna = await colunaPorId(req.params.id);
+    if (!coluna) throw new ErroHttp(404, 'Coluna não encontrada.');
+    const board = await boardPorId(coluna.board_id);
+    if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este board não é seu.');
     const rotulo = req.body.rotulo.trim();
     if (!rotulo) throw new ErroHttp(400, 'Dê um nome para a coluna.');
     const descricao = req.body.descricao === undefined ? null : req.body.descricao.trim() || null;
     const { rows } = await query(
       `UPDATE email_ia.suporte_escalado_colunas SET rotulo = $1, descricao = $2 WHERE id = $3
-       RETURNING id, chave, rotulo, descricao, ordem`,
+       RETURNING id, board_id, chave, rotulo, descricao, ordem`,
       [rotulo, descricao, req.params.id],
     );
-    if (!rows[0]) throw new ErroHttp(404, 'Coluna não encontrada.');
     return rows[0];
   });
 
@@ -957,16 +1286,16 @@ export default async function rotasEmailIACentral(app) {
       params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } },
     },
   }, async (req, resposta) => {
-    const { rows } = await query(
-      'SELECT chave FROM email_ia.suporte_escalado_colunas WHERE id = $1', [req.params.id],
-    );
-    const coluna = rows[0];
+    const coluna = await colunaPorId(req.params.id);
     if (!coluna) throw new ErroHttp(404, 'Coluna não encontrada.');
+    const board = await boardPorId(coluna.board_id);
+    if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este board não é seu.');
     if (coluna.chave === 'pendente') {
       throw new ErroHttp(409, 'A coluna "Pendente" é a entrada padrão de todo caso novo — não pode ser apagada.');
     }
     const { rows: qtd } = await query(
-      'SELECT count(*)::int AS total FROM email_ia.suporte_escalado WHERE status = $1', [coluna.chave],
+      'SELECT count(*)::int AS total FROM email_ia.suporte_escalado WHERE board_id = $1 AND status = $2',
+      [coluna.board_id, coluna.chave],
     );
     if (qtd[0].total > 0) {
       throw new ErroHttp(
@@ -992,6 +1321,9 @@ export default async function rotasEmailIACentral(app) {
       },
     },
   }, async (req) => {
+    const board = await boardDoCaso(req.params.id);
+    if (!board) throw new ErroHttp(404, 'Caso escalado não encontrado.');
+    if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este caso não é de um board seu.');
     const { rows } = await query(
       `SELECT id, suporte_escalado_id, autor, nota, criado_em, atualizado_em
        FROM email_ia.suporte_escalado_notas
@@ -1022,6 +1354,9 @@ export default async function rotasEmailIACentral(app) {
       },
     },
   }, async (req) => {
+    const board = await boardDoCaso(req.params.id);
+    if (!board) throw new ErroHttp(404, 'Caso escalado não encontrado.');
+    if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este caso não é de um board seu.');
     const autor = req.usuario.nome || req.usuario.email || null;
     const { rows } = await query(
       `INSERT INTO email_ia.suporte_escalado_notas (suporte_escalado_id, autor, nota)
@@ -1051,13 +1386,18 @@ export default async function rotasEmailIACentral(app) {
       },
     },
   }, async (req) => {
+    const { rows: notaRows } = await query(
+      'SELECT suporte_escalado_id FROM email_ia.suporte_escalado_notas WHERE id = $1', [req.params.notaId],
+    );
+    if (!notaRows[0]) throw new ErroHttp(404, 'Nota não encontrada.');
+    const board = await boardDoCaso(notaRows[0].suporte_escalado_id);
+    if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este caso não é de um board seu.');
     const { rows } = await query(
       `UPDATE email_ia.suporte_escalado_notas SET nota = $1, atualizado_em = now()
        WHERE id = $2
        RETURNING id, suporte_escalado_id, autor, nota, criado_em, atualizado_em`,
       [req.body.nota.trim(), req.params.notaId],
     );
-    if (!rows[0]) throw new ErroHttp(404, 'Nota não encontrada.');
     return rows[0];
   });
 }
