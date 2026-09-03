@@ -2089,6 +2089,56 @@ function renderLinha(s) {
     botao.hidden = true;
   }
 }
+/* ── liga/desliga do SMS da régua (independente da linha e do SMS de
+   confirmação de compra, que sai sempre no webhook de venda) ── */
+
+/**
+ * Carrega uma vez ao abrir o painel — não entra no poll de `carregarSnapshot`
+ * porque é um valor que só muda quando ALGUÉM clica no botão, não a cada
+ * disparo processado.
+ */
+async function carregarSmsToggle() {
+  const barra = $('sms-regua-barra');
+  const admin = Boolean(estado.usuario?.admin);
+  try {
+    const r = await api('/api/config/sms_regua_ativo/');
+    if (!r.ok) {
+      // Ainda não existe (migração não rodou nesta instância): não trava a
+      // tela, só some com o controle — não há o que ligar/desligar ainda.
+      barra.hidden = true;
+      return;
+    }
+    barra.hidden = false;
+    const ativo = String(r.dados.valor) === 'true';
+    $('sms-regua-ativo').checked = ativo;
+    $('sms-regua-ativo').disabled = !admin;
+    $('sms-regua-sub').textContent = admin
+      ? (ativo
+        ? 'Ligado — toda etapa da régua manda e-mail e SMS.'
+        : 'Desligado — as etapas mandam só e-mail. O SMS de confirmação de compra continua saindo sempre, fora da régua.')
+      : (ativo ? 'SMS da régua: ligado.' : 'SMS da régua: desligado.');
+  } catch { /* 401 já redirecionou */ }
+}
+
+$('sms-regua-ativo').addEventListener('change', async (ev) => {
+  const chk = ev.currentTarget;
+  const novo = chk.checked;
+  chk.disabled = true;
+  try {
+    const r = await api('/api/config/sms_regua_ativo/', { metodo: 'PATCH', corpo: { valor: String(novo) } });
+    if (!r.ok) {
+      chk.checked = !novo;   // desfaz na tela — o servidor recusou
+      alert(r.dados.erro ?? 'Não foi possível salvar.');
+      return;
+    }
+    await carregarSmsToggle();
+  } catch {
+    chk.checked = !novo;
+  } finally {
+    chk.disabled = !Boolean(estado.usuario?.admin);
+  }
+});
+
 /* ── criar e editar uma linha de copy ── */
 
 const janelaLinha = $('janela-linha');
@@ -2297,6 +2347,7 @@ $('linha-ativar').addEventListener('click', async (ev) => {
 
   renderLegenda();
   carregarSnapshot();   // já traz a linha ativa e desenha o seletor
+  carregarSmsToggle();
   carregarPedidos();
   carregarSuporte();    // a aba principal
   reagendar();

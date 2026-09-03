@@ -684,6 +684,19 @@
       <p class="linha-intuito" id="linha-intuito" hidden></p>
     </div>
 
+    <!-- ── liga/desliga do SMS da régua (etapas 0-5) — independente da linha,
+         e independente do SMS de confirmação de compra, que sai sempre no
+         webhook de venda (fluxos "Reporting"), não pela régua. -->
+    <div class="linha-barra" id="sms-regua-barra" hidden>
+      <div class="linha-topo">
+        <label class="novo-usuario-admin" id="sms-regua-campo">
+          <input id="sms-regua-ativo" type="checkbox">
+          Enviar SMS nas etapas da régua
+        </label>
+        <p class="linha-sub" id="sms-regua-sub">—</p>
+      </div>
+    </div>
+
     <div class="canvas-area" id="canvas-area"></div>
 
     <div class="canvas-vazio" id="canvas-vazio" hidden>
