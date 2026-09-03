@@ -28,8 +28,12 @@ const SLUG_PRODUTO = /^(\*|[a-z0-9]{2,40})$/;
 function partirChave(bruto) {
   const partes = String(bruto).split(':');
   const [etapa, canal, linha, produto] = partes;
+  // Etapa aceita sinal de menos: a etapa -1 é "o recibo" (confirmação de
+  // compra), âncora fixa fora da régua com copy própria em mensagens_regua
+  // igual às outras etapas — sem o `-?` aqui, editá-la batia 400 "chave
+  // inválida" antes mesmo de chegar no banco.
   if (partes.length < 3 || partes.length > 4
-      || !/^\d+$/.test(etapa ?? '') || !['email', 'sms'].includes(canal) || !linha
+      || !/^-?\d+$/.test(etapa ?? '') || !['email', 'sms'].includes(canal) || !linha
       || (produto !== undefined && !SLUG_PRODUTO.test(produto))) {
     throw new ErroHttp(400, 'Chave inválida. O formato é etapa:canal:linha:produto — '
       + "por exemplo 1:email:1:neuromindpro. Sem o produto, vale o padrão '*'.");

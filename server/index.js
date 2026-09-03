@@ -956,7 +956,10 @@ async function atender(req, res, url, sessao) {
   /* ── edição de copy ── */
   // /api/mensagem/:linha/:etapa/:canal[/:produto] — sem o produto, vale o
   // padrão '*': é o formato antigo, que continua funcionando.
-  const rotaMsg = /^\/api\/mensagem\/(\d{1,4})\/(\d{1,2})\/(email|sms)(?:\/([^/]+))?$/.exec(url.pathname);
+  // Etapa aceita sinal de menos: a etapa -1 (recibo, ver /api/etapas/) tem
+  // copy própria em mensagens_regua igual às outras, e sem o `-?` aqui a
+  // edição dela pelo painel batia 404 mesmo com a rota de etapas já pronta.
+  const rotaMsg = /^\/api\/mensagem\/(\d{1,4})\/(-?\d{1,2})\/(email|sms)(?:\/([^/]+))?$/.exec(url.pathname);
   if (rotaMsg) {
     const [, linhaM, etapaM, canalM, produtoBruto] = rotaMsg;
     const etapaNum = Number(etapaM);
