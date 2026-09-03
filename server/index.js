@@ -1083,6 +1083,32 @@ async function atender(req, res, url, sessao) {
     return json(res, 200, r);
   }
 
+  /* ── liga/desliga do SMS da régua (config_disparos.sms_regua_ativo) ──
+     Não confundir com o SMS de confirmação de compra, que sai sempre no
+     webhook de venda (fluxos "Reporting"), fora da régua e fora desta chave. */
+  if (url.pathname === '/api/config/sms_regua_ativo/') {
+    if (req.method === 'GET') {
+      try {
+        return json(res, 200, await obterApi('/api/config/sms_regua_ativo/'));
+      } catch (err) {
+        if (err instanceof ErroApi && err.status === 404) {
+          return json(res, 404, { erro: 'Ainda não configurado — a migração 020 ainda não rodou aqui.' });
+        }
+        throw err;
+      }
+    }
+    if (req.method === 'PATCH') {
+      // Liga/desliga o SMS de TODA a régua — mesma régua de sempre.
+      if (!usuario.admin) {
+        return json(res, 403, { erro: 'Só administradores ligam/desligam o SMS da régua.' });
+      }
+      const corpo = await lerJson(req);
+      const valor = corpo.valor === true || corpo.valor === 'true' ? 'true' : 'false';
+      return json(res, 200, await remendarApi('/api/config/sms_regua_ativo/', { valor }));
+    }
+    return json(res, 405, { erro: 'método não permitido' });
+  }
+
   if (url.pathname === '/api/snapshot') {
     const q = url.searchParams;
 
