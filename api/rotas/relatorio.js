@@ -232,7 +232,7 @@ const COR = {
 // Só o suficiente pra não mostrar slug cru (devolucao, pede_cancelamento_reembolso)
 // no relatório — mesma fonte de LABEL_* de public/emailComum.js, mas esse
 // arquivo é do navegador (mexe em `document`) e não dá pra importar aqui.
-const LABEL_CATEGORIA = {
+export const LABEL_CATEGORIA = {
   devolucao: 'Devolução', reclamacao: 'Reclamação', duvida_produto: 'Dúvida sobre produto',
   duvida_pedido: 'Dúvida sobre pedido', orcamento: 'Orçamento', elogio: 'Elogio',
   troca: 'Troca', garantia: 'Garantia', cancelamento: 'Cancelamento', outro: 'Outro',

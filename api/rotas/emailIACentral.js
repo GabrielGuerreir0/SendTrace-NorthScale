@@ -46,6 +46,10 @@ import {
   filtroEmails, filtroTickets, condicaoProdutoLoja, condicaoPeriodo, resolverEmailsProdutoLoja,
 } from '../filtrosEmailIA.js';
 import { acharNoWebmail, urlWebmail, webmailConfigurado } from '../webmail.js';
+import { LABEL_CATEGORIA } from './relatorio.js';
+
+const rotuloCategoria = (c) => LABEL_CATEGORIA[c]
+  ?? String(c ?? '').replace(/_/g, ' ').replace(/^./, (ch) => ch.toUpperCase());
 
 /* ═══════════════════════════════  GET /api/dados  ═══════════════════════════ */
 
@@ -109,19 +113,51 @@ async function ticketsEvolucao() {
  * topo continuam valendo só para o resto da tela.
  */
 async function ticketsTendencias() {
-  const { rows } = await query(
-    `SELECT
-       count(*) FILTER (WHERE primeiro_email_em >= now() - interval '24 hours')::int AS novos_atual,
-       count(*) FILTER (WHERE primeiro_email_em <  now() - interval '24 hours'
-                          AND primeiro_email_em >= now() - interval '48 hours')::int AS novos_anterior,
-       count(*) FILTER (WHERE resolvido_em >= now() - interval '24 hours')::int AS resolvidos_atual,
-       count(*) FILTER (WHERE resolvido_em <  now() - interval '24 hours'
-                          AND resolvido_em >= now() - interval '48 hours')::int AS resolvidos_anterior
-     FROM email_ia.tickets
-     WHERE primeiro_email_em >= now() - interval '48 hours'
-        OR resolvido_em      >= now() - interval '48 hours'`,
-  );
-  return rows[0];
+  const [geraisRes, categoriasRes, novasRes] = await Promise.all([
+    query(
+      `SELECT
+         count(*) FILTER (WHERE primeiro_email_em >= now() - interval '24 hours')::int AS novos_atual,
+         count(*) FILTER (WHERE primeiro_email_em <  now() - interval '24 hours'
+                            AND primeiro_email_em >= now() - interval '48 hours')::int AS novos_anterior,
+         count(*) FILTER (WHERE resolvido_em >= now() - interval '24 hours')::int AS resolvidos_atual,
+         count(*) FILTER (WHERE resolvido_em <  now() - interval '24 hours'
+                            AND resolvido_em >= now() - interval '48 hours')::int AS resolvidos_anterior
+       FROM email_ia.tickets
+       WHERE primeiro_email_em >= now() - interval '48 hours'
+          OR resolvido_em      >= now() - interval '48 hours'`,
+    ),
+    // Por CATEGORIA de e-mail (devolução, cancelamento, dúvida sobre pedido…)
+    // — mesmo padrão de `motivos24` em api/rotas/metricas.js (Suporte IA).
+    query(
+      // data_email (indexado), não criado_em: é quando o e-mail chegou de
+      // verdade, e é a mesma coluna que o resto da Central de E-mail IA usa
+      // pra período — criado_em é só quando o NOSSO processamento rodou.
+      `SELECT categoria,
+              count(*) FILTER (WHERE data_email >= now() - interval '24 hours')::int AS atual,
+              count(*) FILTER (WHERE data_email <  now() - interval '24 hours')::int AS anterior
+       FROM email_ia.emails
+       WHERE data_email >= now() - interval '48 hours' AND categoria IS NOT NULL
+       GROUP BY categoria ORDER BY atual DESC`,
+    ),
+    // Categoria com ocorrência nas 24h e NENHUMA nos 7 dias antes — mesmo
+    // padrão de `motivosNovos` em metricas.js.
+    query(
+      `SELECT categoria, count(*)::int AS total
+       FROM email_ia.emails a
+       WHERE data_email >= now() - interval '24 hours' AND categoria IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM email_ia.emails b
+           WHERE b.categoria = a.categoria
+             AND b.data_email >= now() - interval '8 days'
+             AND b.data_email <  now() - interval '24 hours')
+       GROUP BY categoria ORDER BY total DESC LIMIT 5`,
+    ),
+  ]);
+  return {
+    ...geraisRes.rows[0],
+    categorias_24h: categoriasRes.rows,
+    categorias_novas_24h: novasRes.rows,
+  };
 }
 
 /** As frases dos insights de Tickets — regras determinísticas, mesmo espírito de gerarInsights() em server/dados.js. */
@@ -137,6 +173,27 @@ function gerarInsightsTickets(t) {
       nivel: 'atencao',
       texto: `A abertura de novos tickets ${vNovos > 0 ? 'subiu' : 'caiu'} ${Math.abs(vNovos)}% `
         + `nas últimas 24h (${t.novos_anterior} → ${t.novos_atual}).`,
+    });
+  }
+
+  // Por categoria de e-mail: mesmo corte do Suporte IA (≥30% de variação,
+  // volume que importa) e mesmo "padrão novo" (categoria sem ocorrência na
+  // semana anterior).
+  for (const c of t.categorias_24h ?? []) {
+    const v = variacao(c.atual, c.anterior);
+    if (v === null || Math.abs(v) < 30 || Math.max(c.atual, c.anterior) < 5) continue;
+    insights.push({
+      nivel: v > 0 ? 'atencao' : 'info',
+      texto: `Os e-mails sobre ${rotuloCategoria(c.categoria).toLowerCase()} `
+        + `${v > 0 ? 'aumentaram' : 'caíram'} ${Math.abs(v)}% nas últimas 24h `
+        + `(${c.anterior} → ${c.atual}).`,
+    });
+  }
+  for (const c of t.categorias_novas_24h ?? []) {
+    insights.push({
+      nivel: 'atencao',
+      texto: `Surgiu um padrão novo de contato por e-mail: ${rotuloCategoria(c.categoria).toLowerCase()} `
+        + `(${c.total} e-mail${c.total === 1 ? '' : 's'} nas últimas 24h, nenhum na semana anterior).`,
     });
   }
 
@@ -179,6 +236,18 @@ function gerarInsightsSuporteEscalado(t) {
       nivel: 'info',
       texto: `Os casos finalizados no suporte escalado ${vFinal > 0 ? 'aumentaram' : 'caíram'} ${Math.abs(vFinal)}% `
         + `nas últimas 24h (${t.finalizados_anterior} → ${t.finalizados_atual}).`,
+    });
+  }
+
+  // Especificamente quantos casos viraram reembolso de verdade — um recorte
+  // mais acionável do que "finalizados" em geral, que mistura reembolso com
+  // reativação/outros desfechos.
+  const vReemb = variacao(t.reembolsados_atual ?? 0, t.reembolsados_anterior ?? 0);
+  if (vReemb !== null && Math.abs(vReemb) >= 25 && Math.max(t.reembolsados_atual, t.reembolsados_anterior) >= 3) {
+    insights.push({
+      nivel: vReemb > 0 ? 'alerta' : 'info',
+      texto: `Os reembolsos consumados via suporte escalado ${vReemb > 0 ? 'aumentaram' : 'caíram'} ${Math.abs(vReemb)}% `
+        + `nas últimas 24h (${t.reembolsados_anterior} → ${t.reembolsados_atual}).`,
     });
   }
 
@@ -1107,7 +1176,18 @@ export default async function rotasEmailIACentral(app) {
                             AND criado_em >= now() - interval '48 hours')::int AS novos_anterior,
          count(*) FILTER (WHERE finalizado_em >= now() - interval '24 hours')::int AS finalizados_atual,
          count(*) FILTER (WHERE finalizado_em <  now() - interval '24 hours'
-                            AND finalizado_em >= now() - interval '48 hours')::int AS finalizados_anterior
+                            AND finalizado_em >= now() - interval '48 hours')::int AS finalizados_anterior,
+         -- Dos finalizados, quantos especificamente viraram reembolso — vem do
+         -- HISTÓRICO (não do status atual do caso), porque um caso pode passar
+         -- por 'reembolsado' e depois ser movido de novo; o histórico é o
+         -- registro fiel de QUANDO essa transição aconteceu.
+         (SELECT count(*)::int FROM email_ia.suporte_escalado_historico
+          WHERE status_novo = 'reembolsado'
+            AND mudou_em >= now() - interval '24 hours') AS reembolsados_atual,
+         (SELECT count(*)::int FROM email_ia.suporte_escalado_historico
+          WHERE status_novo = 'reembolsado'
+            AND mudou_em <  now() - interval '24 hours'
+            AND mudou_em >= now() - interval '48 hours') AS reembolsados_anterior
        FROM email_ia.suporte_escalado
        WHERE criado_em >= now() - interval '48 hours'
           OR finalizado_em >= now() - interval '48 hours'`,

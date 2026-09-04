@@ -1116,10 +1116,11 @@ function gerarInsights(t) {
 
 /**
  * Os "Insights automáticos" da aba de RÉGUA — mesmo formato do suporte IA
- * (24h × 24h anteriores), mas com menos sinais: `disparos_pos_venda` só tem
- * timestamp confiável para a ENTRADA (`criado_em`) e o REEMBOLSO
- * (`reembolsado_em`). Atrasado/travado são fotografias do agora, sem
- * histórico — não dá para comparar 24h contra 24h sem inventar um número.
+ * (24h × 24h anteriores). Três sinais com timestamp confiável: ENTRADA
+ * (`criado_em`), REEMBOLSO (`reembolsado_em`) e ABERTURA de e-mail
+ * (`aberturas_disparo.aberto_em`, pelo pixel de rastreio). Atrasado/travado
+ * ficam de fora: são fotografias do agora, sem histórico — não dá para
+ * comparar 24h contra 24h sem inventar um número.
  */
 function gerarInsightsRegua(t) {
   const insights = [];
@@ -1142,6 +1143,17 @@ function gerarInsightsRegua(t) {
       nivel: vReemb > 0 ? 'alerta' : 'info',
       texto: `Os reembolsos na régua ${vReemb > 0 ? 'aumentaram' : 'caíram'} ${Math.abs(vReemb)}% `
         + `nas últimas 24h (${t.reembolsos_24h_anterior} → ${t.reembolsos_24h}).`,
+    });
+  }
+
+  // Abertura de e-mail: uma QUEDA é o sinal que importa (entrega/assunto com
+  // problema) — uma alta é boa notícia, sem exigir ação.
+  const vAbert = variacao(t.aberturas_24h ?? 0, t.aberturas_24h_anterior ?? 0);
+  if (vAbert !== null && Math.abs(vAbert) >= 30 && Math.max(t.aberturas_24h, t.aberturas_24h_anterior) >= 15) {
+    insights.push({
+      nivel: vAbert < 0 ? 'alerta' : 'info',
+      texto: `A abertura de e-mails da régua ${vAbert > 0 ? 'subiu' : 'caiu'} ${Math.abs(vAbert)}% `
+        + `nas últimas 24h (${t.aberturas_24h_anterior} → ${t.aberturas_24h}).`,
     });
   }
 

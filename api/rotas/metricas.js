@@ -55,6 +55,8 @@ export default async function rotasMetricas(app) {
             novos_24h_anterior: { type: 'integer', description: 'Entradas nas 24h ANTERIORES às últimas 24h — alimenta os insights.' },
             reembolsos_24h: { type: 'integer' },
             reembolsos_24h_anterior: { type: 'integer' },
+            aberturas_24h: { type: 'integer' },
+            aberturas_24h_anterior: { type: 'integer' },
           },
         },
       },
@@ -91,7 +93,19 @@ export default async function rotasMetricas(app) {
          count(*) FILTER (WHERE reembolsado_em >= now() - interval '24 hours')::int AS reembolsos_24h,
          count(*) FILTER (
            WHERE reembolsado_em <  now() - interval '24 hours'
-             AND reembolsado_em >= now() - interval '48 hours')::int AS reembolsos_24h_anterior
+             AND reembolsado_em >= now() - interval '48 hours')::int AS reembolsos_24h_anterior,
+         -- Abertura de e-mail (pixel de rastreio, aberturas_disparo) — junta com
+         -- a MESMA disparos_pos_venda pra herdar o recorte de produto/plataforma
+         -- da consulta de fora, em vez de um recorte próprio.
+         (SELECT count(*)::int FROM aberturas_disparo ab
+          JOIN disparos_pos_venda d ON d.id = ab.disparo_id
+          WHERE ab.aberto_em >= now() - interval '24 hours'
+            AND ${DO_PRODUTO(2, 'd.')} AND ${DA_PLATAFORMA(3, 'd.')}) AS aberturas_24h,
+         (SELECT count(*)::int FROM aberturas_disparo ab
+          JOIN disparos_pos_venda d ON d.id = ab.disparo_id
+          WHERE ab.aberto_em <  now() - interval '24 hours'
+            AND ab.aberto_em >= now() - interval '48 hours'
+            AND ${DO_PRODUTO(2, 'd.')} AND ${DA_PLATAFORMA(3, 'd.')}) AS aberturas_24h_anterior
        FROM disparos_pos_venda
        WHERE ${DO_PRODUTO(2)} AND ${DA_PLATAFORMA(3)}${etapaSql}`,
       valores,
