@@ -488,15 +488,28 @@ async function reclamantes(qs) {
   return rows;
 }
 
+/*
+ * Agrupa por produto NORMALIZADO (resolve_produto — a mesma função que já
+ * dá nome a `disparos_pos_venda.produto_slug` na régua), não pelo texto cru
+ * de `produto_mencionado`. Sem isso, "NeuroMind Pro", "NeuroMind Pro (6
+ * Bottles)", "Neuro Mind Pro" e "Neuro Mind Pro 6 Bottles" apareciam como 4
+ * linhas separadas no ranking, escondendo o volume real de cada produto
+ * (achado em 04/09/2026: eram 4 linhas do MESMO produto, ~16× o próximo
+ * produto de fato diferente). O alias do campo continua `produto_mencionado`
+ * de propósito — o front (Mais Detalhes) já lê esse nome, só o CONTEÚDO
+ * virou o nome oficial do produto em vez do texto cru.
+ */
 async function produtosComProblema(qs) {
-  const f = filtroEmails(qs, 1);
+  const f = filtroEmails(qs, 1, 'e');
   const { rows } = await query(
-    `SELECT produto_mencionado, count(*)::int AS total,
-            count(*) FILTER (WHERE categoria IN ('devolucao','troca'))::int AS devolucoes,
-            count(*) FILTER (WHERE categoria = 'reclamacao')::int AS reclamacoes
-     FROM email_ia.emails
-     WHERE categoria IN ('devolucao','reclamacao','troca') AND produto_mencionado IS NOT NULL AND ${f.sql}
-     GROUP BY produto_mencionado ORDER BY total DESC LIMIT 100`,
+    `SELECT coalesce(pr.nome, resolve_produto(e.produto_mencionado)) AS produto_mencionado,
+            count(*)::int AS total,
+            count(*) FILTER (WHERE e.categoria IN ('devolucao','troca'))::int AS devolucoes,
+            count(*) FILTER (WHERE e.categoria = 'reclamacao')::int AS reclamacoes
+     FROM email_ia.emails e
+     LEFT JOIN produtos pr ON pr.slug = resolve_produto(e.produto_mencionado)
+     WHERE e.categoria IN ('devolucao','reclamacao','troca') AND e.produto_mencionado IS NOT NULL AND ${f.sql}
+     GROUP BY 1 ORDER BY total DESC LIMIT 100`,
     f.valores,
   );
   return rows;
