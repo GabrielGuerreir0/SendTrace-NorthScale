@@ -16,7 +16,7 @@ import {
   reguaDefinicao, cadenciaObservada, porCanal, semMensagem, resumoLinhas, piorCasoSms, errosSemCanal, mensagem, salvarMensagem, criarLinha, apagarLinha, editarLinha, etapasDaRegua,
   etapasTempos, salvarTempoEtapa,
   produtosDaFila, plataformasDaFila, fonteDados, suporteResumo, suporteConversas,
-  catalogoProdutos,
+  catalogoProdutos, reguaInsights,
 } from './dados.js';
 import {
   apiConfigurada, enderecoApi, saude as saudeApi, ErroApi,
@@ -1134,6 +1134,16 @@ async function atender(req, res, url, sessao) {
     return json(res, 200, await snapshot({ etapa, canal, linha, produto, plataforma }));
   }
 
+  /* ── "Insights automáticos" da régua — mesmo formato do suporte IA, com
+     menos sinais (só entrada e reembolso têm timestamp confiável). ── */
+  if (url.pathname === '/api/regua/insights') {
+    const q = url.searchParams;
+    return json(res, 200, await reguaInsights(
+      textoOuNulo(q.get('produto')),
+      textoOuNulo(q.get('plataforma')),
+    ));
+  }
+
   /* ── dashboard do suporte IA — a aba principal ──
      Os números saem da rota agregada da API; as frases de insight e os
      rótulos nascem em dados.js. `dias` recorta a janela dos KPIs; produto
@@ -1336,6 +1346,10 @@ async function atender(req, res, url, sessao) {
       }
       throw err;
     }
+  }
+
+  if (url.pathname === '/api/suporte-escalado/insights') {
+    return json(res, 200, await obterApi('/api/suporte-escalado/insights'));
   }
 
   if (url.pathname === '/api/suporte-escalado') {

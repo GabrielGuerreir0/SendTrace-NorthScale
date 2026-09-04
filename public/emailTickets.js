@@ -70,6 +70,16 @@ function aplicarFiltroStatus(status) {
   renderKpisStatus();
 }
 
+function renderInsights() {
+  $('tickets-insights').replaceChildren(...(dados?.tickets_insights ?? []).map((i) => {
+    const li = document.createElement('li');
+    li.className = 'sup-insight';
+    li.dataset.nivel = i.nivel;
+    li.textContent = i.texto;
+    return li;
+  }));
+}
+
 function renderKpisStatus() {
   const k = dados?.tickets_kpis ?? {};
   const totalPlataformas = (dados?.plataformas ?? []).reduce((a, p) => a + p.total, 0);
@@ -332,6 +342,7 @@ export async function carregarDados() {
     if (meu !== geracao) return;
     if (!ok) throw new Error(d?.erro ?? 'falha ao carregar');
     dados = d;
+    renderInsights();
     renderKpisStatus();
     renderKpisTempo();
     renderGraficos();

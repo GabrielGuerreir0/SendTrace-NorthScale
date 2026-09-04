@@ -52,6 +52,9 @@ export default async function rotasMetricas(app) {
             com_retry: { type: 'integer' },
             novos_24h: { type: 'integer' },
             prestes: { type: 'integer', description: 'Dispara na próxima hora e ainda não venceu.' },
+            novos_24h_anterior: { type: 'integer', description: 'Entradas nas 24h ANTERIORES às últimas 24h — alimenta os insights.' },
+            reembolsos_24h: { type: 'integer' },
+            reembolsos_24h_anterior: { type: 'integer' },
           },
         },
       },
@@ -79,7 +82,16 @@ export default async function rotasMetricas(app) {
          count(*) FILTER (WHERE criado_em >= now() - interval '24 hours')::int AS novos_24h,
          count(*) FILTER (
            WHERE status = 'ativo' AND proximo_disparo > now()
-             AND proximo_disparo <= now() + interval '1 hour')::int AS prestes
+             AND proximo_disparo <= now() + interval '1 hour')::int AS prestes,
+         -- As duas colunas abaixo alimentam os "Insights automáticos" da aba de
+         -- régua: 24h × as 24h ANTERIORES, mesmo formato usado pelo suporte IA.
+         count(*) FILTER (
+           WHERE criado_em <  now() - interval '24 hours'
+             AND criado_em >= now() - interval '48 hours')::int    AS novos_24h_anterior,
+         count(*) FILTER (WHERE reembolsado_em >= now() - interval '24 hours')::int AS reembolsos_24h,
+         count(*) FILTER (
+           WHERE reembolsado_em <  now() - interval '24 hours'
+             AND reembolsado_em >= now() - interval '48 hours')::int AS reembolsos_24h_anterior
        FROM disparos_pos_venda
        WHERE ${DO_PRODUTO(2)} AND ${DA_PLATAFORMA(3)}${etapaSql}`,
       valores,

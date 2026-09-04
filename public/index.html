@@ -624,6 +624,22 @@
 <!-- ═══════════════════════  aba RÉGUA DE PÓS-VENDA  ═══════════════════════ -->
 <main class="conteudo" id="aba-regua" hidden>
 
+  <!-- ── o primeiro card: os insights (mesmo formato do Suporte IA) ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Insights automáticos</h2>
+        <p class="cartao-sub">
+          Mudanças relevantes das últimas 24 h contra as 24 h anteriores — calculadas
+          sobre a entrada de pedidos e os reembolsos da régua, auditáveis contra a tabela.
+        </p>
+      </div>
+    </header>
+    <ul class="sup-insights" id="regua-insights">
+      <li class="sup-insight" data-nivel="info">carregando…</li>
+    </ul>
+  </section>
+
   <!-- ── linha 1: número-herói + indicadores ── -->
   <section class="linha-heroi">
     <div class="cartao heroi">
@@ -906,6 +922,22 @@
 
 <!-- ═══════════════════  Central de E-mail IA — Tela 1: Tickets  ═══════════════ -->
 <main class="conteudo" id="aba-ticketsia" hidden>
+
+  <!-- ── o primeiro card: os insights (mesmo formato do Suporte IA/Régua) ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Insights automáticos</h2>
+        <p class="cartao-sub">
+          Mudanças relevantes das últimas 24 h contra as 24 h anteriores — calculadas
+          sobre a abertura e a resolução de tickets, auditáveis contra a tabela.
+        </p>
+      </div>
+    </header>
+    <ul class="sup-insights" id="tickets-insights">
+      <li class="sup-insight" data-nivel="info">carregando…</li>
+    </ul>
+  </section>
 
   <section class="cartao">
     <header class="cartao-cabeca">
@@ -1389,6 +1421,23 @@
 
 <!-- ═══════════════════  Central de E-mail IA — Tela 5: Suporte Escalado  ═══════════════ -->
 <main class="conteudo" id="aba-suporteescalado" hidden>
+  <!-- ── o primeiro card: os insights (mesmo formato do Suporte IA/Régua/Tickets) ──
+       Global (todos os boards), de propósito — ver a rota no servidor. -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Insights automáticos</h2>
+        <p class="cartao-sub">
+          Mudanças relevantes das últimas 24 h contra as 24 h anteriores — calculadas
+          sobre novos casos e finalizações, somando todos os boards.
+        </p>
+      </div>
+    </header>
+    <ul class="sup-insights" id="esc-insights">
+      <li class="sup-insight" data-nivel="info">carregando…</li>
+    </ul>
+  </section>
+
   <section class="cartao">
     <header class="cartao-cabeca">
       <div>

@@ -97,6 +97,99 @@ async function ticketsEvolucao() {
   return rows;
 }
 
+/*
+ * As comparações que viram os "Insights automáticos" da aba de Tickets: 24h
+ * × as 24h ANTERIORES. Mesmo formato do painel de Suporte IA (ver
+ * server/dados.js) — só que aqui, como toda a lógica da Central de E-mail
+ * IA mora na própria API (ver cabeçalho do arquivo), os números E as frases
+ * nascem os dois aqui, não no painel.
+ *
+ * Sem recorte de produto/loja/período de propósito: é um pulso rápido do
+ * "o que mudou agora", igual ao card equivalente da régua — os filtros do
+ * topo continuam valendo só para o resto da tela.
+ */
+async function ticketsTendencias() {
+  const { rows } = await query(
+    `SELECT
+       count(*) FILTER (WHERE primeiro_email_em >= now() - interval '24 hours')::int AS novos_atual,
+       count(*) FILTER (WHERE primeiro_email_em <  now() - interval '24 hours'
+                          AND primeiro_email_em >= now() - interval '48 hours')::int AS novos_anterior,
+       count(*) FILTER (WHERE resolvido_em >= now() - interval '24 hours')::int AS resolvidos_atual,
+       count(*) FILTER (WHERE resolvido_em <  now() - interval '24 hours'
+                          AND resolvido_em >= now() - interval '48 hours')::int AS resolvidos_anterior
+     FROM email_ia.tickets
+     WHERE primeiro_email_em >= now() - interval '48 hours'
+        OR resolvido_em      >= now() - interval '48 hours'`,
+  );
+  return rows[0];
+}
+
+/** As frases dos insights de Tickets — regras determinísticas, mesmo espírito de gerarInsights() em server/dados.js. */
+function gerarInsightsTickets(t) {
+  const insights = [];
+  const variacao = (atual, anterior) => (anterior > 0
+    ? Math.round(((atual - anterior) / anterior) * 100)
+    : null);
+
+  const vNovos = variacao(t.novos_atual ?? 0, t.novos_anterior ?? 0);
+  if (vNovos !== null && Math.abs(vNovos) >= 40 && Math.max(t.novos_atual, t.novos_anterior) >= 10) {
+    insights.push({
+      nivel: 'atencao',
+      texto: `A abertura de novos tickets ${vNovos > 0 ? 'subiu' : 'caiu'} ${Math.abs(vNovos)}% `
+        + `nas últimas 24h (${t.novos_anterior} → ${t.novos_atual}).`,
+    });
+  }
+
+  const vResolv = variacao(t.resolvidos_atual ?? 0, t.resolvidos_anterior ?? 0);
+  if (vResolv !== null && Math.abs(vResolv) >= 40 && Math.max(t.resolvidos_atual, t.resolvidos_anterior) >= 10) {
+    insights.push({
+      nivel: vResolv < 0 ? 'alerta' : 'info',
+      texto: `Os tickets resolvidos ${vResolv > 0 ? 'aumentaram' : 'caíram'} ${Math.abs(vResolv)}% `
+        + `nas últimas 24h (${t.resolvidos_anterior} → ${t.resolvidos_atual}).`,
+    });
+  }
+
+  if (!insights.length) {
+    insights.push({ nivel: 'info', texto: 'Sem mudanças relevantes nas últimas 24h — a operação está estável.' });
+  }
+
+  const peso = { alerta: 0, atencao: 1, info: 2 };
+  return insights.sort((a, b) => peso[a.nivel] - peso[b.nivel]).slice(0, 6);
+}
+
+/** As frases dos insights de Suporte Escalado — mesmo espírito de gerarInsightsTickets() acima. */
+function gerarInsightsSuporteEscalado(t) {
+  const insights = [];
+  const variacao = (atual, anterior) => (anterior > 0
+    ? Math.round(((atual - anterior) / anterior) * 100)
+    : null);
+
+  const vNovos = variacao(t.novos_atual ?? 0, t.novos_anterior ?? 0);
+  if (vNovos !== null && Math.abs(vNovos) >= 30 && Math.max(t.novos_atual, t.novos_anterior) >= 5) {
+    insights.push({
+      nivel: vNovos > 0 ? 'alerta' : 'info',
+      texto: `Os casos escalados pra suporte humano ${vNovos > 0 ? 'aumentaram' : 'caíram'} ${Math.abs(vNovos)}% `
+        + `nas últimas 24h (${t.novos_anterior} → ${t.novos_atual}).`,
+    });
+  }
+
+  const vFinal = variacao(t.finalizados_atual ?? 0, t.finalizados_anterior ?? 0);
+  if (vFinal !== null && Math.abs(vFinal) >= 30 && Math.max(t.finalizados_atual, t.finalizados_anterior) >= 5) {
+    insights.push({
+      nivel: 'info',
+      texto: `Os casos finalizados no suporte escalado ${vFinal > 0 ? 'aumentaram' : 'caíram'} ${Math.abs(vFinal)}% `
+        + `nas últimas 24h (${t.finalizados_anterior} → ${t.finalizados_atual}).`,
+    });
+  }
+
+  if (!insights.length) {
+    insights.push({ nivel: 'info', texto: 'Sem mudanças relevantes nas últimas 24h — a operação está estável.' });
+  }
+
+  const peso = { alerta: 0, atencao: 1, info: 2 };
+  return insights.sort((a, b) => peso[a.nivel] - peso[b.nivel]).slice(0, 6);
+}
+
 async function plataformas(qs) {
   const f = filtroEmails(qs, 1);
   const { rows } = await query(
@@ -396,7 +489,7 @@ export default async function rotasEmailIACentral(app) {
   }, async (req) => {
     const qs = await resolverEmailsProdutoLoja(req.query, query);
     const [
-      ticketsKpisRes, ticketsRes, ticketsEvolucaoRes, evolucaoRes, plataformasRes,
+      ticketsKpisRes, ticketsRes, ticketsEvolucaoRes, ticketsTendenciasRes, evolucaoRes, plataformasRes,
       kpisRes, devolucaoConfRes, motivos, categorias, sentimentosRes, areas, responsaveis,
       pagamento, taxaMensalRes, motivosMes, defeitoTagsRes, produtoMotivoRes, reincidentesRes,
       pendentesRes, reclamantesRes, produtosRes, clientesRiscoRes, imagens, ultimos,
@@ -404,6 +497,7 @@ export default async function rotasEmailIACentral(app) {
       ticketsKpis(qs),
       listaTickets(qs),
       ticketsEvolucao(),
+      ticketsTendencias(),
       evolucaoDiaria(qs),
       plataformas(qs),
       kpisPrincipais(qs),
@@ -431,6 +525,8 @@ export default async function rotasEmailIACentral(app) {
       tickets_kpis: ticketsKpisRes,
       tickets: ticketsRes,
       tickets_evolucao: ticketsEvolucaoRes,
+      tickets_tendencias: ticketsTendenciasRes,
+      tickets_insights: gerarInsightsTickets(ticketsTendenciasRes),
       evolucao: evolucaoRes,
       plataformas: plataformasRes,
       kpis: kpisRes,
@@ -988,6 +1084,37 @@ export default async function rotasEmailIACentral(app) {
       boards_resumo: resumoBoardsRes.rows,
     };
   }
+
+  /*
+   * "Insights automáticos" do Suporte Escalado — mesmo formato das outras
+   * abas (24h × 24h anteriores). GLOBAL, de propósito: somando todos os
+   * boards, não só o que a pessoa está olhando — um pico de casos novos
+   * importa mesmo que tenha caído noutro board. Por isso não pede board_id,
+   * diferente da rota de baixo.
+   */
+  app.get('/api/suporte-escalado/insights', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Insights automáticos do Suporte Escalado (24h × 24h anteriores, todos os boards)',
+      security: [{ bearerAuth: [] }],
+    },
+  }, async () => {
+    const { rows } = await query(
+      `SELECT
+         count(*) FILTER (WHERE criado_em >= now() - interval '24 hours')::int AS novos_atual,
+         count(*) FILTER (WHERE criado_em <  now() - interval '24 hours'
+                            AND criado_em >= now() - interval '48 hours')::int AS novos_anterior,
+         count(*) FILTER (WHERE finalizado_em >= now() - interval '24 hours')::int AS finalizados_atual,
+         count(*) FILTER (WHERE finalizado_em <  now() - interval '24 hours'
+                            AND finalizado_em >= now() - interval '48 hours')::int AS finalizados_anterior
+       FROM email_ia.suporte_escalado
+       WHERE criado_em >= now() - interval '48 hours'
+          OR finalizado_em >= now() - interval '48 hours'`,
+    );
+    const t = rows[0];
+    return { insights: gerarInsightsSuporteEscalado(t) };
+  });
 
   app.get('/api/suporte-escalado', {
     onRequest: [app.exigirSessao],

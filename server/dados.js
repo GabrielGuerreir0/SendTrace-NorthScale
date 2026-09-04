@@ -1115,6 +1115,59 @@ function gerarInsights(t) {
 }
 
 /**
+ * Os "Insights automáticos" da aba de RÉGUA — mesmo formato do suporte IA
+ * (24h × 24h anteriores), mas com menos sinais: `disparos_pos_venda` só tem
+ * timestamp confiável para a ENTRADA (`criado_em`) e o REEMBOLSO
+ * (`reembolsado_em`). Atrasado/travado são fotografias do agora, sem
+ * histórico — não dá para comparar 24h contra 24h sem inventar um número.
+ */
+function gerarInsightsRegua(t) {
+  const insights = [];
+  const variacao = (atual, anterior) => (anterior > 0
+    ? Math.round(((atual - anterior) / anterior) * 100)
+    : null);
+
+  const vNovos = variacao(t.novos_24h ?? 0, t.novos_24h_anterior ?? 0);
+  if (vNovos !== null && Math.abs(vNovos) >= 40 && Math.max(t.novos_24h, t.novos_24h_anterior) >= 10) {
+    insights.push({
+      nivel: 'atencao',
+      texto: `A entrada de novos pedidos na régua ${vNovos > 0 ? 'subiu' : 'caiu'} ${Math.abs(vNovos)}% `
+        + `nas últimas 24h (${t.novos_24h_anterior} → ${t.novos_24h}).`,
+    });
+  }
+
+  const vReemb = variacao(t.reembolsos_24h ?? 0, t.reembolsos_24h_anterior ?? 0);
+  if (vReemb !== null && Math.abs(vReemb) >= 25 && Math.max(t.reembolsos_24h, t.reembolsos_24h_anterior) >= 3) {
+    insights.push({
+      nivel: vReemb > 0 ? 'alerta' : 'info',
+      texto: `Os reembolsos na régua ${vReemb > 0 ? 'aumentaram' : 'caíram'} ${Math.abs(vReemb)}% `
+        + `nas últimas 24h (${t.reembolsos_24h_anterior} → ${t.reembolsos_24h}).`,
+    });
+  }
+
+  if (!insights.length) {
+    insights.push({ nivel: 'info', texto: 'Sem mudanças relevantes nas últimas 24h — a operação está estável.' });
+  }
+
+  const peso = { alerta: 0, atencao: 1, info: 2 };
+  return insights.sort((a, b) => peso[a.nivel] - peso[b.nivel]).slice(0, 6);
+}
+
+/**
+ * Insights da régua, do MESMO jeito que o suporte: números auditáveis vindos
+ * de `/api/metricas/estados/`, frases geradas aqui. Rota própria (em vez de
+ * embutir no `resumoLinhas`/`fila`) porque só os insights precisam do
+ * recorte de produto/plataforma junto com a janela 24h × 24h.
+ */
+export async function reguaInsights(produto = null, plataforma = null) {
+  const params = {};
+  if (produto) params.produto = produto;
+  if (plataforma) params.plataforma = plataforma;
+  const t = await obter('/api/metricas/estados/', params);
+  return { insights: gerarInsightsRegua(t) };
+}
+
+/**
  * Tudo que a aba de suporte mostra: os números vêm da rota agregada da API
  * (`/api/metricas/suporte/`), os rótulos e as frases de insight nascem aqui.
  * As etapas da régua entram para dar NOME às etapas onde os contatos nascem.

@@ -1367,6 +1367,24 @@ function renderVisaoGeral() {
   board.append(envolve);
 }
 
+/**
+ * "Insights automáticos" — GLOBAL (todos os boards), por isso não depende de
+ * `boardId` estar escolhido, diferente de `carregarDados()` abaixo.
+ */
+async function carregarInsightsEscalado() {
+  try {
+    const { ok, dados: d } = await api('/api/suporte-escalado/insights');
+    if (!ok) return;
+    $('esc-insights').replaceChildren(...(d.insights ?? []).map((i) => {
+      const li = document.createElement('li');
+      li.className = 'sup-insight';
+      li.dataset.nivel = i.nivel;
+      li.textContent = i.texto;
+      return li;
+    }));
+  } catch { /* silencioso — não é crítico como o kanban */ }
+}
+
 export async function carregarDados() {
   const meu = ++geracao;
   if (!boardId) {
@@ -1446,4 +1464,6 @@ $('esc-board-editar').addEventListener('click', () => {
 ligarArrastoBoard($('esc-board'));
 
 carregarBoards();
+carregarInsightsEscalado();
 setInterval(carregarDados, 25 * 1000);
+setInterval(carregarInsightsEscalado, 60 * 1000);

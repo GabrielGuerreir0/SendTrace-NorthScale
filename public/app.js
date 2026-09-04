@@ -1146,6 +1146,31 @@ function sinalizar(estadoPilula, texto) {
   $('live-txt').textContent = texto;
 }
 
+/**
+ * "Insights automáticos" da régua — mesmo formato e mesmo componente visual
+ * do Suporte IA (`.sup-insight`), só que alimentado por `/api/regua/insights`.
+ * Fica FORA do try/catch principal do snapshot de propósito: um erro aqui não
+ * pode acender a faixa de "sem conexão" para o resto da tela, que continua
+ * funcionando normalmente sem os insights.
+ */
+async function carregarReguaInsights() {
+  try {
+    const qs = new URLSearchParams();
+    if (estado.produto) qs.set('produto', estado.produto);
+    if (estado.plataforma) qs.set('plataforma', estado.plataforma);
+    const resp = await fetch(`/api/regua/insights${qs.toString() ? `?${qs}` : ''}`);
+    if (!resp.ok) return;
+    const s = await resp.json();
+    $('regua-insights').replaceChildren(...(s.insights ?? []).map((i) => {
+      const li = document.createElement('li');
+      li.className = 'sup-insight';
+      li.dataset.nivel = i.nivel;
+      li.textContent = i.texto;
+      return li;
+    }));
+  } catch { /* silencioso — não é crítico como o snapshot principal */ }
+}
+
 async function carregarSnapshot({ silencioso = false } = {}) {
   if (!silencioso) document.body.dataset.recarregando = 'sim';
   const meu = ++geracaoSnapshot;
@@ -1183,6 +1208,7 @@ async function carregarSnapshot({ silencioso = false } = {}) {
     estado.snapshot = s;
     $('faixa-erro').hidden = true;
     definirCanais(s.canais);
+    carregarReguaInsights();
 
     renderHeroi(s);
     renderKpis(s);
