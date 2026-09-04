@@ -38,11 +38,25 @@ const ABAS = {
   relatorioia: 'aba-relatorioia',
 };
 
+// Título da aba do navegador por seção — com várias abas do painel abertas
+// ao mesmo tempo, um título igual em todas obrigava a adivinhar qual é qual.
+const TITULOS = {
+  suporte: 'Suporte IA',
+  regua: 'Régua de pós-venda',
+  ticketsia: 'Tickets de Atendimento',
+  detalhesia: 'Mais Detalhes',
+  chatia: 'Chat com IA',
+  galeriaia: 'Galeria de Imagens',
+  suporteescalado: 'Suporte Escalado',
+  relatorioia: 'Relatório de Métricas',
+};
+
 function mostrarAba(qual) {
   for (const [nome, id] of Object.entries(ABAS)) {
     $(id).hidden = nome !== qual;
     $(`aba-btn-${nome}`).setAttribute('aria-selected', String(nome === qual));
   }
+  document.title = `${TITULOS[qual] ?? 'SendTrace'} · SendTrace`;
   localStorage.setItem('aba', qual);
   aoTrocarAba(qual);
 }
