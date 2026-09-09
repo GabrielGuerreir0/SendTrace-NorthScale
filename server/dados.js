@@ -1320,3 +1320,58 @@ export async function listarPedidos({
     total: filtrados.length,
   };
 }
+
+/* ═══════════════════════════  visão geral (home)  ════════════════════════ */
+
+/**
+ * A faixa "o que mudou nas últimas 24h" da Home: em vez de inventar uma 5ª
+ * fonte de insight, pega o de MAIOR SEVERIDADE entre os 4 conjuntos que já
+ * rodam hoje (régua, suporte IA, tickets, suporte escalado) e devolve com a
+ * aba de origem — é o link "ver na aba X" que a tela usa.
+ *
+ * Nunca fica vazia: sem nenhum insight acima de 'info' nos quatro, cai no
+ * texto padrão de "operação estável" (o mesmo texto que cada fonte já usa
+ * isoladamente quando não tem nada a dizer).
+ */
+function escolherStatus(fontes) {
+  const peso = { alerta: 0, atencao: 1, info: 2 };
+  let melhor = null;
+  for (const f of fontes) {
+    for (const i of f.insights ?? []) {
+      if (!melhor || peso[i.nivel] < peso[melhor.nivel]) {
+        melhor = { ...i, aba: f.aba, rotulo_aba: f.rotulo };
+      }
+    }
+  }
+  return melhor ?? {
+    nivel: 'info',
+    texto: 'Sem mudanças relevantes nas últimas 24h — a operação está estável.',
+    aba: null,
+    rotulo_aba: null,
+  };
+}
+
+/**
+ * Tudo que a aba "Visão Geral" (Home) mostra: os números agregados vêm de
+ * `/api/visao-geral/` (Postgres direto, ver api/rotas/visaoGeral.js); a
+ * faixa de status vem de reaproveitar os 4 insights que já existem — nenhum
+ * dos dois lados inventa uma consulta nova de propósito.
+ */
+export async function visaoGeralResumo(dias = 30) {
+  const [geral, regua, suporte, tickets, escalado] = await Promise.all([
+    obter('/api/visao-geral/', { dias }),
+    reguaInsights(),
+    suporteResumo(30),
+    obter('/api/tickets/insights'),
+    obter('/api/suporte-escalado/insights'),
+  ]);
+
+  const status = escolherStatus([
+    { aba: 'regua', rotulo: 'Régua de pós-venda', insights: regua.insights },
+    { aba: 'suporte', rotulo: 'Suporte IA', insights: suporte.insights },
+    { aba: 'ticketsia', rotulo: 'Tickets de Atendimento', insights: tickets.insights },
+    { aba: 'suporteescalado', rotulo: 'Suporte Escalado', insights: escalado.insights },
+  ]);
+
+  return { ...geral, status };
+}

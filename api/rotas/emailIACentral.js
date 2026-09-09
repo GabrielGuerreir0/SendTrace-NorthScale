@@ -112,7 +112,7 @@ async function ticketsEvolucao() {
  * "o que mudou agora", igual ao card equivalente da régua — os filtros do
  * topo continuam valendo só para o resto da tela.
  */
-async function ticketsTendencias() {
+export async function ticketsTendencias() {
   const [geraisRes, categoriasRes, novasRes] = await Promise.all([
     query(
       `SELECT
@@ -161,7 +161,7 @@ async function ticketsTendencias() {
 }
 
 /** As frases dos insights de Tickets — regras determinísticas, mesmo espírito de gerarInsights() em server/dados.js. */
-function gerarInsightsTickets(t) {
+export function gerarInsightsTickets(t) {
   const insights = [];
   const variacao = (atual, anterior) => (anterior > 0
     ? Math.round(((atual - anterior) / anterior) * 100)
@@ -214,8 +214,42 @@ function gerarInsightsTickets(t) {
   return insights.sort((a, b) => peso[a.nivel] - peso[b.nivel]).slice(0, 6);
 }
 
+/*
+ * As comparações 24h × 24h anteriores do Suporte Escalado — extraída do
+ * handler de GET /api/suporte-escalado/insights (que só chamava isto uma
+ * vez) pra também poder alimentar a Home (Visão Geral) sem duplicar o SQL.
+ * GLOBAL de propósito: soma todos os boards, não só o que a pessoa está
+ * olhando — ver comentário original na rota abaixo.
+ */
+export async function suporteEscaladoTendencias() {
+  const { rows } = await query(
+    `SELECT
+       count(*) FILTER (WHERE criado_em >= now() - interval '24 hours')::int AS novos_atual,
+       count(*) FILTER (WHERE criado_em <  now() - interval '24 hours'
+                          AND criado_em >= now() - interval '48 hours')::int AS novos_anterior,
+       count(*) FILTER (WHERE finalizado_em >= now() - interval '24 hours')::int AS finalizados_atual,
+       count(*) FILTER (WHERE finalizado_em <  now() - interval '24 hours'
+                          AND finalizado_em >= now() - interval '48 hours')::int AS finalizados_anterior,
+       -- Dos finalizados, quantos especificamente viraram reembolso — vem do
+       -- HISTÓRICO (não do status atual do caso), porque um caso pode passar
+       -- por 'reembolsado' e depois ser movido de novo; o histórico é o
+       -- registro fiel de QUANDO essa transição aconteceu.
+       (SELECT count(*)::int FROM email_ia.suporte_escalado_historico
+        WHERE status_novo = 'reembolsado'
+          AND mudou_em >= now() - interval '24 hours') AS reembolsados_atual,
+       (SELECT count(*)::int FROM email_ia.suporte_escalado_historico
+        WHERE status_novo = 'reembolsado'
+          AND mudou_em <  now() - interval '24 hours'
+          AND mudou_em >= now() - interval '48 hours') AS reembolsados_anterior
+     FROM email_ia.suporte_escalado
+     WHERE criado_em >= now() - interval '48 hours'
+        OR finalizado_em >= now() - interval '48 hours'`,
+  );
+  return rows[0];
+}
+
 /** As frases dos insights de Suporte Escalado — mesmo espírito de gerarInsightsTickets() acima. */
-function gerarInsightsSuporteEscalado(t) {
+export function gerarInsightsSuporteEscalado(t) {
   const insights = [];
   const variacao = (atual, anterior) => (anterior > 0
     ? Math.round(((atual - anterior) / anterior) * 100)
@@ -1181,33 +1215,22 @@ export default async function rotasEmailIACentral(app) {
       summary: 'Insights automáticos do Suporte Escalado (24h × 24h anteriores, todos os boards)',
       security: [{ bearerAuth: [] }],
     },
-  }, async () => {
-    const { rows } = await query(
-      `SELECT
-         count(*) FILTER (WHERE criado_em >= now() - interval '24 hours')::int AS novos_atual,
-         count(*) FILTER (WHERE criado_em <  now() - interval '24 hours'
-                            AND criado_em >= now() - interval '48 hours')::int AS novos_anterior,
-         count(*) FILTER (WHERE finalizado_em >= now() - interval '24 hours')::int AS finalizados_atual,
-         count(*) FILTER (WHERE finalizado_em <  now() - interval '24 hours'
-                            AND finalizado_em >= now() - interval '48 hours')::int AS finalizados_anterior,
-         -- Dos finalizados, quantos especificamente viraram reembolso — vem do
-         -- HISTÓRICO (não do status atual do caso), porque um caso pode passar
-         -- por 'reembolsado' e depois ser movido de novo; o histórico é o
-         -- registro fiel de QUANDO essa transição aconteceu.
-         (SELECT count(*)::int FROM email_ia.suporte_escalado_historico
-          WHERE status_novo = 'reembolsado'
-            AND mudou_em >= now() - interval '24 hours') AS reembolsados_atual,
-         (SELECT count(*)::int FROM email_ia.suporte_escalado_historico
-          WHERE status_novo = 'reembolsado'
-            AND mudou_em <  now() - interval '24 hours'
-            AND mudou_em >= now() - interval '48 hours') AS reembolsados_anterior
-       FROM email_ia.suporte_escalado
-       WHERE criado_em >= now() - interval '48 hours'
-          OR finalizado_em >= now() - interval '48 hours'`,
-    );
-    const t = rows[0];
-    return { insights: gerarInsightsSuporteEscalado(t) };
-  });
+  }, async () => ({ insights: gerarInsightsSuporteEscalado(await suporteEscaladoTendencias()) }));
+
+  /*
+   * Mesmo formato de /api/regua/insights e /api/suporte-escalado/insights,
+   * agora pra Tickets — extraído de dentro de GET /api/dados (que já calcula
+   * isso pra tela de Tickets) pra a Home (Visão Geral) poder pedir só isto,
+   * sem arrastar as outras ~20 sub-consultas daquela rota.
+   */
+  app.get('/api/tickets/insights', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Insights automáticos de Tickets (24h × 24h anteriores)',
+      security: [{ bearerAuth: [] }],
+    },
+  }, async () => ({ insights: gerarInsightsTickets(await ticketsTendencias()) }));
 
   app.get('/api/suporte-escalado', {
     onRequest: [app.exigirSessao],

@@ -16,7 +16,7 @@ import {
   reguaDefinicao, cadenciaObservada, porCanal, semMensagem, resumoLinhas, piorCasoSms, errosSemCanal, mensagem, salvarMensagem, criarLinha, apagarLinha, editarLinha, etapasDaRegua,
   etapasTempos, salvarTempoEtapa,
   produtosDaFila, plataformasDaFila, fonteDados, suporteResumo, suporteConversas,
-  catalogoProdutos, reguaInsights,
+  catalogoProdutos, reguaInsights, visaoGeralResumo,
 } from './dados.js';
 import {
   apiConfigurada, enderecoApi, saude as saudeApi, ErroApi,
@@ -1637,6 +1637,16 @@ async function atender(req, res, url, sessao) {
     });
     res.end(buffer);
     return ATENDIDO;
+  }
+
+  /* ── Visão Geral — a Home (9ª aba, a primeira que abre) ──
+     Números agregados vêm de /api/visao-geral/ (Postgres direto); a faixa de
+     status reaproveita os insights que já existem em régua/suporte/tickets/
+     suporte escalado — ver visaoGeralResumo em server/dados.js. */
+  if (url.pathname === '/api/visao-geral') {
+    const dias = inteiroOuNulo(url.searchParams.get('dias'));
+    if (dias === false) return json(res, 400, { erro: 'dias inválido' });
+    return json(res, 200, await visaoGeralResumo(dias ?? 30));
   }
 
   // A API é a única dependência do painel agora. `/api/health/` dela é rota

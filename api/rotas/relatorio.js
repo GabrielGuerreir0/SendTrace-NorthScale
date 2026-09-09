@@ -30,7 +30,7 @@ import { query } from '../../server/db.js';
  * permanentemente) pequena. Achado pelo usuário 20/08/2026: "os dados devem
  * ser comparados a partir do momento que iniciou as novas implementações".
  */
-const PIXEL_ABERTURA_DESDE = '2026-08-20 08:30:00-03';
+export const PIXEL_ABERTURA_DESDE = '2026-08-20 08:30:00-03';
 
 /** Bucket de dias desde a compra: 0, 1, 2–5, 6–10 … 26–30, >30 (pedido do usuário). */
 function bucketDias(expr) {

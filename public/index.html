@@ -118,8 +118,20 @@
   </button>
 
   <nav class="menu-nav" aria-label="Seções do painel">
+    <button class="menu-item" id="aba-btn-visaogeral" type="button"
+            aria-selected="true" title="Visão Geral">
+      <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
+           stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2.5" y="2.5" width="6.5" height="6.5" rx="1.2"/>
+        <rect x="11" y="2.5" width="6.5" height="6.5" rx="1.2"/>
+        <rect x="2.5" y="11" width="6.5" height="6.5" rx="1.2"/>
+        <rect x="11" y="11" width="6.5" height="6.5" rx="1.2"/>
+      </svg>
+      <span class="menu-rotulo">Visão Geral</span>
+    </button>
+
     <button class="menu-item" id="aba-btn-suporte" type="button"
-            aria-selected="true" title="Suporte IA">
+            aria-selected="false" title="Suporte IA">
       <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M3 4.5h14v9.5H8.5L4.5 17.5v-3.5H3z"/>
@@ -498,8 +510,225 @@
   sem nome, sem copy e sem espera.
 </div>
 
-<!-- ═══════════════════════  aba SUPORTE IA (principal)  ═══════════════════ -->
-<main class="conteudo" id="aba-suporte">
+<!-- ═══════════════════════  aba VISÃO GERAL (Home — a aba padrão)  ═════════ -->
+<main class="conteudo" id="aba-visaogeral">
+
+  <!-- ── introdução: pra quem tá vendo o painel pela 1ª vez ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Bem-vindo ao SendTrace</h2>
+        <p class="cartao-sub">
+          O SendTrace acompanha a jornada de cada cliente depois da compra: a régua de e-mails/SMS
+          automáticos, o atendimento por IA (chat e e-mail), os tickets e casos escalados pra um
+          humano, e as imagens analisadas ao longo do caminho. Esta aba, <b>Visão Geral</b>, junta
+          os números mais importantes de todas as outras num só lugar — o menu ao lado leva pro
+          detalhe de cada uma.
+        </p>
+      </div>
+    </header>
+  </section>
+
+  <!-- ── status band: o que mudou nas últimas 24h ── -->
+  <section class="cartao vg-status" id="vg-status" data-nivel="info">
+    <span class="vg-status-glifo" aria-hidden="true"></span>
+    <div><p>Carregando…</p></div>
+  </section>
+
+  <!-- ── números críticos agora ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Números críticos agora</h2>
+        <p class="cartao-sub">O estado atual da fila, sem recorte de período (exceto onde indicado).</p>
+      </div>
+    </header>
+  </section>
+  <section class="kpis kpis--suporte" id="vg-criticos"></section>
+
+  <!-- ── saúde técnica ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Saúde técnica da operação</h2>
+        <p class="cartao-sub">Erros de envio, reaberturas e anexos com problema — antes de virar reclamação de cliente.</p>
+      </div>
+    </header>
+  </section>
+  <section class="kpis kpis--suporte" id="vg-saude"></section>
+
+  <!-- ── ponto positivo ── -->
+  <section class="cartao vg-status" id="vg-positivo" data-nivel="bom">
+    <span class="vg-status-glifo" aria-hidden="true"></span>
+    <div><p>Carregando…</p></div>
+  </section>
+
+  <!-- ── metas do time (termômetros) ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Metas do time</h2>
+        <p class="cartao-sub">Taxa de resolução do chat com IA e dos tickets de e-mail, contra uma meta sugerida.</p>
+      </div>
+    </header>
+  </section>
+  <div class="vg-metas" id="vg-metas"></div>
+
+  <!-- ── diagnóstico da base: área do problema + sentimento ── -->
+  <div class="sup-grade">
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Área do problema</h2>
+          <p class="cartao-sub">E-mails classificados com área — coluna já existe, não aparecia em nenhuma tela até agora.</p>
+        </div>
+      </header>
+      <div id="vg-area-problema"><p class="vazio-suave">carregando…</p></div>
+    </section>
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Sentimento da base</h2>
+          <p class="cartao-sub">E-mails classificados no período.</p>
+        </div>
+      </header>
+      <div id="vg-sentimento"><p class="vazio-suave">carregando…</p></div>
+      <p class="cartao-sub" id="vg-sentimento-callout" style="margin-top:12px;"></p>
+    </section>
+  </div>
+
+  <!-- ── onde o atendimento trava: tempo de resolução + volume por dia ── -->
+  <div class="sup-grade">
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Tempo médio de resolução por área</h2>
+          <p class="cartao-sub">Chegada do 1º e-mail do cliente até o ticket ser resolvido.</p>
+        </div>
+      </header>
+      <div id="vg-resolucao-area"><p class="vazio-suave">carregando…</p></div>
+    </section>
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Volume de e-mails por dia da semana</h2>
+          <p class="cartao-sub">Contagem total no período, agrupada por dia da semana.</p>
+        </div>
+      </header>
+      <div class="grafico" id="vg-graf-semana"></div>
+    </section>
+  </div>
+
+  <!-- ── reembolso: por quê e onde ── -->
+  <div class="sup-grade">
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Motivo de reembolso (e-mail)</h2>
+          <p class="cartao-sub">E-mails de devolução/troca com motivo registrado, no período.</p>
+        </div>
+      </header>
+      <div id="vg-motivos-reembolso"><p class="vazio-suave">carregando…</p></div>
+    </section>
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Clientes por plataforma</h2>
+          <p class="cartao-sub">Central de E-mail IA · todos os períodos.</p>
+        </div>
+      </header>
+      <div id="vg-plataformas"><p class="vazio-suave">carregando…</p></div>
+    </section>
+  </div>
+
+  <!-- ── concentração por produto ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Top 5 produtos citados em devolução/reclamação</h2>
+        <p class="cartao-sub">Acumulado · normalizado por <code>resolve_produto()</code> (soma grafias equivalentes da mesma oferta).</p>
+      </div>
+    </header>
+    <div id="vg-produtos"><p class="vazio-suave">carregando…</p></div>
+  </section>
+
+  <!-- ── jornada do cliente (régua) ── -->
+  <div class="sup-grade">
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Abertura de e-mail por etapa</h2>
+          <p class="cartao-sub">% de destinatários que abriram, por etapa da régua (só pedidos criados depois que o pixel entrou no ar).</p>
+        </div>
+      </header>
+      <div id="vg-abertura-regua"><p class="vazio-suave">carregando…</p></div>
+    </section>
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Onde a jornada gera contato</h2>
+          <p class="cartao-sub">Em qual etapa da régua o pedido estava quando o cliente chamou o suporte, no período.</p>
+        </div>
+      </header>
+      <div id="vg-jornada-contato"><p class="vazio-suave">carregando…</p></div>
+    </section>
+  </div>
+
+  <!-- ── clientes de risco ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Clientes de risco</h2>
+        <p class="cartao-sub">Ainda sem tela própria — candidatos a revisão manual antes de virar chargeback.</p>
+      </div>
+    </header>
+  </section>
+  <section class="kpis kpis--suporte" id="vg-risco"></section>
+
+  <!-- ── cobertura de ficha de produto ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div><h2>Cobertura de ficha de produto</h2></div>
+    </header>
+    <div class="vg-cobertura">
+      <div class="vg-ring" id="vg-ring"></div>
+      <p class="cartao-sub" id="vg-cobertura-texto">Carregando…</p>
+    </div>
+  </section>
+
+  <!-- ── navegação pras outras áreas do sistema ── -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Explorar o painel</h2>
+        <p class="cartao-sub">As outras 8 áreas do SendTrace — clique num card pra abrir.</p>
+      </div>
+    </header>
+    <div class="vg-nav-grid" id="vg-nav"></div>
+  </section>
+
+  <!-- ── nota estática: ideias futuras, sem dado fabricado ── -->
+  <section class="cartao vg-proposta">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Ideias futuras — fora desta versão</h2>
+        <p class="cartao-sub">
+          Duas propostas do rascunho original ficaram de fora de propósito: uma <b>fila operacional
+          do dia</b> (cruzar "escalado há mais tempo" + "urgência sem resposta" + "reaberto
+          recentemente" numa lista só, clicável) — a consulta ainda não existe, e mostrar linhas de
+          exemplo fingindo ser cliente real nunca deveria ir ao ar; e um <b>painel de métricas fora
+          do SendTrace</b> (LTV/CAC, ranking por pessoa do time, gatilho de "pote acabando") — vivem
+          em outro sistema ou exigem uma coluna que ainda não existe (ex.: <code>agente_responsavel</code>
+          pra saber quem atendeu, hoje "responsável" guarda categoria de causa, não pessoa).
+        </p>
+      </div>
+    </header>
+  </section>
+
+</main>
+
+<!-- ═══════════════════════  aba SUPORTE IA  ═══════════════════════ -->
+<main class="conteudo" id="aba-suporte" hidden>
 
   <!-- ── o primeiro card: os insights ── -->
   <section class="cartao">

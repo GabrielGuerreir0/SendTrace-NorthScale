@@ -118,7 +118,10 @@ $('ce-data-ate')?.addEventListener('change', (e) => {
 });
 
 const ABAS_COM_FILTRO = new Set(['ticketsia', 'detalhesia', 'galeriaia']);
-const ABAS_CENTRAL_EMAIL = new Set(['ticketsia', 'detalhesia', 'chatia', 'galeriaia', 'suporteescalado', 'relatorioia']);
+// Visão Geral entra aqui também: mostra um filtro de produto/plataforma/
+// período no rascunho original, mas só ilustrativo (sem lógica por trás) —
+// melhor esconder os dois filtros reais do que exibir um que não faz nada.
+const ABAS_CENTRAL_EMAIL = new Set(['visaogeral', 'ticketsia', 'detalhesia', 'chatia', 'galeriaia', 'suporteescalado', 'relatorioia']);
 
 /**
  * Chamada pelo troca-de-aba do painel (suporte.js): esconde a barra do topo

@@ -20,14 +20,16 @@ const $ = (id) => document.getElementById(id);
 /**
  * A troca de aba é só exibição: todas as <main> continuam no DOM e os timers
  * de cada uma seguem rodando — voltar para uma aba nunca mostra dado velho.
- * A escolha fica salva; "suporte" é o padrão por ser a aba principal.
+ * A escolha fica salva; "visaogeral" (a Home) é o padrão — a 1ª coisa que
+ * quem abre o painel vê, com um resumo de tudo e link pras outras 8 abas.
  *
- * As 4 abas da Central de E-mail IA (§ da especificação own doc) entram aqui
+ * As abas da Central de E-mail IA (§ da especificação own doc) entram aqui
  * em vez de módulo próprio: é este arquivo que já é o dono da mecânica de
  * troca de aba para o painel inteiro, suporte E régua incluídos — um
  * segundo lugar decidindo "qual aba está visível" divergiria do primeiro.
  */
 const ABAS = {
+  visaogeral: 'aba-visaogeral',
   suporte: 'aba-suporte',
   regua: 'aba-regua',
   ticketsia: 'aba-ticketsia',
@@ -41,6 +43,7 @@ const ABAS = {
 // Título da aba do navegador por seção — com várias abas do painel abertas
 // ao mesmo tempo, um título igual em todas obrigava a adivinhar qual é qual.
 const TITULOS = {
+  visaogeral: 'Visão Geral',
   suporte: 'Suporte IA',
   regua: 'Régua de pós-venda',
   ticketsia: 'Tickets de Atendimento',
@@ -64,7 +67,7 @@ function mostrarAba(qual) {
 for (const nome of Object.keys(ABAS)) {
   $(`aba-btn-${nome}`).addEventListener('click', () => mostrarAba(nome));
 }
-mostrarAba(ABAS[localStorage.getItem('aba')] ? localStorage.getItem('aba') : 'suporte');
+mostrarAba(ABAS[localStorage.getItem('aba')] ? localStorage.getItem('aba') : 'visaogeral');
 
 /*
  * O menu lateral se recolhe para uma coluna de ícones. O estado é do CSS
