@@ -7,7 +7,21 @@ O canvas é no estilo n8n mas **travado**: os nós não se arrastam, não há zo
 nem pan. O layout se calcula sozinho e sempre cabe na tela — quando a régua não
 cabe numa linha, dobra em serpentina, com setas indicando a direção do fluxo.
 
-## As duas abas
+## As 8 abas
+
+O menu lateral tem 8 abas, nesta ordem: **Suporte IA**, **Régua de
+pós-venda**, **Tickets de Atendimento**, **Mais Detalhes**, **Chat com IA**,
+**Galeria de Imagens**, **Suporte Escalado** e **Relatório de Métricas**. As
+seis últimas formam a **Central de E-mail IA** — o que a IA vê e faz com os
+e-mails que chegam, separado da régua de disparos que dá nome ao projeto.
+
+Três delas (Tickets, Mais Detalhes e Galeria) compartilham um filtro de
+período/produto/loja no topo do painel; Chat com IA e Suporte Escalado não
+têm esse filtro (a tabela de casos escalados não tem essas colunas, e o chat
+já recorta pela própria pergunta); Relatório de Métricas tem um seletor de
+dias só seu.
+
+### Suporte IA
 
 O painel abre na aba **Suporte IA** — a principal. Em menos de 30 segundos um
 gestor responde: a IA está resolvendo? Estamos evitando reembolsos? Quais os
@@ -30,8 +44,157 @@ resposta em `chat_perguntas_sem_resposta` (migração `015`). A etapa da régua
 **só sobre conversas que têm o dado**: as de antes das colunas ficam de fora
 em vez de afundar os números.
 
-A segunda aba é a **régua de pós-venda** — tudo que este README descreve
-abaixo, intacto.
+### Régua de pós-venda
+
+A segunda aba é a **régua de pós-venda** — tudo que o restante deste README
+descreve a partir daqui: os seis estados, o canvas travado, a edição da copy
+pelo painel, os filtros por produto e plataforma e, mais adiante, as
+operações do painel como um todo (deploy, acesso, configuração).
+
+### Tickets de Atendimento
+
+Aba operacional do atendimento por e-mail: um ticket por cliente, para
+acompanhar e agir sobre o que está em andamento agora — quem ainda não foi
+respondido, quem está esperando, quem já foi resolvido. Além da atualização
+normal a cada 5 minutos, a lista "Resposta automática com IA" tem um poll
+próprio de 8 segundos, para ver a IA respondendo ao vivo.
+
+| bloco | o que mostra |
+|---|---|
+| **Insights automáticos** | mudanças das últimas 24 h contra as 24 h anteriores na abertura/resolução de tickets e nos motivos de contato por e-mail |
+| **Resposta automática com IA** | as últimas execuções do robô que responde sozinho: quando rodou, para quem, o assunto e a etapa (gerando resposta, enviando, erro) |
+| **KPIs de status** | não iniciados, em aberto, resolvidos, total de tickets e quantos e-mails vieram de plataformas (não geram ticket) — clicar num KPI filtra a tabela |
+| **KPIs de tempo** | mediana de chegada→início e chegada→resolução, quantos esperam há mais de 48 h sem resposta, reaberturas — calculados no navegador sobre os tickets já carregados |
+| **Tickets resolvidos por dia/mês, E-mails recebidos por dia** | três gráficos de coluna (30 dias / 12 meses) |
+| **Plataformas × clientes** | quantos e-mails do período são de clientes reais e quantos automáticos de plataforma/loja |
+| **Tabela de tickets** | status, e-mails trocados, pedidos únicos, reaberturas, datas e ações (Iniciar/Resolver/Reabrir); clicar na linha abre a ficha completa do cliente |
+
+Esta aba é um **proxy fino**: `server/index.js` repassa `GET /api/dados` e
+`GET /api/automacao` para a API do SendTrace (schema `email_ia`) com o token
+de quem está logado, e a API já devolve os agregados prontos (`tickets_kpis`,
+`tickets_insights`, `plataformas`…). Nada disso passa por `server/dados.js`
+— esse arquivo só calcula a régua. Mudar o status de um ticket é
+`POST /api/ticket`, repassado do mesmo jeito.
+
+### Mais Detalhes
+
+O dashboard analítico completo: todos os cortes e séries históricas dos
+e-mails recebidos, não só o operacional dos tickets. Usa o **mesmo endpoint**
+de Tickets (`/api/dados`), só que lendo mais chaves do JSON. Clicar num KPI
+do topo recorta praticamente a página inteira; clicar numa barra (motivo,
+categoria, sentimento, área, responsável, pagamento, plataforma) abre um
+modal com a lista de e-mails daquele recorte.
+
+| bloco | o que mostra |
+|---|---|
+| **KPIs principais** | e-mails no período, clientes únicos, aguardando resposta, urgência alta, devoluções/trocas, devoluções confirmadas (pedido já cancelado na fila), cobrança indevida, % de sentimento negativo, fotos com defeito, anexos no banco |
+| **Tickets (compacto) + Plataformas × clientes** | versão resumida da tabela de Tickets, com paginação própria |
+| **Motivos de devolução / Categorias / Sentimento** | três rankings em barra, clicáveis |
+| **E-mails por dia** | gráfico de coluna do período |
+| **Estudo de devoluções e reembolsos** | etapa do problema (área), de quem é a culpa (responsável), problemas de pagamento, taxa de devolução por mês (12 meses), o que aparece nas fotos com defeito |
+| **Motivos por mês** | top 5 motivos de devolução × mês, últimos 12 meses |
+| **Produto × motivo** | por produto mencionado, os motivos de devolução mais frequentes |
+| **⚠ Aguardando resposta** | e-mails que pedem resposta, ordenados por urgência, com botão para gerar um rascunho com IA |
+| **Clientes reincidentes** | 2+ devoluções no período |
+| **Reclamações × Pedidos** | clientes que reclamaram, com a situação do pedido (cancelado ou não) |
+| **Produtos com devolução/reclamação** | ranking de produtos |
+| **Clientes em risco** | 2+ e-mails negativos em 30 dias |
+| **Banco de imagens e anexos** | mini-galeria com os 12 anexos mais recentes; "ver galeria completa" troca para a aba Galeria de Imagens |
+| **Últimos e-mails** | tabela paginada e buscável de todos os e-mails do período |
+
+Mesma arquitetura de Tickets: `GET /api/dados` para a tela inteira,
+`GET /api/emails` para a lista de um modal filtrado, e `POST /api/resposta`
+para gerar um rascunho de resposta com IA — os três repassados direto para a
+API, sem cálculo local.
+
+### Chat com IA
+
+Conversa em linguagem natural com um agente Claude que só executa consultas
+de leitura (`SELECT`/`WITH`) no banco — pergunte sobre tickets, e-mails,
+devoluções, clientes ou vendas ligadas a eles. Toda resposta com número é
+conferida contra o banco de verdade, não inventada.
+
+| bloco | o que mostra |
+|---|---|
+| **Balão inicial + sugestões** | 4 perguntas prontas para começar |
+| **Histórico da conversa** | pergunta e resposta em markdown; some ao fechar a aba/navegador |
+| **"N consultas ao banco"** | por resposta, um `<details>` com o SQL exato que a IA rodou e quantas linhas voltaram — a auditoria de cada número citado |
+| **Seletor de modelo** | qual modelo Claude responde (padrão Haiku) |
+
+O histórico vive só em `sessionStorage` **do navegador** — o servidor não
+guarda conversa nenhuma. Cada envio é `POST /api/chat`, repassado para a API
+(que roda o loop de tool-use com o Claude, até 12 idas e vindas, com timeout
+de 120 s). É por isso que esta aba fica de fora do filtro de
+período/produto/loja: a pergunta já carrega o recorte que precisar.
+
+### Galeria de Imagens
+
+Todos os anexos que a IA já analisou por visão computacional: fotos de
+produto, defeito, nota fiscal, comprovante, print de tela, documento. Clicar
+num card abre a ficha completa do anexo, com pré-visualização grande e
+miniaturas dos outros anexos do mesmo e-mail — trocar a miniatura troca a
+pré-visualização sem fechar a ficha.
+
+| bloco | o que mostra |
+|---|---|
+| **Chips de tipo** | filtro por tipo de conteúdo, com contagem — "Todos" mais um chip por tipo |
+| **Grade de cards** | miniatura, tipo, selo "defeito visível", nome do arquivo, descrição da IA, tags, remetente/data/assunto |
+| **Ficha de detalhe** (ao clicar num card) | pré-visualização, tipo de conteúdo, defeito visível, tamanho, descrição e tags da IA, dados do e-mail vinculado (remetente, categoria, motivo, sentimento, urgência, pedido citado), dados do pedido (produto, plataforma, status), outros anexos do mesmo e-mail |
+| **Busca e paginação** | por tag, descrição, cliente ou assunto — 24 anexos por página |
+
+`GET /api/galeria` lista, `GET /api/anexo/:id` traz a ficha de um anexo, e as
+imagens em si vêm de `GET /api/imagem/:id` — as três repassadas para a API
+com o token da sessão. O painel não guarda nenhum arquivo: todo anexo mora só
+no lado da API.
+
+### Suporte Escalado
+
+Kanban dos casos que a IA tirou de si — ela para de responder aquele
+remetente sozinha até alguém clicar **Reativar**. Cada responsável tem o
+próprio board, com colunas totalmente editáveis (criar, renomear, apagar),
+roteamento automático de casos novos e transferência manual entre boards;
+administradores também têm uma **Visão geral** agregando todos os boards.
+Atualiza sozinho a cada 25 segundos.
+
+| bloco | o que mostra |
+|---|---|
+| **Insights automáticos** | mudanças das últimas 24 h contra as 24 h anteriores em casos novos, finalizações e reembolsos consumados — somando todos os boards |
+| **KPIs por coluna** | quantos casos há em cada coluna do board atual |
+| **KPIs de tempo** (sub-aba "Tempo no kanban") | mediana até sair de "Pendente", mediana do fluxo completo até "Finalizado", total de finalizados, movimentos por dia |
+| **Casos criados / movidos / finalizados por dia** (sub-aba "Tempo no kanban") | três gráficos, últimos 30 dias |
+| **Tempo médio por etapa** (sub-aba "Tempo no kanban") | de qual coluna para qual coluna, e quanto tempo o caso ficou esperando antes de mudar |
+| **Cartão do caso** | nome, e-mail (com copiar), produto do pedido, motivo do escalonamento, resumo expansível, seletor para mover de coluna, botões para ver detalhes/notas, abrir em Tickets, abrir o e-mail original no webmail, reativar a IA e (admin) transferir para outro board |
+| **Ficha de detalhe** | status, datas, dados do pedido (cliente, número, produto, plataforma, data de entrega editável — o único campo sem fonte automática), resumo da reclamação, motivo do escalonamento, notas internas (criar e editar) |
+
+Board, colunas, casos, notas e as métricas de tempo vêm todos de rotas
+`/api/suporte-escalado/*`, proxy fino para a mesma API do `email_ia`. A única
+exceção é abrir o e-mail original: `GET /api/emails/:id/webmail` busca a
+pasta/UID ao vivo por IMAP na caixa (Hostinger), em vez de ler algo já salvo.
+
+### Relatório de Métricas
+
+Consolida num só lugar o Chat com IA, o e-mail, a abertura de e-mail (pixel
+de tracking) e reembolsos por dias após a compra. Diferente das outras abas,
+**não** entra no polling automático do painel — as 12 consultas em paralelo
+custam caro para recarregar sozinho sem ninguém olhando; busca de novo só ao
+trocar o período (7/30/60/90 dias) ou reabrir a aba.
+
+| bloco | o que mostra |
+|---|---|
+| **KPIs** | contatos no chat, taxa de abertura da resposta automática, e-mails com problema de pagamento, fotos com defeito visível |
+| **Contatos por dia — Chat IA** | gráfico de coluna do período |
+| **Abertura por etapa da régua** | taxa de abertura de e-mail por etapa, em barra |
+| **Principais motivos de contato / Onde a jornada gera contato — Chat IA** | os mesmos rankings de Suporte IA, isolados aqui |
+| **Reembolsos por dias após a compra** (e-mail e chat) | dois gráficos de "bucket": quantos dias depois da compra o reembolso foi pedido |
+| **Motivos de contato — E-mail / Motivos de reembolso — E-mail** | ranking em barra e gráfico de pizza |
+| **Fotos analisadas nos anexos** | por tipo de conteúdo |
+| **Baixar PDF** | gera o PDF (com as cores da identidade NorthScale) e, no mesmo clique, a API já envia uma cópia por e-mail para quem está logado |
+
+`GET /api/relatorio/metricas` repassa para `/api/relatorio/metricas/` na API.
+O PDF é `GET /api/relatorio/pdf`, que baixa os bytes crus via
+`obterBinario()` — não passa pelo helper de JSON porque a resposta é
+binária, e por isso não pode virar `fetch` comum no front (é `fetch` cru,
+lendo um blob).
 
 ## De onde vêm os números
 

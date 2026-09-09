@@ -32,7 +32,7 @@ O repositório contém **três aplicações** que conversam entre si, mais duas 
 
 - **`api/` — a API SendTrace** (Fastify, porta 4400): a única camada que fala SQL com o Postgres. CRUD + métricas + autenticação JWT. Documentada em OpenAPI/Swagger.
 - **`server/` — o servidor do painel** (Node `http` puro, porta 4300): o *backend-for-frontend*. Autentica o usuário contra a API, guarda os tokens **só no servidor** (o navegador nunca vê JWT), baixa a fila da API e calcula todas as agregações do painel em JavaScript, e serve os arquivos estáticos de `public/`.
-- **`public/` — o front-end** (HTML + ES modules, sem framework e sem build): duas abas — *Suporte IA* e *Régua de pós-venda* — que consomem exclusivamente as rotas do painel (`:4300`), nunca a API `:4400` diretamente.
+- **`public/` — o front-end** (HTML + ES modules, sem framework e sem build): 8 abas — *Suporte IA*, *Régua de pós-venda* e as 6 da Central de E-mail IA (*Tickets de Atendimento*, *Mais Detalhes*, *Chat com IA*, *Galeria de Imagens*, *Suporte Escalado*, *Relatório de Métricas*) — que consomem exclusivamente as rotas do painel (`:4300`), nunca a API `:4400` diretamente.
 - **n8n** (externo): quem de fato envia os e-mails/SMS e escreve a fila `disparos_pos_venda`. O painel só fala com ele num ponto: o webhook de troca de linha de copy.
 - **Chatbot de suporte** (`NorthSupportCB/`, Next.js): consome a API `:4400` com um token de serviço fixo para ler pedidos/readmes e gravar atendimentos, CSAT e perguntas sem resposta.
 
