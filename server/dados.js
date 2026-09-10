@@ -198,7 +198,17 @@ async function mensagensDe(linha = null) {
  */
 export async function reguaDefinicao(linha = '1') {
   const [etapas, msgs] = await Promise.all([etapasCache(), mensagensDe(linha)]);
-  if (!etapas.itens.length) return null;
+  // etapas_regua é compartilhada entre linhas (cada uma com sua própria faixa
+  // de número, 10/09/2026) — sem este filtro, o fluxo de UMA linha mostrava
+  // TAMBÉM as etapas de todas as outras, sem mensagem nenhuma (a mensagem já
+  // vinha filtrada certo por `mensagensDe(linha)`, só a lista de etapas que
+  // não). `linha` nula é a etapa -1 (recibo), compartilhada de propósito —
+  // continua aparecendo em toda linha.
+  const minhasEtapas = {
+    ...etapas,
+    itens: etapas.itens.filter((e) => e.linha === null || String(e.linha) === String(linha)),
+  };
+  if (!minhasEtapas.itens.length) return null;
 
   const porEtapa = new Map();
   for (const m of msgs) {
@@ -219,7 +229,7 @@ export async function reguaDefinicao(linha = '1') {
     });
   }
 
-  return etapas.itens
+  return minhasEtapas.itens
     .map((e) => ({
       etapa: Number(e.etapa),
       nome: e.nome,
