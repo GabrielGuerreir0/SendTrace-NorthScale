@@ -68,62 +68,6 @@ export default async function rotasFila(app) {
   });
 
   /*
-   * Despejo em massa por CURSOR — não é paginação normal (page=N).
-   *
-   * O painel baixa a fila inteira pra calcular os números da régua
-   * (contagem por etapa, onda de 48h, cadência...) — sem rota de agregação
-   * própria (pendência conhecida), medir a fila significa baixá-la. Com
-   * 20 mil+ linhas, o CRUD genérico (LIMIT/OFFSET) fica cada vez mais lento
-   * a cada página: a página 200 obriga o Postgres a varrer e descartar as
-   * ~19.900 linhas anteriores antes de achar as 100 que interessam.
-   *
-   * Aqui não tem OFFSET: `id > $after ORDER BY id LIMIT $limit` usa o índice
-   * da chave primária pra pular direto pro ponto certo, custo praticamente
-   * constante não importa o tamanho da fila. Declarada ANTES do CRUD pelo
-   * mesmo motivo de /pendentes/ e /chat/.
-   */
-  app.get('/api/disparos/tudo/', {
-    schema: {
-      tags: ['Fila'],
-      summary: 'Despejo em massa da fila inteira, por cursor (uso interno do painel)',
-      description: 'Não é a listagem paginada normal — não aceita filtro nem busca, '
-        + 'sempre devolve TODAS as colunas na ordem de `id`. Feita para o painel montar '
-        + 'os números da régua sem pagar o custo crescente de OFFSET em página alta.',
-      security: [{ bearerAuth: [] }],
-      querystring: {
-        type: 'object',
-        properties: {
-          after: { type: 'integer', description: 'Último id já recebido — 0 na primeira chamada.' },
-          limit: { type: 'integer', description: 'Até 2000. Padrão 1000.' },
-        },
-      },
-      response: {
-        200: {
-          type: 'object',
-          properties: {
-            itens: { type: 'array', items: { $ref: 'DisparoPosVenda#' } },
-            proximo_after: { type: ['integer', 'null'], description: 'Passe como `after` na próxima chamada; null = acabou.' },
-          },
-        },
-      },
-    },
-    onRequest: [app.exigirSessao],
-  }, async (req) => {
-    const after = Math.max(0, Number(req.query.after) || 0);
-    const limit = Math.min(2000, Math.max(1, Number(req.query.limit) || 1000));
-
-    const { rows } = await query(
-      `SELECT ${COLUNAS} FROM disparos_pos_venda WHERE id > $1 ORDER BY id ASC LIMIT $2`,
-      [after, limit],
-    );
-
-    return {
-      itens: rows,
-      proximo_after: rows.length === limit ? rows[rows.length - 1].id : null,
-    };
-  });
-
-  /*
    * O resumo do chat de suporte, gravado pelo CHATBOT (outra aplicação).
    *
    * O bot conhece o E-MAIL do cliente, não o id do pedido — então a rota
