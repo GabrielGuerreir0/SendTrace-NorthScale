@@ -19,11 +19,14 @@ export default async function rotasCatalogo(app) {
     chave: 'slug',
     esquema: ProdutoCatalogo,
     tag: 'Catálogo',
-    colunas: 'slug, nome, nome_sms, forma, uso, link_ebook, email_suporte, ativo, atualizado_em',
+    colunas: 'slug, nome, nome_sms, forma, uso, link_ebook, email_suporte, linha, ativo, atualizado_em',
     buscaEm: ['slug', 'nome'],
     ordenaveis: ['slug', 'nome', 'atualizado_em'],
     ordemPadrao: 'nome ASC',
-    filtros: { ativo: { coluna: 'ativo', esquema: { type: 'boolean' } } },
+    filtros: {
+      ativo: { coluna: 'ativo', esquema: { type: 'boolean' } },
+      linha: { coluna: 'linha', esquema: { type: 'string', description: 'Filtra por família/linha de copy.' } },
+    },
     aoEntrar: (corpo, metodo) => {
       const dados = { ...corpo, atualizado_em: new Date() };
       // No PATCH, campo ausente é campo não mexido — mas o slug nunca muda:

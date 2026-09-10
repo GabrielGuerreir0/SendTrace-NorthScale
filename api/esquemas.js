@@ -245,6 +245,11 @@ export const ProdutoCatalogo = {
     uso: texto(200),
     link_ebook: { ...texto(500), description: 'Destino do botão EBOOK nos e-mails deste produto.' },
     email_suporte: { ...texto(200), description: 'Remetente/contato de suporte usado na moldura do e-mail.' },
+    linha: {
+      type: 'string', pattern: '^[0-9]{1,4}$', default: '1',
+      description: 'Linha de copy (família) que este produto usa na régua de pós-venda — '
+        + "ver /api/linhas-copy/ pras linhas cadastradas. Produto sem família específica fica na '1' (Confiança).",
+    },
     ativo: { type: 'boolean', default: true },
     atualizado_em: { ...dataHora, readOnly: true },
   },
