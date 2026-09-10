@@ -50,11 +50,14 @@ export default async function rotasRegua(app) {
     chave: 'etapa',
     esquema: EtapaRegua,
     tag: 'Régua',
-    colunas: 'etapa, nome, espera_h, offset_h, ativo, descricao, atualizado_em',
+    colunas: 'etapa, nome, espera_h, offset_h, linha, ativo, descricao, atualizado_em',
     buscaEm: ['nome', 'descricao'],
     ordenaveis: ['etapa', 'nome', 'offset_h'],
     ordemPadrao: 'etapa ASC',
-    filtros: { ativo: { coluna: 'ativo', esquema: { type: 'boolean' } } },
+    filtros: {
+      ativo: { coluna: 'ativo', esquema: { type: 'boolean' } },
+      linha: { coluna: 'linha', esquema: { type: 'string', description: 'Filtra pelas etapas de uma linha/família.' } },
+    },
     aoEntrar: (corpo) => ({ ...corpo, atualizado_em: new Date() }),
   });
 
@@ -415,12 +418,29 @@ export default async function rotasRegua(app) {
      * rota direto punha no ar uma linha incompleta. A conta usa `produto = '*'`
      * de propósito: exigir copy de TODO produto em TODA etapa faria meia dúzia
      * de mensagens de um produto travarem a troca de linha do painel inteiro.
+     *
+     * `e.linha = $1` (10/09/2026): etapas_regua é compartilhada entre linhas,
+     * cada uma com sua própria faixa de número — sem esse filtro, a conta
+     * somava etapas de TODAS as linhas (inclusive as de outra família) e
+     * travava a ativação de qualquer linha assim que uma segunda existisse.
+     * `linha_usa_sms` torna o canal SMS opcional POR LINHA: famílias
+     * desenhadas e-mail-only (ex. Família 1 — Neuro/Cognitivo) nunca vão ter
+     * SMS cadastrado de propósito, e exigi-lo travaria a ativação pra sempre.
      */
     const faltas = await query(
-      `SELECT count(*)::int AS faltam
+      `WITH linha_usa_sms AS (
+         SELECT EXISTS (
+           SELECT 1 FROM mensagens_regua m2
+           WHERE m2.linha = $1 AND m2.canal = 'sms' AND m2.ativo
+         ) AS ativo
+       )
+       SELECT count(*)::int AS faltam
        FROM etapas_regua e
        CROSS JOIN (VALUES ('email'), ('sms')) AS c(canal)
+       CROSS JOIN linha_usa_sms lu
        WHERE e.ativo
+         AND e.linha = $1
+         AND (c.canal = 'email' OR lu.ativo)
          AND NOT EXISTS (SELECT 1 FROM mensagens_regua m
                           WHERE m.etapa = e.etapa AND m.canal = c.canal
                             AND m.linha = $1 AND m.produto = '*' AND m.ativo)`,

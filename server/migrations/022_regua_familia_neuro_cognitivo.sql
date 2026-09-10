@@ -25,11 +25,15 @@
 --     Etapas 12, 14 e 16 não citam composto — servem para todos os 7 sem
 --     ajuste.
 --
---  Placeholder `[JANELA_GARANTIA]` mantido DE PROPÓSITO na Etapa 6 (etapa
---  16): é bloqueio duro do documento (Seção 10, item 2) até confirmar o
---  prazo real por produto/plataforma. Ver migração 021 (nenhum produto é
---  roteado pra esta linha ainda) e 024 (o "liga" desta família, depois que
---  as pendências da Seção 10 estiverem resolvidas).
+--  Garantia (Seção 10, item 2 do documento — bloqueio duro) resolvida via
+--  token `{garantia_dias}`, não um número fixo — o prazo real depende da
+--  PLATAFORMA do pedido (JVZoo 60 dias, DigiStore24 180, BuyGoods 60,
+--  confirmado 10/09/2026), e o mesmo produto vende por mais de uma. Ver
+--  migração 024 (mapeamento plataforma→dias + nó "Montar Mensagem").
+--
+--  Nenhum produto é roteado pra esta linha ainda (ver migração 021) — falta
+--  preencher os 6 produto_readmes vazios antes de ativar de vez (migração
+--  025, ainda não escrita).
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- ── 1. cadência ──────────────────────────────────────────────────────────
@@ -215,7 +219,11 @@ ON CONFLICT (etapa, canal, linha, produto) DO NOTHING;
 
 -- ── 8. Etapa 16 (D25) — Guia de uso + garantia ──────────────────────────────
 --
--- [JANELA_GARANTIA] fica literal de propósito — ver cabeçalho desta migração.
+-- {garantia_dias}: token novo (10/09/2026), resolvido pelo n8n a partir da
+-- PLATAFORMA real do pedido (JVZoo/DigiStore24/BuyGoods têm prazos
+-- diferentes) — ver migração 024 e o nó "Montar Mensagem". Não é um número
+-- fixo por produto porque o MESMO produto vende por mais de uma plataforma
+-- com garantias diferentes.
 
 INSERT INTO mensagens_regua (etapa, canal, linha, produto, assunto, texto, botao, destino, corpo_html, ativo)
 VALUES (
@@ -224,7 +232,7 @@ VALUES (
   'Fecha dúvida de garantia antes da janela expirar — nunca dificulta o reembolso, sempre aponta o caminho direto.',
   'Full guarantee details', 'ASSISTENTE',
   $corpo$<p>Hi {nome},</p>
-<p>Quick reminder: your order is backed by our guarantee for [JANELA_GARANTIA] from the date of purchase — no forms, no hoops. If something's not working for you, just reply to this email directly with your order number. You won't need to re-explain anything we already have on file.</p>$corpo$,
+<p>Quick reminder: your order is backed by our guarantee for {garantia_dias} days from the date of purchase — no forms, no hoops. If something's not working for you, just reply to this email directly with your order number. You won't need to re-explain anything we already have on file.</p>$corpo$,
   true
 )
 ON CONFLICT (etapa, canal, linha, produto) DO NOTHING;

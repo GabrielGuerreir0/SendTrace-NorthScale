@@ -140,6 +140,11 @@ export const EtapaRegua = {
     nome: { type: 'string', maxLength: 120 },
     espera_h: { ...decimal, description: 'Horas até a PRÓXIMA etapa.' },
     offset_h: { ...decimal, description: 'Horas desde a compra até esta etapa disparar.' },
+    linha: {
+      type: ['string', 'null'], pattern: '^[0-9]{1,4}$',
+      description: 'A qual linha/família esta etapa pertence. NULL = compartilhada entre '
+        + 'linhas (hoje só a etapa -1, o recibo).',
+    },
     ativo: { type: 'boolean' },
     descricao: texto(600),
     atualizado_em: { ...dataHora, readOnly: true },

@@ -344,7 +344,6 @@ export async function resumoLinhas() {
     listarTudo('/api/linhas-copy/'), mensagensDe(null), etapasCache(),
   ]);
 
-  const exigidas = etapas.itens.filter((e) => e.ativo !== false).length;
   const ativas = msgs.filter((m) => m.ativo !== false);
 
   const contar = (linha) => {
@@ -356,12 +355,30 @@ export async function resumoLinhas() {
      * mensagem enganosa "linha incompleta".
      */
     const padrao = minhas.filter((m) => String(m.produto ?? '*') === '*');
+
+    /*
+     * `exigidas` por LINHA, não pelo total de `etapas_regua` (10/09/2026):
+     * essa tabela é compartilhada entre todas as linhas, cada uma com sua
+     * própria faixa de número de etapa — contar o total global fazia toda
+     * linha "encolher" de completa pra incompleta assim que uma segunda
+     * família ganhava suas próprias etapas.
+     *
+     * `usaSms`: SMS é opcional por linha. Uma família e-mail-only (ex.
+     * Família 1 — Neuro/Cognitivo) nunca vai ter mensagem de SMS cadastrada
+     * de propósito — exigi-la travaria "completa" pra sempre.
+     */
+    const exigidas = etapas.itens
+      .filter((e) => e.ativo !== false && String(e.linha ?? '') === String(linha)).length;
+    const usaSms = minhas.some((m) => m.canal === 'sms');
+
     return {
       mensagens: minhas.length,
       etapas: new Set(padrao.map((m) => m.etapa)).size,
       emails_prontos: padrao.filter((m) => m.canal === 'email'
         && preenchido(m.assunto) && preenchido(m.corpo_html)).length,
       sms_prontos: padrao.filter((m) => m.canal === 'sms' && preenchido(m.texto)).length,
+      usa_sms: usaSms,
+      exigidas,
     };
   };
 
@@ -382,8 +399,9 @@ export async function resumoLinhas() {
     saida[l.linha] = {
       ...l,
       ...c,
-      etapas_exigidas: exigidas,
-      completa: c.emails_prontos >= exigidas && c.sms_prontos >= exigidas,
+      etapas_exigidas: c.exigidas,
+      completa: c.emails_prontos >= c.exigidas
+        && (!c.usa_sms || c.sms_prontos >= c.exigidas),
     };
   }
   return saida;
