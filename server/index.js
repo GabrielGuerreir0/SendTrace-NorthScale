@@ -230,22 +230,27 @@ function json(res, status, body) {
  * linha da régua com gente parada nela. Nos dois casos é coisa para ver, então
  * o painel mostra em vez de esconder.
  */
-function montarEtapas(regua, rollup) {
+function montarEtapas(regua, rollup, etapasConhecidas = new Set()) {
   const porId = new Map(regua.map((e) => [e.etapa, { ...e }]));
 
   for (const r of rollup) {
-    if (!porId.has(r.etapa)) {
-      porId.set(r.etapa, {
-        etapa: r.etapa,
-        nome: `Etapa ${r.etapa}`,
-        mensagens: [],
-        espera_h: null,
-        offset_h: null,
-        ativo: true,
-        descricao: 'Existe na fila mas não está cadastrada em etapas_regua',
-        autoDetectada: true,
-      });
-    }
+    if (porId.has(r.etapa)) continue;
+    // Pedido em trânsito na régua de OUTRA linha (etapa cadastrada, só que
+    // não na que está sendo exibida agora) não é "órfão" de verdade — não
+    // precisa de aviso nenhum na tela, é esperado durante a transição de um
+    // produto pra família nova (a régua antiga continua até o fim). Só entra
+    // como "autoDetectada" quem realmente não existe em etapas_regua nenhuma.
+    if (etapasConhecidas.has(r.etapa)) continue;
+    porId.set(r.etapa, {
+      etapa: r.etapa,
+      nome: `Etapa ${r.etapa}`,
+      mensagens: [],
+      espera_h: null,
+      offset_h: null,
+      ativo: true,
+      descricao: 'Existe na fila mas não está cadastrada em etapas_regua',
+      autoDetectada: true,
+    });
   }
 
   const vazio = {
@@ -306,7 +311,7 @@ async function snapshot(filtros = {}) {
 
   const [regua, rollup, onda, horaria, entradas, statuses, problemas, cadencia,
     canais, orfaos, linhas, piorSms, errosOrfaos, produtos, plataformas, fonte,
-    catalogo] = await Promise.all([
+    catalogo, todasEtapas] = await Promise.all([
     reguaDefinicao(linha), etapasRollup(produto, plataforma), ondaPorEtapa(produto, plataforma),
     ondaHoraria(doFiltro), entradasPorDia(doFiltro), statusBruto(produto, plataforma),
     alertas(produto, plataforma), cadenciaObservada(produto, plataforma),
@@ -318,10 +323,17 @@ async function snapshot(filtros = {}) {
     // O catálogo CANÔNICO (tabela produtos): alimenta o seletor "copy do
     // produto" e a moldura da prévia. Diferente do de cima, que deriva da fila.
     catalogoProdutos(),
+    // TODAS as etapas cadastradas, de TODAS as linhas (10/09/2026) — sem
+    // isso, um pedido em trânsito na régua antiga (etapa 0-5) de um produto
+    // que HOJE pertence à Família 1 aparecia como "etapa órfã, não
+    // cadastrada" ao ver a linha 4: a etapa existe sim, só que é de outra
+    // linha. Ver montarEtapas.
+    etapasDaRegua(),
   ]);
 
   const reguaOk = regua !== null;
-  const etapas = montarEtapas(reguaOk ? regua : REGUA_FALLBACK, rollup);
+  const etapasConhecidas = new Set(todasEtapas.map((e) => e.etapa));
+  const etapas = montarEtapas(reguaOk ? regua : REGUA_FALLBACK, rollup, etapasConhecidas);
 
   // Cadência: configurada (soma dos espera_h) × observada (mediana real).
   const acumulado = acumularEsperas(etapas);
