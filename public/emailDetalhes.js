@@ -109,6 +109,36 @@ function celulaCarregandoEmails(texto) {
  * respondeu automaticamente) a resposta que ela mandou — por isso cada
  * item pode virar até 2 bolhas.
  */
+/**
+ * Corta a citação do e-mail anterior que o cliente arrasta junto ao
+ * responder — o `corpo_texto` guardado é o e-mail bruto, útil pra IA
+ * classificar (não mexe nele), mas pra LER a conversa a citação inteira
+ * (às vezes um e-mail nosso de régua inteiro, com CTA e rodapé) só atrapalha.
+ * Heurística de 2 sinais, cobrindo os dois formatos vistos nos dados reais:
+ * cabeçalho "On <data> ... <e-mail> wrote" (Gmail/Outlook web) e linhas
+ * citadas com "> " no começo (resposta inline, thread mais longa).
+ * Corta no PRIMEIRO sinal que aparecer — o que sobra antes é sempre real.
+ */
+function textoReal(corpo) {
+  if (!corpo) return '';
+  let t = String(corpo).replace(/\r\n/g, '\n');
+
+  const cabecalhoCitacao = t.search(
+    /\bOn\s+[A-Z][a-zà-ú]{2,9},?\s+[A-Z][a-zà-ú]{2,9}\.?\s+\d{1,2},?\s+\d{4}[^\n]{0,60}?(<[^<>\s]+@[^<>\s]+>|wrote:)/,
+  );
+  if (cabecalhoCitacao > 0) t = t.slice(0, cabecalhoCitacao);
+
+  if (/-{3,}\s*Original Message\s*-{3,}/i.test(t)) {
+    t = t.slice(0, t.search(/-{3,}\s*Original Message\s*-{3,}/i));
+  }
+
+  const linhas = t.split('\n');
+  const primeiraCitada = linhas.findIndex((l) => /^\s*>/.test(l));
+  if (primeiraCitada > 0) t = linhas.slice(0, primeiraCitada).join('\n');
+
+  return t.trim();
+}
+
 function balaoConversa(papel, remetente, texto, quando) {
   const div = document.createElement('div');
   div.className = 'ch-balao';
@@ -119,7 +149,11 @@ function balaoConversa(papel, remetente, texto, quando) {
   rot.className = 'ch-balao-remetente';
   rot.textContent = remetente;
   const txt = document.createElement('p');
+  // pre-wrap: preserva quebra de linha real do e-mail (parágrafos) sem
+  // deixar passar de outro jeito por markup nenhum — corpo_texto é texto
+  // puro, não HTML, então não há risco de injeção aqui.
   txt.style.margin = '0';
+  txt.style.whiteSpace = 'pre-wrap';
   txt.textContent = texto;
   const hora = document.createElement('span');
   hora.className = 'ch-balao-hora';
@@ -138,8 +172,9 @@ function renderConversa() {
   );
   const balões = [];
   for (const e of emOrdem) {
-    if (e.corpo_texto) {
-      balões.push(balaoConversa('cliente', e.remetente_nome || e.remetente_email || 'Cliente', e.corpo_texto, e.data_email));
+    const mensagemCliente = textoReal(e.corpo_texto);
+    if (mensagemCliente) {
+      balões.push(balaoConversa('cliente', e.remetente_nome || e.remetente_email || 'Cliente', mensagemCliente, e.data_email));
     }
     if (e.resposta_automatica && e.resposta_sugerida) {
       balões.push(balaoConversa('ia', 'IA (resposta automática)', e.resposta_sugerida, e.resposta_enviada_em ?? e.data_email));
