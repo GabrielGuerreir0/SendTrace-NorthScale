@@ -19,7 +19,7 @@
  */
 
 import {
-  obter, criar, substituir, remendar, apagar, listarTudo, ErroApi, FILA_MAX,
+  obter, criar, substituir, remendar, apagar, listarTudo, listarTudoPorCursor, ErroApi, FILA_MAX,
 } from './api.js';
 import { LOCK_TIMEOUT_MIN } from './config.js';
 
@@ -44,7 +44,12 @@ export async function fila() {
   if (cache.valor && agora - cache.em < JANELA_MS) return cache.valor;
   if (cache.promessa) return cache.promessa;
 
-  cache.promessa = listarTudo('/api/disparos/')
+  // Por cursor, não por página (10/09/2026): com 20 mil+ linhas, o CRUD
+  // paginado normal (OFFSET) ficava cada vez mais lento a cada página —
+  // ~200 chamadas sequenciais, a última varrendo e descartando ~19.900
+  // linhas antes de achar as 100 que interessam. /api/disparos/tudo/ usa
+  // o índice da chave primária pra ir direto ao ponto, custo ~constante.
+  cache.promessa = listarTudoPorCursor('/api/disparos/tudo/')
     .then((r) => {
       cache = { em: Date.now(), valor: r, promessa: null };
       return r;

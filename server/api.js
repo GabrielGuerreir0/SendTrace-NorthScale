@@ -267,6 +267,30 @@ export async function listarTudo(rota, params = {}, { max = FILA_MAX } = {}) {
   return { itens, total: total || itens.length, truncado: false };
 }
 
+/**
+ * Como `listarTudo`, mas andando por CURSOR (`after`/`proximo_after`) em vez
+ * de número de página — feito para `/api/disparos/tudo/`, a única lista
+ * grande o bastante (20 mil+ linhas) pra o custo crescente de OFFSET doer.
+ * Sem `count` de antemão: só sabe que acabou quando `proximo_after` vem nulo
+ * ou um lote vem menor que o pedido.
+ */
+export async function listarTudoPorCursor(rota, { limit = 1000, max = FILA_MAX } = {}) {
+  const itens = [];
+  let after = 0;
+
+  for (;;) {
+    const dados = await obter(rota, { after, limit });
+    const lote = dados.itens ?? [];
+    itens.push(...lote);
+
+    if (itens.length >= max) return { itens, total: itens.length, truncado: true };
+    if (!dados.proximo_after || lote.length < limit) break;
+    after = dados.proximo_after;
+  }
+
+  return { itens, total: itens.length, truncado: false };
+}
+
 /** A API está de pé? Rota pública — não exige token nem sessão. */
 export async function saude() {
   const inicio = Date.now();
