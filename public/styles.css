@@ -401,6 +401,71 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
 .kpi[data-tom="finalizado"]  .kpi-ico { color: var(--st-finalizado); }
 .kpi[data-tom="cancelado"]   .kpi-ico { color: var(--st-cancelado); }
 
+/* ──────────────────  Visão por família (10/09/2026)  ─────────────────
+   Mesma linguagem visual do .kpi acima (cartão + data-tom colorido) — a
+   família é conceitualmente "mais um indicador" da régua, não uma peça
+   nova de UI. Cor por ÍNDICE (não pelo número da linha): amanhã pode
+   existir uma linha '7' cadastrada antes da '5', a cor tem que seguir a
+   ORDEM de exibição, não o número. */
+.familias-grade {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: clamp(12px, 1.4vw, 18px); margin-bottom: 18px;
+}
+.familia-card {
+  background: var(--superficie-2); border: 1px solid var(--borda);
+  border-left: 3px solid var(--eixo); border-radius: var(--raio);
+  padding: 13px 15px; cursor: pointer; text-align: left;
+  display: flex; flex-direction: column; gap: 6px; font: inherit; color: inherit;
+  transition: border-color .14s, transform .14s;
+}
+.familia-card:hover { transform: translateY(-1px); border-color: var(--eixo); }
+.familia-card[data-tom="em_dia"]      { border-left-color: var(--st-em-dia); }
+.familia-card[data-tom="processando"] { border-left-color: var(--st-processando); }
+.familia-card[data-tom="atrasado"]    { border-left-color: var(--st-atrasado); }
+.familia-card[data-tom="finalizado"]  { border-left-color: var(--st-finalizado); }
+.familia-card[data-tom="travado"]     { border-left-color: var(--st-travado); }
+.familia-card[data-tom="cancelado"]   { border-left-color: var(--st-cancelado); }
+.familia-card-nome { font-size: 13.5px; font-weight: 640; }
+.familia-card-intuito {
+  font-size: 11.5px; color: var(--tinta-2); line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.familia-card-selos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.familia-selo {
+  font-size: 10.5px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
+  background: var(--superficie); border: 1px solid var(--borda); color: var(--tinta-2);
+  white-space: nowrap;
+}
+
+.familias-produtos-cabeca {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-bottom: 8px; font-size: 11px; color: var(--tinta-fraca); font-weight: 640;
+  text-transform: uppercase; letter-spacing: .03em;
+}
+.familias-busca {
+  font: inherit; font-size: 12.5px; padding: 5px 12px; border-radius: 999px;
+  border: 1px solid var(--borda); background: var(--superficie); color: var(--tinta);
+  text-transform: none; letter-spacing: normal; font-weight: 400; min-width: 180px;
+}
+.familias-produtos { display: flex; flex-wrap: wrap; gap: 7px; }
+.produto-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  font: inherit; font-size: 12px; color: inherit;
+  padding: 4px 6px 4px 12px; border-radius: 999px;
+  background: var(--superficie); border: 1px solid var(--borda); cursor: pointer;
+  transition: border-color .14s;
+}
+.produto-chip:hover { border-color: var(--eixo); }
+.produto-chip-linha {
+  font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; color: #fff;
+}
+.produto-chip-linha[data-tom="em_dia"]      { background: var(--st-em-dia); }
+.produto-chip-linha[data-tom="processando"] { background: var(--st-processando); }
+.produto-chip-linha[data-tom="atrasado"]    { background: var(--st-atrasado); color: #1f1a06; }
+.produto-chip-linha[data-tom="finalizado"]  { background: var(--st-finalizado); }
+.produto-chip-linha[data-tom="travado"]     { background: var(--st-travado); }
+.produto-chip-linha[data-tom="cancelado"]   { background: var(--st-cancelado); color: #1f1f1f; }
+
 /* ────────────────────────────  legenda  ─────────────────────────── */
 
 .legenda { display: flex; flex-wrap: wrap; gap: 6px 14px; }

@@ -880,6 +880,29 @@
     <div class="kpis" id="kpis"></div>
   </section>
 
+  <!-- ── Visão por família (10/09/2026): card por linha + lista de produtos
+       com selo de qual família cada um usa — antes de existir produto com
+       família própria, essa pergunta não fazia sentido; agora sem isso não
+       dá pra saber "quem recebe o quê" sem abrir produto por produto. ── -->
+  <section class="cartao" id="familias-cartao" hidden>
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Visão por família</h2>
+        <p class="cartao-sub">
+          Cada produto recebe a régua de UMA família só. Clique num card ou
+          num produto abaixo pra abrir a copy dele no fluxo mais embaixo.
+        </p>
+      </div>
+    </header>
+    <div class="familias-grade" id="familias-grade"></div>
+    <div class="familias-produtos-cabeca">
+      <span>Produto → família</span>
+      <input type="search" id="familias-busca" class="familias-busca"
+             placeholder="Buscar produto…" aria-label="Buscar produto">
+    </div>
+    <div class="familias-produtos" id="familias-produtos"></div>
+  </section>
+
   <!-- ── linha 2: o fluxo da régua — números E copy num canvas só ── -->
   <section class="cartao cartao--canvas">
     <header class="cartao-cabeca">

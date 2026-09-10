@@ -367,9 +367,17 @@ export async function resumoLinhas() {
      * Família 1 — Neuro/Cognitivo) nunca vai ter mensagem de SMS cadastrada
      * de propósito — exigi-la travaria "completa" pra sempre.
      */
-    const exigidas = etapas.itens
-      .filter((e) => e.ativo !== false && String(e.linha ?? '') === String(linha)).length;
+    const minhasEtapas = etapas.itens
+      .filter((e) => e.ativo !== false && String(e.linha ?? '') === String(linha));
+    const exigidas = minhasEtapas.length;
     const usaSms = minhas.some((m) => m.canal === 'sms');
+
+    // Faixa de dias (D-mínimo a D-máximo) desta família — "Visão por família"
+    // (10/09/2026) mostra isso pra cada card, pra não precisar abrir o fluxo
+    // inteiro só pra saber se é uma régua de 5 dias ou de 25.
+    const offsets = minhasEtapas.map((e) => Number(e.offset_h)).filter(Number.isFinite);
+    const dia_min = offsets.length ? Math.floor(Math.min(...offsets) / 24) : null;
+    const dia_max = offsets.length ? Math.ceil(Math.max(...offsets) / 24) : null;
 
     return {
       mensagens: minhas.length,
@@ -379,6 +387,8 @@ export async function resumoLinhas() {
       sms_prontos: padrao.filter((m) => m.canal === 'sms' && preenchido(m.texto)).length,
       usa_sms: usaSms,
       exigidas,
+      dia_min,
+      dia_max,
     };
   };
 
@@ -585,6 +595,10 @@ const metaProduto = (p) => ({
   nome_sms: p.nome_sms ?? null,
   link_ebook: p.link_ebook ?? null,
   email_suporte: p.email_suporte ?? null,
+  // Família/linha deste produto (10/09/2026) — alimenta o painel "Visão por
+  // família": sem isso o front não tem como saber, pra cada um dos 19
+  // produtos, qual régua ele realmente recebe.
+  linha: String(p.linha ?? '1'),
 });
 
 /**

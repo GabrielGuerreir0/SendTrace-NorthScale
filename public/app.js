@@ -215,6 +215,134 @@ function pintarRegua(s) {
   });
 }
 
+/* ── "Visão por família": card por linha + lista de produtos com selo ──
+   (10/09/2026) Existe porque virou possível ter mais de uma régua ao mesmo
+   tempo (produtos.linha) — antes só existia UMA, "qual família este produto
+   usa" não era pergunta. Cor por ÍNDICE de exibição, não pelo número da
+   linha: uma linha '7' cadastrada antes da '5' segue a ORDEM na tela, não o
+   número. Reaproveita as 6 cores de status já validadas contra daltonismo
+   (mesmo esquema do .kpi) em vez de inventar paleta nova. */
+const CORES_LINHA = ['em_dia', 'processando', 'atrasado', 'finalizado', 'travado', 'cancelado'];
+
+function selo(texto) {
+  const el = document.createElement('span');
+  el.className = 'familia-selo';
+  el.textContent = texto;
+  return el;
+}
+
+function renderFamilias(s) {
+  const cartao = $('familias-cartao');
+  const resumo = s.linha?.resumo ?? {};
+  const linhas = Object.values(resumo).sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0)
+    || (Number(a.linha) || 0) - (Number(b.linha) || 0));
+  const catalogo = s.catalogoProdutos ?? [];
+
+  // Sem catálogo ou sem linha cadastrada, o card não tem o que mostrar —
+  // mesmo raciocínio de renderCopyProduto: fica escondido em vez de vazio.
+  cartao.hidden = !linhas.length || !catalogo.length;
+  if (cartao.hidden) return;
+
+  const corDe = new Map(linhas.map((l, i) => [String(l.linha), CORES_LINHA[i % CORES_LINHA.length]]));
+  const produtosPorLinha = new Map();
+  for (const p of catalogo) {
+    const k = String(p.linha ?? '1');
+    if (!produtosPorLinha.has(k)) produtosPorLinha.set(k, []);
+    produtosPorLinha.get(k).push(p);
+  }
+
+  // Clicar num card/produto: troca o que a tela mostra (não o que está no
+  // ar — mesma distinção de sempre entre EXIBINDO e ATIVA). Trocar de linha
+  // recarrega do servidor (verLinha já faz isso); ficar na mesma linha só
+  // redesenha o fluxo local com o produto novo, sem ida à rede.
+  const irPara = (linha, produto) => {
+    estado.copyProduto = produto ?? '*';
+    if (String(linha) !== String(estado.linhaExibindo)) {
+      verLinha(String(linha));
+    } else if (estado.snapshot) {
+      renderCopyProduto(estado.snapshot);
+      pintarRegua(estado.snapshot);
+    }
+    $('linha-barra')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  $('familias-grade').replaceChildren(...linhas.map((l) => {
+    const cor = corDe.get(String(l.linha)) ?? 'em_dia';
+    const qtd = produtosPorLinha.get(String(l.linha))?.length ?? 0;
+    const dias = l.dia_min !== null && l.dia_min !== undefined && l.dia_max !== null && l.dia_max !== undefined
+      ? `D${l.dia_min}–D${l.dia_max}`
+      : '—';
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'familia-card';
+    card.dataset.tom = cor;
+    card.title = `Ver a copy da linha ${l.linha}`;
+    card.addEventListener('click', () => irPara(l.linha, null));
+
+    const nome = document.createElement('p');
+    nome.className = 'familia-card-nome';
+    nome.textContent = `${l.linha} · ${l.nome ?? `Linha ${l.linha}`}`;
+
+    const intuito = document.createElement('p');
+    intuito.className = 'familia-card-intuito';
+    intuito.textContent = l.intuito ?? '';
+
+    const selos = document.createElement('div');
+    selos.className = 'familia-card-selos';
+    selos.append(
+      selo(`${l.etapas_exigidas ?? 0} etapa${l.etapas_exigidas === 1 ? '' : 's'}`),
+      selo(dias),
+      selo(`${qtd} produto${qtd === 1 ? '' : 's'}`),
+      selo(l.usa_sms ? 'e-mail + SMS' : 'só e-mail'),
+    );
+
+    card.append(nome, intuito, selos);
+    return card;
+  }));
+
+  const busca = ($('familias-busca')?.value ?? '').trim().toLowerCase();
+  const filtrados = busca
+    ? catalogo.filter((p) => p.nome.toLowerCase().includes(busca) || p.slug.includes(busca))
+    : catalogo;
+
+  $('familias-produtos').replaceChildren(...[...filtrados]
+    .sort((a, b) => a.nome.localeCompare(b.nome))
+    .map((p) => {
+      const cor = corDe.get(String(p.linha)) ?? 'em_dia';
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'produto-chip';
+      chip.title = `Ver a copy de ${p.nome}`;
+      chip.addEventListener('click', () => irPara(p.linha, p.slug));
+
+      const nomeEl = document.createElement('span');
+      nomeEl.textContent = p.nome;
+
+      const seloLinha = document.createElement('span');
+      seloLinha.className = 'produto-chip-linha';
+      seloLinha.dataset.tom = cor;
+      seloLinha.textContent = String(p.linha);
+
+      chip.append(nomeEl, seloLinha);
+      return chip;
+    }));
+
+  if (!filtrados.length) {
+    const vazio = document.createElement('p');
+    vazio.className = 'vazio-suave';
+    vazio.textContent = 'Nenhum produto com esse nome.';
+    $('familias-produtos').replaceChildren(vazio);
+  }
+}
+
+let debounceFamilias;
+$('familias-busca').addEventListener('input', () => {
+  clearTimeout(debounceFamilias);
+  debounceFamilias = setTimeout(() => {
+    if (estado.snapshot) renderFamilias(estado.snapshot);
+  }, 200);
+});
+
 /* ── editor de copy, acoplado à janela de pré-visualização ── */
 
 const CAMPOS_COMPARADOS = ['assunto', 'corpo_html', 'botao', 'destino', 'texto'];
@@ -1222,6 +1350,7 @@ async function carregarSnapshot({ silencioso = false } = {}) {
     renderFiltroPlataforma(s);
     renderCopyProduto(s);
     pintarRegua(s);
+    renderFamilias(s);
     renderLinha(s);
     redesenharGraficos();
 
