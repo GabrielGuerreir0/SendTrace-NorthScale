@@ -1951,6 +1951,25 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 .ch-balao-corpo th, .ch-balao-corpo td { border: 1px solid var(--borda); padding: 5px 9px; text-align: left; }
 .ch-balao-corpo a { color: inherit; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); }
 
+/* Timeline cliente ↔ IA no modal de e-mails (10/09/2026) — mesma estrutura
+   .ch-balao/.ch-balao-corpo do Chat com IA acima, só com papéis próprios
+   (cliente/ia em vez de user/assistant): aqui os dois lados têm bolha (é uma
+   conversa de verdade, não um assistente respondendo por extenso), e o lado
+   "ia" usa o azul de marca (--st-em-dia) em vez do cinza neutro do chat de BI,
+   pra ficar claro que é o lado da empresa, tipo WhatsApp/Telegram. */
+.ch-balao[data-papel="cliente"] { justify-content: flex-start; }
+.ch-balao[data-papel="ia"] { justify-content: flex-end; }
+.ch-balao[data-papel="cliente"] .ch-balao-corpo {
+  padding: 9px 15px; border-radius: 18px; border-bottom-left-radius: 5px;
+  background: var(--superficie-2); border: 1px solid var(--borda); color: var(--tinta);
+}
+.ch-balao[data-papel="ia"] .ch-balao-corpo {
+  padding: 9px 15px; border-radius: 18px; border-bottom-right-radius: 5px;
+  background: var(--st-em-dia); border: 1px solid var(--st-em-dia); color: #fff;
+}
+.ch-balao-remetente { display: block; margin-bottom: 3px; font-size: 11.5px; font-weight: 650; opacity: .8; }
+.ch-balao-hora { display: block; margin-top: 5px; font-size: 11px; opacity: .7; }
+
 .ch-pontos { display: inline-flex; gap: 4px; align-items: center; height: 14px; }
 .ch-pontos i {
   width: 6px; height: 6px; border-radius: 50%; background: var(--tinta-fraca);

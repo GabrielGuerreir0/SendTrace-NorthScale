@@ -579,9 +579,17 @@ async function miniGaleria(qs) {
 
 async function ultimosEmails(qs) {
   const f = filtroEmails(qs, 1);
+  // corpo_texto/resposta_sugerida (o texto real do cliente e da IA) só entram
+  // quando o filtro é por um cliente exato (`email`) — é o caso de uso da
+  // timeline de conversa (10/09/2026). Nas listas por motivo/categoria/etc.
+  // (até 400 linhas, de clientes diferentes) isso só infligiria o payload
+  // sem servir pra nada: ninguém lê corpo de e-mail numa tabela de resumo.
+  const camposConversa = qs.email
+    ? ', corpo_texto, resposta_sugerida, resposta_enviada_em, resposta_automatica'
+    : '';
   const { rows } = await query(
     `SELECT id, data_email, remetente_nome, remetente_email, assunto, categoria, sentimento, urgencia,
-            pede_resposta, tem_anexo, resumo, erro_analise, numero_pedido, produto_mencionado, motivo_devolucao
+            pede_resposta, tem_anexo, resumo, erro_analise, numero_pedido, produto_mencionado, motivo_devolucao${camposConversa}
      FROM email_ia.emails WHERE ${f.sql} ORDER BY data_email DESC NULLS LAST LIMIT 400`,
     f.valores,
   );

@@ -14,6 +14,7 @@ import {
 import { n, relativo, dataHora, duracaoH } from './format.js';
 import { desenharColunas } from './charts.js';
 import { abrirNaTabela } from './emailTickets.js';
+import { abrirModalEmails } from './emailDetalhes.js';
 
 /* ═══════════════════════════════  estado  ═══════════════════════════════ */
 
@@ -558,6 +559,19 @@ function abrirDetalheEscalado(item) {
 
   const rotuloStatus = rotularStatus(item.status);
 
+  // Botão pra timeline completa (10/09/2026): o resumo abaixo é um texto
+  // cumulativo reescrito a cada resposta — bom pra ler rápido, mas não
+  // mostra a troca real mensagem-a-mensagem. Abre o outro modal (o mesmo
+  // usado em Mais Detalhes) por cima deste, sem fechar a ficha do caso.
+  const botaoConversa = document.createElement('button');
+  botaoConversa.type = 'button';
+  botaoConversa.className = 'btn btn-fantasma';
+  botaoConversa.textContent = 'Ver conversa completa (cliente ↔ IA) →';
+  botaoConversa.disabled = !item.remetente_email;
+  botaoConversa.addEventListener('click', () => {
+    abrirModalEmails('email', item.remetente_email, `conversa com ${item.nome || item.remetente_email}`, null, 'conversa');
+  });
+
   abrirFicha({
     titulo: item.nome || item.remetente_email || '(sem nome)',
     subtitulo: item.remetente_email || '',
@@ -568,6 +582,7 @@ function abrirDetalheEscalado(item) {
       { rotulo: 'Finalizado em', valor: item.finalizado_em ? dataHora(item.finalizado_em) : '—' },
       { rotulo: 'Dados do pedido', valor: contextoContainer, largo: true },
       { rotulo: 'Mensagem da cliente — foco da reclamação', valor: item.resumo_conversa || '—', largo: true },
+      { rotulo: 'Histórico completo', valor: botaoConversa, largo: true },
       { rotulo: 'Motivo do escalonamento', valor: item.motivo_escalonamento || '—', largo: true },
       { rotulo: 'Notas internas', valor: notasContainer, largo: true },
     ],

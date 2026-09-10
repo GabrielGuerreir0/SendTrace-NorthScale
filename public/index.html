@@ -1554,11 +1554,15 @@
       <h2 id="dt-emails-titulo">E-mails</h2>
       <p class="cartao-sub" id="dt-emails-sub"></p>
     </div>
+    <div class="subabas" id="dt-emails-modos" hidden>
+      <button class="subaba-btn" id="dt-emails-modo-tabela" type="button" role="tab" aria-selected="true">Tabela</button>
+      <button class="subaba-btn" id="dt-emails-modo-conversa" type="button" role="tab" aria-selected="false">Conversa</button>
+    </div>
     <button class="btn btn-icone" id="dt-emails-fechar" type="button" aria-label="Fechar">✕</button>
   </header>
   <div class="janela-corpo">
     <div class="mf-grid" id="dt-emails-ficha" hidden></div>
-    <div class="tabela-envolve">
+    <div class="tabela-envolve" id="dt-emails-vista-tabela">
       <table class="tabela">
         <thead>
           <tr><th scope="col">Quando</th><th scope="col">Cliente</th><th scope="col">Assunto</th>
@@ -1568,6 +1572,10 @@
       </table>
     </div>
     <div class="paginacao" id="dt-emails-pag"></div>
+    <!-- Timeline cliente ↔ IA, estilo bolhas de chat (10/09/2026). Reaproveita
+         o mesmo .ch-balao do Chat com IA (public/emailChat.js) — só o
+         data-papel muda (cliente/ia em vez de user/assistant). -->
+    <div class="ch-mensagens" id="dt-emails-conversa" hidden></div>
   </div>
 </dialog>
 

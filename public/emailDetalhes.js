@@ -68,6 +68,7 @@ $('dt-filtro-limpar').addEventListener('click', () => { filtroAtivo = null; rend
 let emailsModalGeracao = 0;
 let emailsModalTodos = [];
 let emailsModalPagina = 1;
+let emailsModalModo = 'tabela'; // 'tabela' | 'conversa'
 const EM_POR_PAGINA = 15;
 
 function renderEmailsModal() {
@@ -99,13 +100,98 @@ function celulaCarregandoEmails(texto) {
   $('dt-emails-corpo').replaceChildren(tr);
 }
 
-export async function abrirModalEmails(tipo, valor, rotulo, ficha = null) {
+/**
+ * "Conversa" — timeline cliente ↔ IA em bolhas (10/09/2026). Só faz sentido
+ * quando o filtro é por um cliente exato (tipo='email'): é o único caso em
+ * que a API manda `corpo_texto`/`resposta_sugerida` (ver ultimosEmails no
+ * servidor — nas listas por motivo/categoria isso não vem, de propósito).
+ * Uma linha de email_ia.emails = uma mensagem do cliente + (se a IA
+ * respondeu automaticamente) a resposta que ela mandou — por isso cada
+ * item pode virar até 2 bolhas.
+ */
+function balaoConversa(papel, remetente, texto, quando) {
+  const div = document.createElement('div');
+  div.className = 'ch-balao';
+  div.dataset.papel = papel;
+  const corpo = document.createElement('div');
+  corpo.className = 'ch-balao-corpo';
+  const rot = document.createElement('span');
+  rot.className = 'ch-balao-remetente';
+  rot.textContent = remetente;
+  const txt = document.createElement('p');
+  txt.style.margin = '0';
+  txt.textContent = texto;
+  const hora = document.createElement('span');
+  hora.className = 'ch-balao-hora';
+  hora.textContent = quando ? dataHora(quando) : '';
+  corpo.append(rot, txt, hora);
+  div.append(corpo);
+  return div;
+}
+
+function renderConversa() {
+  const alvo = $('dt-emails-conversa');
+  // ASC (mais antigo primeiro): a API devolve DESC (certo pra tabela/lista),
+  // aqui é leitura cronológica de cima pra baixo, como qualquer chat.
+  const emOrdem = [...emailsModalTodos].sort(
+    (a, b) => new Date(a.data_email ?? 0) - new Date(b.data_email ?? 0),
+  );
+  const balões = [];
+  for (const e of emOrdem) {
+    if (e.corpo_texto) {
+      balões.push(balaoConversa('cliente', e.remetente_nome || e.remetente_email || 'Cliente', e.corpo_texto, e.data_email));
+    }
+    if (e.resposta_automatica && e.resposta_sugerida) {
+      balões.push(balaoConversa('ia', 'IA (resposta automática)', e.resposta_sugerida, e.resposta_enviada_em ?? e.data_email));
+    }
+  }
+  if (!balões.length) {
+    const vazio = document.createElement('p');
+    vazio.className = 'vazio-suave';
+    vazio.textContent = 'Nenhuma mensagem com texto disponível para este cliente ainda.';
+    alvo.replaceChildren(vazio);
+    return;
+  }
+  alvo.replaceChildren(...balões);
+}
+
+function aplicarModoVisualEmailsModal(modo) {
+  $('dt-emails-modo-tabela').setAttribute('aria-selected', String(modo === 'tabela'));
+  $('dt-emails-modo-conversa').setAttribute('aria-selected', String(modo === 'conversa'));
+  $('dt-emails-vista-tabela').hidden = modo !== 'tabela';
+  $('dt-emails-pag').hidden = modo !== 'tabela';
+  $('dt-emails-conversa').hidden = modo !== 'conversa';
+}
+
+/** Troca de aba por clique do usuário: também redesenha com o que já tem
+ * carregado. Diferente do reset em abrirModalEmails, que só ajusta o visual
+ * — redesenhar ali repintaria a tabela com o resultado da busca ANTERIOR
+ * por cima do "carregando…" que acabou de aparecer. */
+function mudarModoEmailsModal(modo) {
+  emailsModalModo = modo;
+  aplicarModoVisualEmailsModal(modo);
+  if (modo === 'conversa') renderConversa(); else renderEmailsModal();
+}
+
+$('dt-emails-modo-tabela').addEventListener('click', () => mudarModoEmailsModal('tabela'));
+$('dt-emails-modo-conversa').addEventListener('click', () => mudarModoEmailsModal('conversa'));
+
+export async function abrirModalEmails(tipo, valor, rotulo, ficha = null, modoInicial = 'tabela') {
   $('dt-emails-sub').textContent = `filtrando: ${rotulo}`;
   const elFicha = $('dt-emails-ficha');
   elFicha.hidden = !ficha;
   if (ficha) renderFicha(elFicha, ficha);
   celulaCarregandoEmails('carregando…');
   $('dt-emails-pag').replaceChildren();
+  const vazioConversa = document.createElement('p');
+  vazioConversa.className = 'vazio-suave';
+  vazioConversa.textContent = 'carregando…';
+  $('dt-emails-conversa').replaceChildren(vazioConversa);
+  // O alternador "Tabela/Conversa" só aparece pra histórico de UM cliente
+  // (tipo='email') — é o único caso em que existe conversa pra montar.
+  $('dt-emails-modos').hidden = tipo !== 'email';
+  emailsModalModo = tipo === 'email' ? modoInicial : 'tabela';
+  aplicarModoVisualEmailsModal(emailsModalModo);
   $('dt-emails-modal').showModal();
 
   const meu = ++emailsModalGeracao;
@@ -117,7 +203,7 @@ export async function abrirModalEmails(tipo, valor, rotulo, ficha = null) {
     if (!ok) throw new Error(resp?.erro ?? resp?.detail ?? 'falha ao carregar');
     emailsModalTodos = resp.itens ?? [];
     emailsModalPagina = 1;
-    renderEmailsModal();
+    if (emailsModalModo === 'conversa') renderConversa(); else renderEmailsModal();
   } catch (err) {
     if (meu !== emailsModalGeracao) return;
     celulaCarregandoEmails(`Não consegui carregar: ${err.message}`);
