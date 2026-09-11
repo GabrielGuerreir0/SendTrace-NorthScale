@@ -54,8 +54,25 @@ function ordenarBuckets(linhas) {
   return ORDEM_BUCKETS.map((bucket) => ({ bucket, total: porBucket.get(bucket) ?? 0 }));
 }
 
-async function coletarMetricas(dias) {
+/**
+ * Padrões ILIKE pra recortar `email_ia.emails.produto_mencionado` (texto
+ * livre extraído pela IA) pelos produtos de uma linha/família — não dá pra
+ * comparar igualdade exata como `DO_PRODUTO` faz com o checkout (ver
+ * api/sql.js), a IA pode escrever "NeuroMind Pro", "NeuroMindPro" etc.
+ * Usa o slug (não o nome) como base, removendo o sufixo "pro" e dígitos
+ * finais — "neuromindpro" → "neuromind", "mindhoney60pro" → "mindhoney".
+ */
+async function padroesDaFamilia(linha) {
+  if (!linha) return null;
+  const { rows } = await query('SELECT slug FROM produtos WHERE linha = $1', [linha]);
+  if (rows.length === 0) return null;
+  return rows.map((r) => `%${r.slug.toLowerCase().replace(/pro$/, '').replace(/\d+$/, '')}%`);
+}
+
+async function coletarMetricas(dias, linha) {
   const p = [dias];
+  const padroesFamilia = await padroesDaFamilia(linha);
+  const pFamilia = [dias, padroesFamilia];
 
   const [
     contatosSerie, motivosChat, jornada,
@@ -141,21 +158,24 @@ async function coletarMetricas(dias) {
       FROM email_ia.emails
       WHERE data_email >= now() - ($1::int || ' days')::interval
         AND plataforma_origem IS NULL AND categoria IS NOT NULL
-      GROUP BY categoria ORDER BY total DESC LIMIT 15`, p),
+        AND ($2::text[] IS NULL OR produto_mencionado ILIKE ANY($2::text[]))
+      GROUP BY categoria ORDER BY total DESC LIMIT 15`, pFamilia),
 
     query(`
       SELECT area_problema, count(*)::int AS total
       FROM email_ia.emails
       WHERE data_email >= now() - ($1::int || ' days')::interval
         AND plataforma_origem IS NULL AND area_problema IS NOT NULL
-      GROUP BY area_problema ORDER BY total DESC LIMIT 10`, p),
+        AND ($2::text[] IS NULL OR produto_mencionado ILIKE ANY($2::text[]))
+      GROUP BY area_problema ORDER BY total DESC LIMIT 10`, pFamilia),
 
     query(`
       SELECT motivo_devolucao, count(*)::int AS total
       FROM email_ia.emails
       WHERE data_email >= now() - ($1::int || ' days')::interval
         AND plataforma_origem IS NULL AND motivo_devolucao IS NOT NULL
-      GROUP BY motivo_devolucao ORDER BY total DESC`, p),
+        AND ($2::text[] IS NULL OR produto_mencionado ILIKE ANY($2::text[]))
+      GROUP BY motivo_devolucao ORDER BY total DESC`, pFamilia),
 
     // Sem filtro de período: email_ia.anexos não tem data própria, e juntar
     // com emails.data_email só para isto não valia a complexidade agora.
@@ -175,6 +195,7 @@ async function coletarMetricas(dias) {
 
   return {
     periodo_dias: dias,
+    linha: linha ?? null,
     chat: {
       contatos_serie: contatosSerie.rows,
       contatos_total: contatosSerie.rows.reduce((a, r) => a + r.total, 0),
@@ -579,10 +600,17 @@ export default async function rotasRelatorio(app) {
       security: [{ bearerAuth: [] }],
       querystring: {
         type: 'object',
-        properties: { dias: { type: 'integer', minimum: 1, maximum: 365, default: 30 } },
+        properties: {
+          dias: { type: 'integer', minimum: 1, maximum: 365, default: 30 },
+          linha: {
+            type: 'string',
+            description: 'Recorta os "motivos de contato" de e-mail pelos produtos desta '
+              + 'linha (ex: "4" = Família 1 Neuro/Cognitivo). Vazio = toda a operação.',
+          },
+        },
       },
     },
-  }, async (req) => coletarMetricas(diasDaQuery(req)));
+  }, async (req) => coletarMetricas(diasDaQuery(req), req.query.linha || null));
 
   app.get('/api/relatorio/pdf/', {
     onRequest: [app.exigirSessao],
@@ -595,12 +623,20 @@ export default async function rotasRelatorio(app) {
       security: [{ bearerAuth: [] }],
       querystring: {
         type: 'object',
-        properties: { dias: { type: 'integer', minimum: 1, maximum: 365, default: 30 } },
+        properties: {
+          dias: { type: 'integer', minimum: 1, maximum: 365, default: 30 },
+          linha: {
+            type: 'string',
+            description: 'Recorta os "motivos de contato" de e-mail pelos produtos desta '
+              + 'linha (ex: "4" = Família 1 Neuro/Cognitivo). Vazio = toda a operação — '
+              + 'é o que o cron do relatório semanal usa, sem passar este parâmetro.',
+          },
+        },
       },
     },
   }, async (req, resposta) => {
     const dias = diasDaQuery(req);
-    const metricas = await coletarMetricas(dias);
+    const metricas = await coletarMetricas(dias, req.query.linha || null);
     const buffer = await montarPdf(metricas);
 
     if (!req.usuario.servico && req.usuario.email) {
