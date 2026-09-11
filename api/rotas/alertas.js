@@ -40,7 +40,8 @@ const CONSULTAS = {
   email_urgente: `
     SELECT e.id::text AS chave,
            e.assunto AS titulo,
-           coalesce(e.remetente_nome, e.remetente_email) AS subtitulo
+           coalesce(e.remetente_nome, e.remetente_email) AS subtitulo,
+           e.resumo AS resumo
     FROM email_ia.emails e
     WHERE e.pede_resposta = true AND e.urgencia = 'alta'
       AND e.resposta_enviada_em IS NULL AND e.plataforma_origem IS NULL
@@ -61,30 +62,113 @@ const CONSULTAS = {
   // As duas fontes de dispersão de venda (régua principal + upsell/downsell,
   // ver schema-email-ia.sql 11/09) precisam de prefixo na chave: os `id`
   // são seriais independentes e colidiriam sem isso.
+  //
+  // `motivo_devolucao`/`resumo` (11/09) vêm de um LEFT JOIN LATERAL contra
+  // `email_ia.emails` do MESMO lead (por e-mail, case-insensitive) — essas
+  // tabelas não têm FK entre si (sistemas diferentes: régua pós-venda vs.
+  // caixa de entrada classificada pela IA), então o vínculo é por valor,
+  // pegando o e-mail classificado como devolução/troca/reclamação mais
+  // PRÓXIMO NO TEMPO do carimbo de chargeback/reembolso. Pode não existir
+  // (chargeback direto na operadora do cartão, sem o lead escrever nada) —
+  // nesse caso os dois campos vêm NULL e o alerta sai só com título/subtítulo,
+  // igual antes.
   chargeback: `
-    SELECT 'dpv:' || id::text AS chave, ('Chargeback — ' || produto) AS titulo, (email || ' · ' || plataforma) AS subtitulo
-    FROM disparos_pos_venda
-    WHERE chargeback_em IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM painel_alertas_enviados x WHERE x.tipo = 'chargeback' AND x.chave = 'dpv:' || disparos_pos_venda.id::text)
-    UNION ALL
-    SELECT 'cud:' || id::text AS chave, ('Chargeback (upsell/downsell) — ' || produto) AS titulo, (email || ' · ' || plataforma) AS subtitulo
-    FROM compras_upsell_downsell
-    WHERE chargeback_em IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM painel_alertas_enviados x WHERE x.tipo = 'chargeback' AND x.chave = 'cud:' || compras_upsell_downsell.id::text)
+    SELECT d.chave, d.titulo, d.subtitulo, m.motivo_devolucao, m.resumo
+    FROM (
+      SELECT 'dpv:' || id::text AS chave, ('Chargeback — ' || produto) AS titulo,
+             (email || ' · ' || plataforma) AS subtitulo, email, chargeback_em AS quando
+      FROM disparos_pos_venda
+      WHERE chargeback_em IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM painel_alertas_enviados x WHERE x.tipo = 'chargeback' AND x.chave = 'dpv:' || disparos_pos_venda.id::text)
+      UNION ALL
+      SELECT 'cud:' || id::text AS chave, ('Chargeback (upsell/downsell) — ' || produto) AS titulo,
+             (email || ' · ' || plataforma) AS subtitulo, email, chargeback_em AS quando
+      FROM compras_upsell_downsell
+      WHERE chargeback_em IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM painel_alertas_enviados x WHERE x.tipo = 'chargeback' AND x.chave = 'cud:' || compras_upsell_downsell.id::text)
+    ) d
+    LEFT JOIN LATERAL (
+      SELECT e.motivo_devolucao, e.resumo
+      FROM email_ia.emails e
+      WHERE lower(e.remetente_email) = lower(d.email)
+        AND (e.motivo_devolucao IS NOT NULL OR e.categoria IN ('devolucao', 'troca', 'reclamacao'))
+      ORDER BY abs(extract(epoch FROM (e.data_email - d.quando)))
+      LIMIT 1
+    ) m ON true
+    ORDER BY d.quando
     LIMIT 100`,
 
   reembolso: `
-    SELECT 'dpv:' || id::text AS chave, ('Reembolso — ' || produto) AS titulo, (email || ' · ' || plataforma) AS subtitulo
-    FROM disparos_pos_venda
-    WHERE reembolsado_em IS NOT NULL AND chargeback_em IS NULL
-      AND NOT EXISTS (SELECT 1 FROM painel_alertas_enviados x WHERE x.tipo = 'reembolso' AND x.chave = 'dpv:' || disparos_pos_venda.id::text)
-    UNION ALL
-    SELECT 'cud:' || id::text AS chave, ('Reembolso (upsell/downsell) — ' || produto) AS titulo, (email || ' · ' || plataforma) AS subtitulo
-    FROM compras_upsell_downsell
-    WHERE reembolsado_em IS NOT NULL AND chargeback_em IS NULL
-      AND NOT EXISTS (SELECT 1 FROM painel_alertas_enviados x WHERE x.tipo = 'reembolso' AND x.chave = 'cud:' || compras_upsell_downsell.id::text)
+    SELECT d.chave, d.titulo, d.subtitulo, m.motivo_devolucao, m.resumo
+    FROM (
+      SELECT 'dpv:' || id::text AS chave, ('Reembolso — ' || produto) AS titulo,
+             (email || ' · ' || plataforma) AS subtitulo, email, reembolsado_em AS quando
+      FROM disparos_pos_venda
+      WHERE reembolsado_em IS NOT NULL AND chargeback_em IS NULL
+        AND NOT EXISTS (SELECT 1 FROM painel_alertas_enviados x WHERE x.tipo = 'reembolso' AND x.chave = 'dpv:' || disparos_pos_venda.id::text)
+      UNION ALL
+      SELECT 'cud:' || id::text AS chave, ('Reembolso (upsell/downsell) — ' || produto) AS titulo,
+             (email || ' · ' || plataforma) AS subtitulo, email, reembolsado_em AS quando
+      FROM compras_upsell_downsell
+      WHERE reembolsado_em IS NOT NULL AND chargeback_em IS NULL
+        AND NOT EXISTS (SELECT 1 FROM painel_alertas_enviados x WHERE x.tipo = 'reembolso' AND x.chave = 'cud:' || compras_upsell_downsell.id::text)
+    ) d
+    LEFT JOIN LATERAL (
+      SELECT e.motivo_devolucao, e.resumo
+      FROM email_ia.emails e
+      WHERE lower(e.remetente_email) = lower(d.email)
+        AND (e.motivo_devolucao IS NOT NULL OR e.categoria IN ('devolucao', 'troca', 'reclamacao'))
+      ORDER BY abs(extract(epoch FROM (e.data_email - d.quando)))
+      LIMIT 1
+    ) m ON true
+    ORDER BY d.quando
     LIMIT 100`,
 };
+
+/** Mesma lista de `schema-email-ia.sql` (31/08) — atual + legado, pra rotular no e-mail. */
+const LABEL_MOTIVO_DEVOLUCAO = {
+  comprou_por_engano: 'Comprou por engano',
+  queria_outro_produto: 'Queria outro produto',
+  quantidade_errada: 'Quantidade errada',
+  sem_resultado_esperado: 'Sem resultado esperado',
+  capsulas_com_problema: 'Cápsulas com problema',
+  embalagem_com_problema: 'Embalagem com problema',
+  atraso_na_entrega: 'Atraso na entrega',
+  motivo_saude: 'Motivo de saúde',
+  propaganda_enganosa: 'Propaganda enganosa',
+  compra_sem_permissao: 'Compra sem permissão',
+  acha_que_e_golpe: 'Achou que era golpe',
+  reacao_alergica: 'Reação alérgica',
+  outro: 'Outro',
+  // legado (e-mails classificados antes de 31/08/2026)
+  produto_com_defeito: 'Produto com defeito',
+  produto_errado: 'Produto errado',
+  dano_no_transporte: 'Dano no transporte',
+  arrependimento: 'Arrependimento',
+  tamanho_ou_medida_errada: 'Tamanho/medida errada',
+  diferente_do_anuncio: 'Diferente do anúncio',
+  compra_duplicada: 'Compra duplicada',
+};
+
+const truncar = (s, max = 160) => (s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s);
+
+/**
+ * Linha extra do e-mail de alerta com o "porquê", quando dá pra saber:
+ * chargeback/reembolso usam o motivo classificado + resumo do e-mail do lead
+ * mais próximo (ver JOIN LATERAL acima); email_urgente usa o resumo da IA.
+ * Os outros tipos (foto_defeito, caso_escalado) já carregam o essencial no
+ * próprio subtítulo, sem precisar de mais uma linha.
+ */
+function montarDetalhe(tipo, item) {
+  if (tipo === 'chargeback' || tipo === 'reembolso') {
+    const partes = [];
+    if (item.motivo_devolucao) partes.push(`Motivo: ${LABEL_MOTIVO_DEVOLUCAO[item.motivo_devolucao] ?? item.motivo_devolucao}`);
+    if (item.resumo) partes.push(truncar(item.resumo));
+    return partes.length > 0 ? partes.join(' — ') : undefined;
+  }
+  if (tipo === 'email_urgente' && item.resumo) return truncar(item.resumo);
+  return undefined;
+}
 
 /**
  * Roda a checagem inteira: busca o que é novo por tipo, manda um e-mail POR
@@ -120,7 +204,11 @@ export async function verificarEEnviarAlertas() {
       const itens = novosPorTipo[p.tipo];
       if (!itens || itens.length === 0) continue;
       if (!porUsuario.has(p.id)) porUsuario.set(p.id, { email: p.email, porTipo: {} });
-      porUsuario.get(p.id).porTipo[p.tipo] = itens.map(({ titulo, subtitulo }) => ({ titulo, subtitulo }));
+      porUsuario.get(p.id).porTipo[p.tipo] = itens.map((item) => ({
+        titulo: item.titulo,
+        subtitulo: item.subtitulo,
+        detalhe: montarDetalhe(p.tipo, item),
+      }));
     }
 
     for (const { email, porTipo } of porUsuario.values()) {

@@ -54,6 +54,7 @@ function secaoHtml(tipo, itens) {
       <td style="padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:14px">
         ${esc(it.titulo)}
         ${it.subtitulo ? `<br><span style="color:#6b7280;font-size:12px">${esc(it.subtitulo)}</span>` : ''}
+        ${it.detalhe ? `<br><span style="color:#9099ab;font-size:12px;font-style:italic">${esc(it.detalhe)}</span>` : ''}
       </td>
     </tr>`).join('');
 
@@ -98,7 +99,7 @@ function corpoAlertas({ base, porTipo }) {
     '',
     ...Object.entries(porTipo).filter(([, itens]) => itens.length > 0).flatMap(([tipo, itens]) => [
       `${ALERTA_INFO[tipo].titulo} (${itens.length}):`,
-      ...itens.map((it) => `  - ${it.titulo}${it.subtitulo ? ` (${it.subtitulo})` : ''}`),
+      ...itens.map((it) => `  - ${it.titulo}${it.subtitulo ? ` (${it.subtitulo})` : ''}${it.detalhe ? `\n    ${it.detalhe}` : ''}`),
       '',
     ]),
     `Abrir o painel: ${base}`,
