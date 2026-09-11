@@ -87,11 +87,12 @@
       <span aria-hidden="true" id="ico-tema">☾</span><span class="sr">Alternar tema claro/escuro</span>
     </button>
 
-    <div class="usuario-chip" id="usuario-chip" hidden>
+    <button class="usuario-chip" id="usuario-chip" type="button" title="Meu perfil" hidden>
       <span class="usuario-inicial" id="usuario-inicial" aria-hidden="true">·</span>
       <span class="usuario-nome" id="usuario-nome">—</span>
       <span class="usuario-selo" id="usuario-selo" hidden>admin</span>
-    </div>
+      <span class="usuario-chip-seta" aria-hidden="true">⌄</span>
+    </button>
     <button class="btn" id="btn-usuarios" hidden>Usuários</button>
     <button class="btn" id="btn-produtos" hidden>Produtos IA</button>
     <button class="btn" id="btn-tempos" hidden>Tempos</button>
@@ -417,6 +418,43 @@
   </div>
 </dialog>
 
+<!-- ── meu perfil: dados da conta + alertas por e-mail (qualquer usuário) ── -->
+<dialog class="janela" id="janela-perfil" aria-labelledby="janela-perfil-tit">
+  <header class="janela-cabeca">
+    <div>
+      <h2 id="janela-perfil-tit">Meu perfil</h2>
+      <p class="cartao-sub">Seus dados e o que você quer receber por e-mail. Nada aqui afeta os outros usuários.</p>
+    </div>
+    <button class="btn btn-icone" id="fechar-perfil" title="Fechar">
+      <span aria-hidden="true">✕</span><span class="sr">Fechar</span>
+    </button>
+  </header>
+
+  <div class="janela-corpo">
+    <p class="janela-msg" id="perfil-msg" hidden></p>
+
+    <dl class="perfil-dados">
+      <div><dt>Nome</dt><dd id="perfil-nome">—</dd></div>
+      <div><dt>E-mail</dt><dd id="perfil-email">—</dd></div>
+      <div><dt>Permissão</dt><dd id="perfil-permissao">—</dd></div>
+      <div><dt>Conta criada em</dt><dd id="perfil-criado">—</dd></div>
+    </dl>
+
+    <h3 class="perfil-secao-tit">Alertas por e-mail</h3>
+    <p class="cartao-sub">Verificado a cada 5 minutos — se houver algo novo, você recebe um e-mail
+      só com o que se acumulou desde a última checagem. Nada marcado abaixo = nenhum alerta.</p>
+    <p class="janela-msg" id="perfil-sem-smtp" data-tom="aviso" hidden>
+      O SMTP do painel não está configurado — os alertas ficam salvos, mas nenhum e-mail sai
+      enquanto isso não for resolvido pelo administrador do servidor.
+    </p>
+    <ul class="perfil-alertas" id="lista-perfil-alertas"></ul>
+
+    <div class="perfil-acoes">
+      <button class="btn btn-forte" id="perfil-salvar" type="button">Salvar alertas</button>
+    </div>
+  </div>
+</dialog>
+
 <!-- ── tempo entre etapas da régua (só administradores) ── -->
 <dialog class="janela" id="janela-tempos" aria-labelledby="janela-tempos-tit">
   <header class="janela-cabeca">
@@ -638,6 +676,15 @@
         </div>
       </header>
       <div id="vg-plataformas"><p class="vazio-suave">carregando…</p></div>
+    </section>
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Reembolso vs Chargeback</h2>
+          <p class="cartao-sub">Evento de pagamento reportado pela plataforma, no período (desde 09/09/2026).</p>
+        </div>
+      </header>
+      <div id="vg-tipo-reembolso"><p class="vazio-suave">carregando…</p></div>
     </section>
   </div>
 
@@ -1888,6 +1935,16 @@
       <div id="rel-motivos-reembolso"><p class="vazio-suave">carregando…</p></div>
     </section>
   </div>
+
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Reembolso vs Chargeback</h2>
+        <p class="cartao-sub">Evento de pagamento reportado pela plataforma, no período (desde 09/09/2026).</p>
+      </div>
+    </header>
+    <div id="rel-tipo-reembolso"><p class="vazio-suave">carregando…</p></div>
+  </section>
 
   <section class="cartao">
     <header class="cartao-cabeca">

@@ -821,6 +821,25 @@ async function atender(req, res, url, sessao) {
   const respostaUsuarios = await rotasUsuarios(req, res, url, sessao);
   if (respostaUsuarios !== null) return respostaUsuarios;
 
+  /* ── meu perfil: dados completos da PRÓPRIA conta (tela "Meu Perfil") ──
+     `sessao.usuario` (de /api/auth/eu) só tem o que o JWT carrega — sem
+     `criado_em`. Esta rota busca a linha completa direto na API. */
+  if (url.pathname === '/api/perfil' && req.method === 'GET') {
+    return json(res, 200, await obterApi('/api/usuarios/eu/'));
+  }
+
+  /* ── minhas preferências de alerta por e-mail (tela "Meu Perfil") ──
+     Proxy fino, sem lógica própria do painel — a API já valida os 5 tipos
+     e recorta pelo dono do token (ninguém edita a preferência de outro
+     usuário, nem precisa: não existe rota pra isso). */
+  if (url.pathname === '/api/alertas/preferencias' && req.method === 'GET') {
+    return json(res, 200, await obterApi('/api/alertas/preferencias/'));
+  }
+  if (url.pathname === '/api/alertas/preferencias' && req.method === 'PATCH') {
+    const corpo = await lerJson(req);
+    return json(res, 200, await remendarApi('/api/alertas/preferencias/', corpo));
+  }
+
   /* ── readmes de produto: o conhecimento da IA de suporte ──
      O texto mora no banco (produto_readmes, via API). Quem escreve aqui está
      literalmente ensinando o chatbot sobre o produto: ele baixa os readmes

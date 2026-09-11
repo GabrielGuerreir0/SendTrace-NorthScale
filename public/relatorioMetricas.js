@@ -12,6 +12,7 @@ import { n, dia } from './format.js';
 import { desenharColunas, desenharPizza } from './charts.js';
 
 const pct = (v) => (v === null || v === undefined ? '—' : `${Math.round(v * 1000) / 10}%`);
+const ROTULO_TIPO_REEMBOLSO = { reembolso: 'Reembolso', chargeback: 'Chargeback' };
 
 /**
  * Reduz uma lista { campo, total } pra no máximo 8 fatias — a paleta
@@ -33,6 +34,8 @@ let carregando = false;
 
 function renderKpis(m) {
   const totalReembolsoEmail = m.email.motivos_reembolso.reduce((a, r) => a + r.total, 0);
+  const totalChargeback = m.reembolsos_por_dia.tipos.find((t) => t.tipo === 'chargeback')?.total ?? 0;
+  const totalReembolsoTipo = m.reembolsos_por_dia.tipos.reduce((a, r) => a + r.total, 0);
   $('rel-kpis').replaceChildren(
     kpiCard({
       icone: '●', tom: 'neutro', rotulo: 'Contatos no chat',
@@ -46,6 +49,13 @@ function renderKpis(m) {
     kpiCard({
       icone: '↩', tom: 'ruim', rotulo: 'E-mails com problema de pagamento',
       valor: n(totalReembolsoEmail), nota: `no período, excluindo "sem problema"`,
+    }),
+    kpiCard({
+      icone: '⇄', tom: totalChargeback > 0 ? 'ruim' : 'medio', rotulo: 'Chargebacks (pagamento)',
+      valor: n(totalChargeback),
+      nota: totalReembolsoTipo > 0
+        ? `${pct(totalChargeback / totalReembolsoTipo)} dos ${n(totalReembolsoTipo)} eventos de pagamento no período`
+        : 'nenhum evento de pagamento no período',
     }),
     kpiCard({
       icone: '⚠', tom: 'medio', rotulo: 'Fotos com defeito visível',
@@ -116,6 +126,9 @@ async function carregar() {
   barraHorizontal($('rel-jornada'), dados.chat.jornada, 'nome');
   renderGraficoBuckets($('rel-graf-reembolso-email'), dados.reembolsos_por_dia.email, 'e-mails');
   renderGraficoBuckets($('rel-graf-reembolso-chat'), dados.reembolsos_por_dia.chat, 'conversas');
+  barraHorizontal($('rel-tipo-reembolso'), dados.reembolsos_por_dia.tipos, 'tipo', {
+    rotular: (v) => ROTULO_TIPO_REEMBOLSO[v] ?? v,
+  });
   barraHorizontal($('rel-motivos-email'), dados.email.motivos_categoria, 'categoria', { rotular: rotularCategoria });
   desenharPizza(
     $('rel-motivos-reembolso'),

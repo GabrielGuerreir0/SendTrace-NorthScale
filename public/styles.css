@@ -187,6 +187,10 @@ code {
   background: color-mix(in srgb, var(--plano) 86%, transparent);
   backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--borda);
+  /* Sombra bem sutil pra separar do conteúdo que rola por baixo — o blur
+     sozinho já ajuda, mas sem profundidade nenhuma o header "flutua" menos
+     do que devia numa barra fixa. */
+  box-shadow: 0 6px 16px -12px rgba(0, 0, 0, .28);
 }
 
 .marca { display: flex; align-items: center; gap: 12px; }
@@ -1261,18 +1265,26 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
 
 /* ─────────────────────  identidade e gestão de acesso  ───────────────── */
 
+/* Botão de verdade desde 11/09 (abre "Meu Perfil") — reset dos padrões de
+   <button> pra continuar parecendo o mesmo chip de sempre, só que clicável. */
 .usuario-chip {
   display: flex; align-items: center; gap: 8px;
   padding: 5px 10px 5px 6px; border: 1px solid var(--borda); border-radius: 999px;
   background: var(--superficie);
+  font: inherit; cursor: pointer;
+  transition: background-color .12s ease, border-color .12s ease, box-shadow .12s ease;
   /* Empurra o cluster de conta/admin (chip, Usuários, Produtos IA, Tempos,
      Sair) pro canto direito da barra — separa visualmente de filtros e
      controles de atualização, que ficam à esquerda. */
   margin-left: auto;
 }
+.usuario-chip:hover { background: var(--plano); }
+.usuario-chip:focus-visible { outline: 2px solid var(--st-em-dia); outline-offset: 2px; }
+.usuario-chip:active { transform: translateY(1px); }
 .usuario-inicial {
   display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%;
   background: var(--st-em-dia); color: #fff; font-size: 11px; font-weight: 640;
+  flex-shrink: 0;
 }
 .usuario-nome { font-size: 12px; font-weight: 560; max-width: 150px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1281,6 +1293,29 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
   padding: 2px 6px; border-radius: 999px; color: var(--tinta-2);
   background: var(--plano); border: 1px solid var(--borda);
 }
+.usuario-chip-seta {
+  font-size: 10px; color: var(--tinta-fraca); margin-left: -2px;
+}
+
+/* ── Meu Perfil ── */
+.perfil-dados {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px 20px; margin: 4px 0 22px;
+}
+.perfil-dados > div { display: grid; gap: 3px; }
+.perfil-dados dt { font-size: 11px; color: var(--tinta-fraca); text-transform: uppercase; letter-spacing: .04em; }
+.perfil-dados dd { margin: 0; font-size: 14px; font-weight: 560; }
+.perfil-secao-tit { margin: 4px 0 2px; font-size: 15px; }
+.perfil-alertas { list-style: none; display: grid; gap: 4px; margin: 14px 0 0; padding: 0; }
+.perfil-alerta-item label {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 8px;
+  border-radius: 8px; cursor: pointer;
+}
+.perfil-alerta-item label:hover { background: var(--plano); }
+.perfil-alerta-item input[type="checkbox"] { margin-top: 3px; flex-shrink: 0; }
+.perfil-alerta-tit { display: block; font-size: 13.5px; font-weight: 600; }
+.perfil-alerta-desc { display: block; font-size: 12px; color: var(--tinta-fraca); margin-top: 1px; }
+.perfil-acoes { margin-top: 18px; display: flex; justify-content: flex-end; }
 
 /* Painel de usuários. <dialog> nativo: foco preso, Esc fecha e camada por
    cima do resto sem precisar gerenciar z-index à mão. */
@@ -1364,6 +1399,10 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
   background: color-mix(in srgb, var(--st-finalizado) 14%, transparent);
   border-left: 3px solid var(--st-finalizado);
 }
+.janela-msg[data-tom="aviso"] {
+  background: color-mix(in srgb, var(--st-atrasado) 16%, transparent);
+  border-left: 3px solid var(--st-atrasado);
+}
 .senha-provisoria {
   display: block; margin-top: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px; font-weight: 600; letter-spacing: .04em; user-select: all;
@@ -1443,15 +1482,18 @@ body[data-menu="fechado"] .menu { width: var(--menu-larg-mini); }
   border: 1px solid transparent; border-radius: 10px;
   font: inherit; font-size: 13px; font-weight: 560;
   text-align: left; white-space: nowrap;
+  transition: background-color .14s ease, color .14s ease, border-color .14s ease;
 }
-.menu-item svg, .menu-alternar svg { width: 19px; height: 19px; flex: none; }
+.menu-item svg, .menu-alternar svg { width: 19px; height: 19px; flex: none; transition: color .14s ease; }
 .menu-item:hover, .menu-alternar:hover { color: var(--tinta); background: var(--superficie-2); }
+.menu-item:focus-visible, .menu-alternar:focus-visible { outline: 2px solid var(--st-em-dia); outline-offset: -2px; }
 
 /* A seção ativa: fundo marcado + filete na borda — não é só cor no ícone. */
 .menu-item[aria-selected="true"] {
   color: var(--tinta);
   background: color-mix(in srgb, var(--st-em-dia) 10%, var(--superficie));
   border-color: color-mix(in srgb, var(--st-em-dia) 45%, var(--borda));
+  box-shadow: 0 1px 3px -1px color-mix(in srgb, var(--st-em-dia) 35%, transparent);
 }
 .menu-item[aria-selected="true"] svg { color: var(--st-em-dia); }
 

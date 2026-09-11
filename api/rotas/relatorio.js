@@ -77,7 +77,7 @@ async function coletarMetricas(dias, linha) {
   const [
     contatosSerie, motivosChat, jornada,
     aberturaRegua, aberturaResposta,
-    reembolsoEmail, reembolsoChat,
+    reembolsoEmail, reembolsoChat, reembolsoTipo,
     motivosCategoria, motivosArea, motivosReembolso,
     fotosPorTipo, fotosResumo,
   ] = await Promise.all([
@@ -153,6 +153,20 @@ async function coletarMetricas(dias, linha) {
           AND a.criado_em >= now() - ($1::int || ' days')::interval
       ) t WHERE bucket IS NOT NULL GROUP BY bucket`, p),
 
+    // Reembolso puro vs chargeback, no período — evento de PAGAMENTO
+    // reportado pela plataforma (não a razão que o cliente alega por
+    // e-mail/chat, que são os outros dois `reembolso*` acima).
+    // `chargeback_em` só existe a partir de 11/09/2026.
+    query(`
+      SELECT 'chargeback' AS tipo, count(*)::int AS total
+      FROM disparos_pos_venda
+      WHERE chargeback_em >= now() - ($1::int || ' days')::interval
+      UNION ALL
+      SELECT 'reembolso' AS tipo, count(*)::int AS total
+      FROM disparos_pos_venda
+      WHERE reembolsado_em >= now() - ($1::int || ' days')::interval AND chargeback_em IS NULL
+      ORDER BY 2 DESC`, p),
+
     query(`
       SELECT categoria, count(*)::int AS total
       FROM email_ia.emails
@@ -215,6 +229,7 @@ async function coletarMetricas(dias, linha) {
     reembolsos_por_dia: {
       email: ordenarBuckets(reembolsoEmail.rows),
       chat: ordenarBuckets(reembolsoChat.rows),
+      tipos: reembolsoTipo.rows,
     },
     email: {
       motivos_categoria: motivosCategoria.rows,
@@ -258,6 +273,7 @@ export const LABEL_CATEGORIA = {
   duvida_pedido: 'Dúvida sobre pedido', orcamento: 'Orçamento', elogio: 'Elogio',
   troca: 'Troca', garantia: 'Garantia', cancelamento: 'Cancelamento', outro: 'Outro',
 };
+const ROTULO_TIPO_REEMBOLSO = { reembolso: 'Reembolso', chargeback: 'Chargeback' };
 const LABEL_AREA_PROBLEMA = {
   entrega: 'Entrega', produto: 'Produto', codigo_rastreio: 'Código de rastreio',
   pagamento: 'Pagamento', atendimento: 'Atendimento', anuncio_informacao: 'Anúncio/informação', outro: 'Outro',
@@ -518,6 +534,12 @@ function montarPdf(m) {
   graficoColunas(doc, m.reembolsos_por_dia.email, { campoRotulo: 'bucket', cor: COR.AMBAR });
   subtitulo(doc, 'Pedidos no chat de suporte');
   graficoColunas(doc, m.reembolsos_por_dia.chat, { campoRotulo: 'bucket', cor: COR.AMBAR });
+
+  secaoTitulo(doc, 'Reembolso vs Chargeback', COR.VERMELHO);
+  subtitulo(doc, 'Evento de pagamento reportado pela plataforma (não a razão que o cliente alega)');
+  barrasHorizontais(doc, m.reembolsos_por_dia.tipos, {
+    campoRotulo: 'tipo', cor: COR.VERMELHO, rotular: (v) => rotular(ROTULO_TIPO_REEMBOLSO, v),
+  });
 
   secaoTitulo(doc, 'E-mail — motivos de contato', COR.AZUL);
   subtitulo(doc, 'Por categoria');

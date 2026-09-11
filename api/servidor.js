@@ -38,6 +38,7 @@ import rotasEmailIACentral from './rotas/emailIACentral.js';
 import rotasRelatorio from './rotas/relatorio.js';
 import rotasPixel from './rotas/pixel.js';
 import rotasVisaoGeral from './rotas/visaoGeral.js';
+import rotasAlertas, { verificarEEnviarAlertas } from './rotas/alertas.js';
 
 const PORTA = Number(process.env.API_PORT) || 4400;
 const HOST = process.env.API_HOST || '127.0.0.1';
@@ -342,6 +343,7 @@ await app.register(rotasEmailIACentral);
 await app.register(rotasRelatorio);
 await app.register(rotasPixel);
 await app.register(rotasVisaoGeral);
+await app.register(rotasAlertas);
 
 /* ═══════════════════════════════  subida  ══════════════════════════════ */
 
@@ -356,8 +358,22 @@ try {
   process.exit(1);
 }
 
+/*
+ * Checagem de alertas — a cada 5 min (decisão do usuário, 11/09/2026).
+ * `verificarEEnviarAlertas` nunca lança (try/catch interno), então um erro
+ * aqui vira só um log, nunca derruba a API. Roda uma vez já na subida
+ * (`.catch` redundante por segurança) pra não esperar o primeiro intervalo
+ * inteiro depois de um deploy.
+ */
+const ALERTAS_INTERVALO_MS = 5 * 60 * 1000;
+verificarEEnviarAlertas().catch((err) => app.log.error(err, 'falha na checagem inicial de alertas'));
+const intervaloAlertas = setInterval(() => {
+  verificarEEnviarAlertas().catch((err) => app.log.error(err, 'falha na checagem periódica de alertas'));
+}, ALERTAS_INTERVALO_MS);
+
 for (const sinal of ['SIGINT', 'SIGTERM']) {
   process.on(sinal, async () => {
+    clearInterval(intervaloAlertas);
     await app.close();
     await pool.end();
     process.exit(0);

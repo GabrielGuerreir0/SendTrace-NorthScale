@@ -35,7 +35,7 @@ async function coletarVisaoGeral(dias) {
     chatResolucao, ticketsResolucao,
     areaProblema, sentimentoBase,
     resolucaoPorArea, volumeDiaSemana,
-    motivosReembolso, clientesPorPlataforma,
+    motivosReembolso, clientesPorPlataforma, reembolsoTipoPeriodo,
     produtosProblema,
     aberturaRegua, ondeGeraContato,
     reincidentes, sentimentoNegativoPeriodo,
@@ -54,10 +54,16 @@ async function coletarVisaoGeral(dias) {
     // `reembolsado_em` é o FATO independente de refund/chargeback (ver
     // schema-email-ia.sql, achado do caso caroleguym@gmail.com em 02/09) —
     // a MESMA coluna que já alimenta o insight de maior severidade da régua.
+    // `chargeback_em` (11/09) é um recorte A MAIS de `reembolsado_em`: só
+    // vem preenchida quando o evento foi especificamente chargeback, então
+    // "reembolso puro" é `reembolsado_em IS NOT NULL AND chargeback_em IS NULL`.
     query(`
       SELECT count(*) FILTER (WHERE reembolsado_em >= now() - interval '24 hours')::int AS atual,
              count(*) FILTER (WHERE reembolsado_em <  now() - interval '24 hours'
-                                AND reembolsado_em >= now() - interval '48 hours')::int  AS anterior
+                                AND reembolsado_em >= now() - interval '48 hours')::int  AS anterior,
+             count(*) FILTER (WHERE chargeback_em >= now() - interval '24 hours')::int AS chargeback_atual,
+             count(*) FILTER (WHERE chargeback_em <  now() - interval '24 hours'
+                                AND chargeback_em >= now() - interval '48 hours')::int  AS chargeback_anterior
       FROM disparos_pos_venda`),
 
     query(`
@@ -166,6 +172,20 @@ async function coletarVisaoGeral(dias) {
     query(`
       SELECT plataforma_origem, count(*)::int AS total FROM email_ia.emails
       WHERE plataforma_origem IS NOT NULL GROUP BY 1 ORDER BY 2 DESC`),
+
+    // Reembolso puro vs chargeback, no período — o evento de PAGAMENTO
+    // reportado pela plataforma (não a razão que o cliente alega por e-mail,
+    // que é `motivosReembolso` acima). `chargeback_em` só veio a existir em
+    // 11/09/2026, então tudo antes disso só soma em "reembolso".
+    query(`
+      SELECT 'chargeback' AS tipo, count(*)::int AS total
+      FROM disparos_pos_venda
+      WHERE chargeback_em >= now() - make_interval(days => $1::int)
+      UNION ALL
+      SELECT 'reembolso' AS tipo, count(*)::int AS total
+      FROM disparos_pos_venda
+      WHERE reembolsado_em >= now() - make_interval(days => $1::int) AND chargeback_em IS NULL
+      ORDER BY 2 DESC`, p),
 
     // ── concentração por produto (top 5, acumulado) ──
     // resolve_produto() normaliza grafias equivalentes da mesma oferta —
@@ -278,6 +298,10 @@ async function coletarVisaoGeral(dias) {
     reembolso: {
       motivos: motivosReembolso.rows,
       plataformas: clientesPorPlataforma.rows,
+      // Tipo do evento de pagamento (reembolso puro vs chargeback) — não
+      // confundir com `motivos` acima, que é a razão que o CLIENTE alega
+      // por e-mail. Ver comentário da query em reembolsoTipoPeriodo.
+      tipos: reembolsoTipoPeriodo.rows,
     },
     produtos_problema: produtosProblema.rows,
     jornada: {

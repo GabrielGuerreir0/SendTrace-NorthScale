@@ -96,7 +96,8 @@ function renderCriticos(s) {
       icone: '↩', tom: c.reembolsos_24h.atual > c.reembolsos_24h.anterior ? 'ruim' : 'medio',
       rotulo: 'Reembolsos consumados (24h)',
       valor: n(c.reembolsos_24h.atual),
-      nota: `${n(c.reembolsos_24h.anterior)} no período anterior de 24h`,
+      nota: `${n(c.reembolsos_24h.anterior)} no período anterior de 24h`
+        + ` · ${n(c.reembolsos_24h.chargeback_atual)} foram chargeback`,
     }),
     kpiCard({
       icone: '●', tom: 'neutro', rotulo: `E-mails de plataforma (${s.periodo_dias}d)`,
@@ -328,9 +329,14 @@ function renderVolumeSemana(s) {
 
 /* ══════════════════════════  reembolso: por quê e onde  ════════════════════ */
 
+const ROTULO_TIPO_REEMBOLSO = { reembolso: 'Reembolso', chargeback: 'Chargeback' };
+
 function renderReembolso(s) {
   barraHorizontal($('vg-motivos-reembolso'), s.reembolso.motivos, 'motivo_devolucao', { rotular: rotularMotivo });
   barraHorizontal($('vg-plataformas'), s.reembolso.plataformas, 'plataforma_origem', { rotular: rotularPlataforma });
+  barraHorizontal($('vg-tipo-reembolso'), s.reembolso.tipos, 'tipo', {
+    rotular: (v) => ROTULO_TIPO_REEMBOLSO[v] ?? v,
+  });
 }
 
 function renderProdutos(s) {
