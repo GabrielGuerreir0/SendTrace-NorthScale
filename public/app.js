@@ -5,7 +5,7 @@ import { validarMensagem, medirSms } from './copy.js';
 import { desenharColunas, svgEl } from './charts.js';
 import { n, nc, relativo, dataHora, dia, hora, truncar, duracaoH } from './format.js';
 import { paraEsperaH, deEsperaH } from './tempo.js';
-import { renderFicha, setUsuarioAtual } from './emailComum.js';
+import { renderFicha, setUsuarioAtual, atualizarBotoesContextuais } from './emailComum.js';
 // A aba principal (Suporte IA) vive em módulo próprio; importá-lo também liga
 // os botões de aba — de TODAS as abas, régua e Central de E-mail IA incluídas
 // (ver suporte.js). Aqui só acoplamos o carregamento aos ciclos do painel.
@@ -1596,7 +1596,10 @@ function renderUsuario(u) {
   $('usuario-chip').hidden = false;
   $('btn-usuarios').hidden = !u.admin;
   $('btn-produtos').hidden = !u.admin;
-  $('btn-tempos').hidden = !u.admin;
+  // "Tempos" só faz sentido na aba Régua (edita a espera entre etapas dela) —
+  // além de admin, também depende de qual aba está aberta agora. Ver
+  // BOTOES_POR_ABA/atualizarBotoesContextuais em emailComum.js.
+  atualizarBotoesContextuais();
 }
 
 $('btn-sair').addEventListener('click', async () => {

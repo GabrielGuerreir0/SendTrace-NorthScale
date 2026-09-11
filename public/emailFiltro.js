@@ -10,6 +10,8 @@
  * o MESMO catálogo, então as opções são clonadas de lá em vez de recarregar
  * uma lista própria do servidor.
  */
+import { setAbaAtual, atualizarBotoesContextuais } from './emailComum.js';
+
 const $ = (id) => document.getElementById(id);
 
 /**
@@ -131,6 +133,8 @@ const ABAS_CENTRAL_EMAIL = new Set(['visaogeral', 'ticketsia', 'detalhesia', 'ch
  * (chat) e a tabela de suporte_escalado não tem produto/loja/período (kanban).
  */
 export function aoTrocarAba(nomeAba) {
+  setAbaAtual(nomeAba);
+  atualizarBotoesContextuais();
   const barraCE = $('ce-filtro-barra');
   if (barraCE) {
     const mostrar = ABAS_COM_FILTRO.has(nomeAba);

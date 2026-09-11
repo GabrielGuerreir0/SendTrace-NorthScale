@@ -16,6 +16,33 @@ let usuario = null;
 export const setUsuarioAtual = (u) => { usuario = u; };
 export const usuarioAtual = () => usuario;
 
+/* ══════════════════════════  botões de header por aba  ════════════════════
+   Alguns botões do header só fazem sentido numa aba específica (ex.: "Tempos"
+   edita a espera ENTRE ETAPAS DA RÉGUA — não tem nada pra fazer em Suporte
+   IA, Tickets, Chat etc.). `suporte.js` chama `setAbaAtual` a cada troca de
+   aba (em emailFiltro.js/aoTrocarAba) E `app.js` chama isto de novo quando o
+   login resolve — a visibilidade depende dos DOIS (usuário admin + aba
+   certa), então tem que recalcular nos dois eventos, não só num. */
+let aba = null;
+export const setAbaAtual = (a) => { aba = a; };
+export const abaAtual = () => aba;
+
+/** Botões contextuais: nome do id → em quais abas ele aparece (admin já é
+ * exigido à parte, em `renderUsuario`/app.js — aqui só decide o RECORTE por
+ * aba de quem já teria o botão liberado). */
+const BOTOES_POR_ABA = {
+  'btn-tempos': new Set(['regua']),
+};
+
+export function atualizarBotoesContextuais() {
+  const admin = Boolean(usuario?.admin);
+  for (const [id, abasPermitidas] of Object.entries(BOTOES_POR_ABA)) {
+    const el = $(id);
+    if (!el) continue;
+    el.hidden = !admin || !abasPermitidas.has(aba);
+  }
+}
+
 /* ══════════════════════════  requisição autenticada  ═════════════════════ */
 
 /**
