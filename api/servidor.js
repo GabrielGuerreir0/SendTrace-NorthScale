@@ -28,6 +28,7 @@ import { TODOS } from './esquemas.js';
 import { ErroHttp } from './comum.js';
 import rotasAcesso from './rotas/acesso.js';
 import rotasFila from './rotas/fila.js';
+import rotasUpsellDownsell from './rotas/upsellDownsell.js';
 import rotasRegua from './rotas/regua.js';
 import rotasMetricas from './rotas/metricas.js';
 import rotasProdutos from './rotas/produtos.js';
@@ -333,6 +334,7 @@ app.setNotFoundHandler((req, resposta) => {
 
 await app.register(rotasAcesso);
 await app.register(rotasFila);
+await app.register(rotasUpsellDownsell);
 await app.register(rotasRegua);
 await app.register(rotasMetricas);
 await app.register(rotasProdutos);

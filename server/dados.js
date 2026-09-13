@@ -59,6 +59,40 @@ export async function fila() {
 /** Descarta o cache — usado depois de uma escrita que muda o que a tela mostra. */
 export const esquecerFila = () => { cache = { em: 0, valor: null, promessa: null }; };
 
+/* ═══════════════════════  upsell/downsell, por e-mail  ══════════════════ */
+
+/**
+ * `compras_upsell_downsell` é pequena (não entra na régua, então não cresce
+ * como a fila principal) — cabe inteira na mesma janela de cache, já num Map
+ * por e-mail em minúsculas para casar com `disparos_pos_venda.email` sem se
+ * importar com caixa.
+ */
+let cacheUpsell = { em: 0, valor: null, promessa: null };
+
+async function upsellDownsellPorEmail() {
+  const agora = Date.now();
+  if (cacheUpsell.valor && agora - cacheUpsell.em < JANELA_MS) return cacheUpsell.valor;
+  if (cacheUpsell.promessa) return cacheUpsell.promessa;
+
+  cacheUpsell.promessa = listarTudo('/api/upsell-downsell/')
+    .then(({ itens }) => {
+      const porEmail = new Map();
+      for (const c of itens) {
+        if (!c.email) continue;
+        const chave = c.email.toLowerCase();
+        if (!porEmail.has(chave)) porEmail.set(chave, []);
+        porEmail.get(chave).push({ produto: c.produto, etapa_funil: c.etapa_funil, plataforma: c.plataforma });
+      }
+      cacheUpsell = { em: Date.now(), valor: porEmail, promessa: null };
+      return porEmail;
+    })
+    .catch((err) => {
+      cacheUpsell.promessa = null;
+      throw err;
+    });
+  return cacheUpsell.promessa;
+}
+
 /** O que o painel precisa saber sobre a origem dos números. */
 export async function fonteDados() {
   const { itens, total, truncado } = await fila();
@@ -1286,7 +1320,13 @@ export async function listarPedidos({
   etapa, estado, canal, problema, busca, limit, offset, ordem, linha = '1',
   produto = null, plataforma = null,
 }) {
-  const [{ itens }, msgs] = await Promise.all([fila(), canal ? mensagensDe(linha) : []]);
+  const [{ itens }, msgs, upsellMapa] = await Promise.all([
+    fila(),
+    canal ? mensagensDe(linha) : [],
+    // Uma falha aqui não pode derrubar a tabela inteira — é um selo a mais,
+    // não o dado principal da linha.
+    upsellDownsellPorEmail().catch(() => new Map()),
+  ]);
   const agora = Date.now();
   const alvo = busca ? String(busca).toLowerCase() : null;
 
@@ -1358,6 +1398,9 @@ export async function listarPedidos({
       // abre isto no duplo clique da linha.
       chat_resumo: d.chat_resumo ?? null,
       chat_resumo_em: d.chat_resumo_em ?? null,
+      // Upsell/downsell comprado pelo mesmo e-mail, fora da régua principal —
+      // null quando não há nenhum, nunca array vazio (mais fácil de checar no front).
+      upsell_downsell: (d.email && upsellMapa.get(d.email.toLowerCase())) || null,
     })),
     total: filtrados.length,
   };

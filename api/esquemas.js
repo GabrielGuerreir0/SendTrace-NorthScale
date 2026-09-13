@@ -65,6 +65,29 @@ export const DisparoEntrada = {
   required: ['transacao_id'],
 };
 
+export const CompraUpsellDownsell = {
+  $id: 'CompraUpsellDownsell',
+  type: 'object',
+  description: 'Um upsell/downsell comprado pelo mesmo lead/cliente, à parte da régua de '
+    + 'pós-venda (não dispara e-mail/SMS — só fica registrado). Gravado pelos 3 fluxos de '
+    + 'Reporting (BuyGoods/DigiStore24/JVZoo), um por transação de upsell/downsell.',
+  properties: {
+    id: { type: 'integer', readOnly: true },
+    transacao_id: { type: 'string', maxLength: 120 },
+    nome: texto(200),
+    email: texto(200),
+    telefone: texto(40),
+    produto: texto(300),
+    tag_produto: { ...texto(120), description: "Como a plataforma sinalizou (ex.: prefixo 'UPx', '(Upgrade)', '(Last Chance)')." },
+    etapa_funil: { type: 'string', maxLength: 20, description: "'upsell', 'downsell' ou 'outro'." },
+    plataforma: { type: 'string', maxLength: 60 },
+    criado_em: { ...dataHora, readOnly: true },
+    reembolsado_em: { type: ['string', 'null'], format: 'date-time' },
+    chargeback_em: { type: ['string', 'null'], format: 'date-time' },
+  },
+  required: ['id', 'transacao_id', 'etapa_funil', 'plataforma', 'criado_em'],
+};
+
 /* ───────────────────  atendimentos do chatbot de suporte  ──────────────── */
 
 export const Atendimento = {
@@ -416,7 +439,7 @@ export const ContagemStatus = {
 
 /** Todos, na ordem em que o Swagger vai listá-los. */
 export const TODOS = [
-  DisparoPosVenda, DisparoEntrada, ProdutoReadme, Atendimento, PerguntaSemResposta,
+  DisparoPosVenda, DisparoEntrada, CompraUpsellDownsell, ProdutoReadme, Atendimento, PerguntaSemResposta,
   EtapaRegua, MensagemRegua, PainelLinhaCopy, ProdutoCatalogo, ProdutoAlias,
   PainelLinhaMensagens, PainelLinhaHistorico, ConfigDisparo, PainelUsuario,
   Credenciais, ParTokens, PedidoRefresh, Erro,

@@ -1204,13 +1204,27 @@ function renderTabela({ pedidos, total }) {
     tr.append(celula(p.transacao_id, 'cel-mono'));
 
     const cliente = document.createElement('div');
+    const linhaNome = document.createElement('div');
+    linhaNome.className = 'cel-nome-linha';
     const nomeEl = document.createElement('span');
     nomeEl.className = 'cel-forte';
     nomeEl.textContent = p.nome || '—';
+    linhaNome.append(nomeEl);
+    // Selo de upsell/downsell (13/09/2026): o mesmo e-mail comprou algo além
+    // do produto desta linha, fora da régua — só registrado, não dispara nada.
+    if (p.upsell_downsell?.length) {
+      const temUpsell = p.upsell_downsell.some((u) => u.etapa_funil === 'upsell');
+      const temDownsell = p.upsell_downsell.some((u) => u.etapa_funil === 'downsell');
+      const selo = document.createElement('span');
+      selo.className = 'selo-upsell';
+      selo.textContent = temUpsell && temDownsell ? 'Upsell + Downsell' : temUpsell ? 'Upsell' : 'Downsell';
+      selo.title = p.upsell_downsell.map((u) => `${u.produto} (${u.plataforma})`).join('\n');
+      linhaNome.append(selo);
+    }
     const contato = document.createElement('span');
     contato.className = 'cel-sub';
     contato.textContent = [p.email, p.telefone].filter(Boolean).join(' · ') || '';
-    cliente.append(nomeEl, contato);
+    cliente.append(linhaNome, contato);
     tr.append(celula(cliente));
 
     tr.append(celula(truncar(p.produto || '—', 42)));
