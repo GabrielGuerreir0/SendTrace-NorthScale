@@ -150,9 +150,18 @@ public.produtos (catálogo): slug, nome, nome_sms, forma, uso, link_ebook, email
 public.produto_aliases: apelido por plataforma → produto_slug.
 public.produto_readmes: conhecimento por produto.
 
+public.compras_upsell_downsell (13/09/2026): upsell/downsell comprado pelo MESMO lead/cliente,
+  À PARTE da régua principal — não entra em disparos_pos_venda, não dispara e-mail/SMS, só fica
+  registrado. Colunas: transacao_id, nome, email, telefone, produto, tag_produto, etapa_funil
+  ('upsell' | 'downsell' | 'outro'), plataforma, criado_em, reembolsado_em, chargeback_em.
+  "Este lead comprou algo além do produto principal?" = casar por lower(email) com esta tabela;
+  um e-mail pode ter várias linhas (um upsell aceito e um downsell recusado geram compras
+  separadas). Ausência aqui não é erro: a maioria dos leads compra só o front mesmo.
+
 ── Chaves de cruzamento ──
 - venda ↔ e-mail: por transacao_id = numero_pedido, ou por e-mail (prefira mv_emails_x_pedidos).
 - venda ↔ chat do site: por transacao_id ou e-mail.
+- venda ↔ upsell/downsell: por lower(email) em public.compras_upsell_downsell.
 
 ── Pedido de "recomendação de resposta a um e-mail" ──
 Busque o e-mail completo, o histórico do remetente (outros e-mails dele), a venda vinculada
