@@ -1484,3 +1484,7 @@ export async function rastreioLista(params = {}) {
 export async function rastreioDetalhe(transacaoId) {
   return obter(`/api/rastreio/${encodeURIComponent(transacaoId)}/`);
 }
+
+export async function rastreioSaude() {
+  return obter('/api/metricas/rastreio/saude/');
+}

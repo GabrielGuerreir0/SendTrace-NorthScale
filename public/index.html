@@ -2131,6 +2131,102 @@
   <section class="kpis kpis--suporte" id="rst-kpis"></section>
   <section class="kpis kpis--suporte" id="rst-kpis-status"></section>
 
+  <!-- ═══════════════════  Saúde do rastreio (cruzamentos)  ═══════════════════ -->
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Saúde do rastreio</h2>
+        <p class="cartao-sub">
+          Velocidade de detecção, cobertura por plataforma e transições de status. As médias
+          abaixo nunca incluem o backfill retroativo por e-mail (15/09) — só detecção orgânica,
+          pra não inflar os números com pedidos antigos "achados" só agora.
+        </p>
+      </div>
+    </header>
+    <div class="rst-saude-grade">
+      <div class="rst-saude-bloco">
+        <h3>Tempo até aparecer na Red Rock</h3>
+        <p class="cartao-sub">Da compra até o primeiro registro de rastreio, por plataforma.</p>
+        <div class="tabela-envolve">
+          <table class="tabela tabela--compacta">
+            <thead><tr>
+              <th scope="col">Plataforma</th><th scope="col">Amostras</th>
+              <th scope="col">Média</th><th scope="col">Mediana</th>
+            </tr></thead>
+            <tbody id="rst-saude-tempo"><tr><td colspan="4" class="vazio-suave">carregando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="rst-saude-bloco">
+        <h3>Não encontrados na Red Rock</h3>
+        <p class="cartao-sub">Por plataforma — e há quanto tempo a compra foi feita.</p>
+        <div class="tabela-envolve">
+          <table class="tabela tabela--compacta">
+            <thead><tr>
+              <th scope="col">Plataforma</th><th scope="col">Total</th>
+              <th scope="col">Média dias</th><th scope="col">Compra mais antiga</th>
+            </tr></thead>
+            <tbody id="rst-saude-naoencontrado"><tr><td colspan="4" class="vazio-suave">carregando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="rst-saude-bloco">
+        <h3>Tempo entre mudanças de status</h3>
+        <p class="cartao-sub">Quanto tempo um pedido leva de um status pro próximo.</p>
+        <div class="tabela-envolve">
+          <table class="tabela tabela--compacta">
+            <thead><tr>
+              <th scope="col">De</th><th scope="col">Para</th><th scope="col">Amostras</th>
+              <th scope="col">Média</th><th scope="col">Mediana</th>
+            </tr></thead>
+            <tbody id="rst-saude-transicoes"><tr><td colspan="5" class="vazio-suave">carregando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="rst-saude-bloco">
+        <h3>Encontrados sem código de rastreio</h3>
+        <p class="cartao-sub">Já tem status na Red Rock, mas ainda sem tracking_number.</p>
+        <div class="tabela-envolve">
+          <table class="tabela tabela--compacta">
+            <thead><tr>
+              <th scope="col">Status</th><th scope="col">Plataforma</th><th scope="col">Total</th>
+            </tr></thead>
+            <tbody id="rst-saude-semcodigo"><tr><td colspan="3" class="vazio-suave">carregando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="rst-saude-bloco rst-saude-bloco--largo">
+        <h3>Funil por plataforma</h3>
+        <p class="cartao-sub">O mesmo corte dos KPIs acima, quebrado por plataforma.</p>
+        <div class="tabela-envolve">
+          <table class="tabela tabela--compacta">
+            <thead><tr>
+              <th scope="col">Plataforma</th><th scope="col">Total</th><th scope="col">Consultando</th>
+              <th scope="col">Não encontrado</th><th scope="col">Recebido</th>
+              <th scope="col">A caminho</th><th scope="col">Entregue</th><th scope="col">Cancelado</th>
+            </tr></thead>
+            <tbody id="rst-saude-funil"><tr><td colspan="8" class="vazio-suave">carregando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="rst-saude-bloco">
+        <h3>Provedores de rastreio</h3>
+        <p class="cartao-sub">Quantos pedidos cada provedor já cobre.</p>
+        <div class="tabela-envolve">
+          <table class="tabela tabela--compacta">
+            <thead><tr><th scope="col">Provedor</th><th scope="col">Total</th></tr></thead>
+            <tbody id="rst-saude-provedores"><tr><td colspan="2" class="vazio-suave">carregando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="cartao">
     <header class="cartao-cabeca">
       <div>
@@ -2174,12 +2270,13 @@
             <th scope="col">Produto</th>
             <th scope="col">Plataforma</th>
             <th scope="col">Status</th>
+            <th scope="col">Provedor</th>
             <th scope="col">Transportadora</th>
             <th scope="col">Código de rastreio</th>
             <th scope="col">Atualizado</th>
           </tr>
         </thead>
-        <tbody id="rst-tabela-corpo"><tr><td colspan="7" class="vazio-suave">carregando…</td></tr></tbody>
+        <tbody id="rst-tabela-corpo"><tr><td colspan="8" class="vazio-suave">carregando…</td></tr></tbody>
       </table>
     </div>
     <div class="paginacao" id="rst-tabela-paginacao"></div>

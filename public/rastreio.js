@@ -14,9 +14,9 @@
  */
 import {
   $, api, debounce, kpiCard, montarPaginacao, renderTabela, chipRastreio,
-  rotularStatusRastreio, rotularPlataforma, abrirFicha,
+  rotularStatusRastreio, rotularPlataforma, abrirFicha, seloProvedor,
 } from './emailComum.js';
-import { n, dataHora } from './format.js';
+import { n, dataHora, dia, duracaoH } from './format.js';
 
 const POR_PAGINA = 25;
 const estado = {
@@ -146,7 +146,7 @@ async function abrirDetalhePedido(linha) {
         && { rotulo: 'Status bruto (fornecedor)', valor: d.status_bruto || '—' },
       { rotulo: 'Produto', valor: d.produto || '—' },
       { rotulo: 'Plataforma', valor: rotularPlataforma(d.plataforma) },
-      { rotulo: 'Provedor', valor: d.provedor || '—' },
+      { rotulo: 'Provedor', valor: seloProvedor(d.provedor) },
       { rotulo: 'Número do pedido', valor: d.order_number || '—' },
       { rotulo: 'Pedido criado em', valor: d.order_created_at ? dataHora(d.order_created_at) : '—' },
       { rotulo: 'Total', valor: d.total ? `${d.total} ${d.currency || ''}`.trim() : '—' },
@@ -172,6 +172,7 @@ function renderTabelaPedidos(pedidos) {
     { render: (p) => p.produto || '—' },
     { render: (p) => rotularPlataforma(p.plataforma) },
     { render: (p) => chipRastreio(p.status_interno) },
+    { render: (p) => seloProvedor(p.provedor) },
     { render: (p) => p.carrier_code || '—' },
     { classe: 'cel-mono', render: (p) => p.tracking_number || '—' },
     { classe: 'cel-mono', render: (p) => (p.atualizado_em ? dataHora(p.atualizado_em) : '—') },
@@ -212,6 +213,84 @@ async function carregarLista() {
   });
 }
 
+/* ═══════════════════════════════  saúde do rastreio  ═══════════════════════
+ * Seis tabelas de cruzamento (ver /api/metricas/rastreio/saude em
+ * api/rotas/rastreio.js) — carrega uma vez só junto com o resumo, sem
+ * filtro de produto/plataforma (é visão geral de saúde, não um recorte). */
+
+function renderSaudeTempo(linhas) {
+  const colunas = [
+    { render: (l) => rotularPlataforma(l.plataforma) },
+    { render: (l) => n(l.amostras) },
+    { render: (l) => duracaoH(l.media_horas) },
+    { render: (l) => duracaoH(l.mediana_horas) },
+  ];
+  renderTabela($('rst-saude-tempo'), linhas, colunas, { vazio: 'Sem detecção orgânica registrada ainda.' });
+}
+
+function renderSaudeNaoEncontrado(linhas) {
+  const colunas = [
+    { render: (l) => rotularPlataforma(l.plataforma) },
+    { render: (l) => n(l.total) },
+    { render: (l) => (l.media_dias_desde_compra ?? '—') },
+    { render: (l) => (l.compra_mais_antiga ? dia(l.compra_mais_antiga) : '—') },
+  ];
+  renderTabela($('rst-saude-naoencontrado'), linhas, colunas, { vazio: 'Nenhum pedido sem correlação com a Red Rock.' });
+}
+
+function renderSaudeTransicoes(linhas) {
+  const colunas = [
+    { render: (l) => rotularStatusRastreio(l.status_anterior) },
+    { render: (l) => rotularStatusRastreio(l.status_novo) },
+    { render: (l) => n(l.amostras) },
+    { render: (l) => duracaoH(l.media_horas) },
+    { render: (l) => duracaoH(l.mediana_horas) },
+  ];
+  renderTabela($('rst-saude-transicoes'), linhas, colunas, { vazio: 'Ainda sem transições de status suficientes.' });
+}
+
+function renderSaudeSemCodigo(linhas) {
+  const colunas = [
+    { render: (l) => chipRastreio(l.status_interno) },
+    { render: (l) => rotularPlataforma(l.plataforma) },
+    { render: (l) => n(l.total) },
+  ];
+  renderTabela($('rst-saude-semcodigo'), linhas, colunas, { vazio: 'Todo pedido encontrado já tem código de rastreio.' });
+}
+
+function renderSaudeFunil(linhas) {
+  const colunas = [
+    { render: (l) => rotularPlataforma(l.plataforma) },
+    { render: (l) => n(l.total) },
+    { render: (l) => n(l.pendente_consulta) },
+    { render: (l) => n(l.nao_encontrado) },
+    { render: (l) => n(l.pending) },
+    { render: (l) => n(l.shipped) },
+    { render: (l) => n(l.delivered) },
+    { render: (l) => n(l.cancelled) },
+  ];
+  renderTabela($('rst-saude-funil'), linhas, colunas, { vazio: 'Nenhum pedido consultado ainda.' });
+}
+
+function renderSaudeProvedores(linhas) {
+  const colunas = [
+    { render: (l) => seloProvedor(l.provedor === 'nenhum' ? null : l.provedor) },
+    { render: (l) => n(l.total) },
+  ];
+  renderTabela($('rst-saude-provedores'), linhas, colunas, { vazio: 'Nenhum pedido consultado ainda.' });
+}
+
+async function carregarSaude() {
+  const { ok, dados: s } = await api('/api/metricas/rastreio/saude');
+  if (!ok) return;
+  renderSaudeTempo(s.tempo_para_encontrar);
+  renderSaudeNaoEncontrado(s.nao_encontrados);
+  renderSaudeTransicoes(s.transicoes_status);
+  renderSaudeSemCodigo(s.sem_codigo_rastreio);
+  renderSaudeFunil(s.funil_por_plataforma);
+  renderSaudeProvedores(s.provedores);
+}
+
 async function carregarResumo() {
   const params = new URLSearchParams();
   if (estado.produto) params.set('produto', estado.produto);
@@ -223,6 +302,7 @@ async function carregarResumo() {
 
 function carregarTudo() {
   carregarResumo();
+  carregarSaude();
   carregarLista();
 }
 

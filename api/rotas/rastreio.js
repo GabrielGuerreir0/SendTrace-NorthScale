@@ -222,6 +222,96 @@ export default async function rotasRastreio(app) {
     return { ...t, taxa_entrega: base > 0 ? Math.round((t.delivered / base) * 1000) / 10 : null };
   });
 
+  app.get('/api/metricas/rastreio/saude/', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Métricas'],
+      summary: 'Saúde do rastreio: velocidade de detecção, cobertura e transições de status',
+      description: 'Todas as médias/medianas excluem `fonte = \'backfill-email\'` (o backfill '
+        + 'retroativo por e-mail, rodado uma vez em 15/09/2026) — sem isso, um pedido antigo '
+        + '"achado" só hoje entraria como se tivesse levado meses pra ser detectado.',
+      security: [{ bearerAuth: [] }],
+      response: { 200: { $ref: 'SaudeRastreio#' } },
+    },
+  }, async () => {
+    const [tempoParaEncontrar, naoEncontrados, transicoesStatus, semCodigoRastreio, funilPorPlataforma, provedores] = await Promise.all([
+      query(`
+        WITH primeiro_evento AS (
+          SELECT DISTINCT ON (transacao_id) transacao_id, detectado_em, fonte
+          FROM rastreio_eventos WHERE status_anterior IS NULL
+          ORDER BY transacao_id, detectado_em ASC
+        )
+        SELECT btrim(d.plataforma) AS plataforma,
+          count(*)::int AS amostras,
+          round(avg(extract(epoch FROM (pe.detectado_em - d.criado_em)) / 3600)::numeric, 1) AS media_horas,
+          round(percentile_cont(0.5) WITHIN GROUP (
+            ORDER BY extract(epoch FROM (pe.detectado_em - d.criado_em)) / 3600
+          )::numeric, 1) AS mediana_horas
+        FROM primeiro_evento pe
+        JOIN disparos_pos_venda d ON d.transacao_id = pe.transacao_id
+        WHERE pe.fonte <> 'backfill-email'
+        GROUP BY 1 ORDER BY amostras DESC
+      `),
+      query(`
+        SELECT btrim(d.plataforma) AS plataforma,
+          count(*)::int AS total,
+          round(avg(extract(epoch FROM (now() - d.criado_em)) / 86400)::numeric, 1) AS media_dias_desde_compra,
+          min(d.criado_em) AS compra_mais_antiga,
+          max(d.criado_em) AS compra_mais_recente
+        FROM rastreio_pedidos r JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+        WHERE r.status_interno = 'nao_encontrado'
+        GROUP BY 1 ORDER BY total DESC
+      `),
+      query(`
+        WITH eventos AS (
+          SELECT status_anterior, status_novo, detectado_em,
+            LAG(detectado_em) OVER (PARTITION BY transacao_id ORDER BY detectado_em) AS entrou_em
+          FROM rastreio_eventos WHERE fonte <> 'backfill-email'
+        )
+        SELECT status_anterior, status_novo,
+          count(*)::int AS amostras,
+          round(avg(extract(epoch FROM (detectado_em - entrou_em)) / 3600)::numeric, 1) AS media_horas,
+          round(percentile_cont(0.5) WITHIN GROUP (
+            ORDER BY extract(epoch FROM (detectado_em - entrou_em)) / 3600
+          )::numeric, 1) AS mediana_horas
+        FROM eventos WHERE entrou_em IS NOT NULL
+        GROUP BY 1, 2 ORDER BY amostras DESC
+      `),
+      query(`
+        SELECT r.status_interno, btrim(d.plataforma) AS plataforma, count(*)::int AS total
+        FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+        WHERE r.provedor IS NOT NULL AND r.tracking_number IS NULL
+          AND r.status_interno IN ('pending', 'shipped', 'delivered', 'cancelled')
+        GROUP BY 1, 2 ORDER BY total DESC
+      `),
+      query(`
+        SELECT btrim(d.plataforma) AS plataforma,
+          count(*)::int AS total,
+          count(*) FILTER (WHERE r.status_interno = 'pendente_consulta')::int AS pendente_consulta,
+          count(*) FILTER (WHERE r.status_interno = 'nao_encontrado')::int AS nao_encontrado,
+          count(*) FILTER (WHERE r.status_interno = 'pending')::int AS pending,
+          count(*) FILTER (WHERE r.status_interno = 'shipped')::int AS shipped,
+          count(*) FILTER (WHERE r.status_interno = 'delivered')::int AS delivered,
+          count(*) FILTER (WHERE r.status_interno = 'cancelled')::int AS cancelled
+        FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+        GROUP BY 1 ORDER BY total DESC
+      `),
+      query(`
+        SELECT coalesce(provedor, 'nenhum') AS provedor, count(*)::int AS total
+        FROM rastreio_pedidos GROUP BY 1 ORDER BY total DESC
+      `),
+    ]);
+
+    return {
+      tempo_para_encontrar: tempoParaEncontrar.rows,
+      nao_encontrados: naoEncontrados.rows,
+      transicoes_status: transicoesStatus.rows,
+      sem_codigo_rastreio: semCodigoRastreio.rows,
+      funil_por_plataforma: funilPorPlataforma.rows,
+      provedores: provedores.rows,
+    };
+  });
+
   /* ═══════════════════════════  pública (lead)  ═══════════════════════ */
 
   app.get('/rastrear/:transacao_id', {

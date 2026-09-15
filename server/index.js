@@ -17,7 +17,7 @@ import {
   etapasTempos, salvarTempoEtapa,
   produtosDaFila, plataformasDaFila, fonteDados, suporteResumo, suporteConversas,
   catalogoProdutos, reguaInsights, visaoGeralResumo,
-  rastreioResumo, rastreioLista, rastreioDetalhe,
+  rastreioResumo, rastreioLista, rastreioDetalhe, rastreioSaude,
 } from './dados.js';
 import {
   apiConfigurada, enderecoApi, saude as saudeApi, ErroApi,
@@ -1706,6 +1706,10 @@ async function atender(req, res, url, sessao) {
       produto: textoOuNulo(url.searchParams.get('produto')),
       plataforma: textoOuNulo(url.searchParams.get('plataforma')),
     }));
+  }
+
+  if (url.pathname === '/api/metricas/rastreio/saude') {
+    return json(res, 200, await rastreioSaude());
   }
 
   if (url.pathname.startsWith('/api/rastreio/')) {

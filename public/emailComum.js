@@ -196,6 +196,19 @@ export const chipSituacaoPedido = (v) => chip(`sit-${v}`, ROT_SITUACAO_PEDIDO[v]
 // só `exception` (falha real de consulta) recebe cor de alarme no CSS.
 export const chipRastreio = (v) => chip(`rst-${v}`, LABEL_STATUS_RASTREIO[v] ?? v ?? '—');
 
+/* ══════════════════════════  selo de provedor de rastreio  ═════════════════
+   Hoje só existe a Red Rock — mas o dia que entrar um segundo fulfillment
+   center (ex.: Fulstack), quem olhar a tabela/ficha precisa saber de cara
+   qual pedido veio de qual. Por isso este selo já vai em TODO lugar que
+   mostra dado de rastreio, mesmo enquanto só há um provedor. */
+const ROTULO_PROVEDOR = { redrock: 'Red Rock' };
+export function seloProvedor(v) {
+  const span = document.createElement('span');
+  span.className = 'selo-etapa selo-provedor';
+  span.textContent = v ? (ROTULO_PROVEDOR[v] ?? v) : '—';
+  return span;
+}
+
 /* ══════════════════════════  copiar e-mail  ═══════════════════════════════
    Um botão pequeno reaproveitado em toda a Central de E-mail IA (tickets,
    detalhes, suporte escalado) — sempre que um e-mail de cliente aparece na

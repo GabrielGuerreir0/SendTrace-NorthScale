@@ -345,7 +345,7 @@ export const RastreioEvento = {
     id: { type: 'integer', readOnly: true },
     status_anterior: texto(60),
     status_novo: { type: 'string', maxLength: 60 },
-    fonte: { type: 'string', enum: ['backfill', 'tracking-updates'] },
+    fonte: { type: 'string', enum: ['backfill', 'backfill-email', 'tracking-updates'] },
     detectado_em: { ...dataHora, readOnly: true },
   },
   required: ['id', 'status_novo', 'fonte', 'detectado_em'],
@@ -407,6 +407,93 @@ export const ResumoRastreio = {
     exception: { type: 'integer' },
     desconhecido: { type: 'integer' },
     taxa_entrega: { type: ['number', 'null'], description: 'delivered / (shipped + delivered), em %.' },
+  },
+};
+
+/**
+ * Saúde do rastreio — cruza `disparos_pos_venda`/`rastreio_pedidos`/
+ * `rastreio_eventos` pra responder "isso está funcionando bem?", não só
+ * "quantos tem em cada status" (isso já é o `ResumoRastreio`). Toda média/
+ * mediana aqui EXCLUI `fonte = 'backfill-email'` (o backfill retroativo por
+ * e-mail rodado uma vez em 15/09/2026) — misturado, ele infla a velocidade
+ * real de detecção em até 1000x (pedido antigo "achado" só hoje conta como
+ * se tivesse demorado meses).
+ */
+export const SaudeRastreio = {
+  $id: 'SaudeRastreio',
+  type: 'object',
+  properties: {
+    tempo_para_encontrar: {
+      type: 'array',
+      description: 'Horas entre a compra (disparos_pos_venda.criado_em) e o primeiro '
+        + 'registro em rastreio_eventos, por plataforma. Só detecção orgânica (polling), '
+        + 'nunca backfill.',
+      items: {
+        type: 'object',
+        properties: {
+          plataforma: texto(60), amostras: { type: 'integer' },
+          media_horas: { type: ['number', 'null'] }, mediana_horas: { type: ['number', 'null'] },
+        },
+      },
+    },
+    nao_encontrados: {
+      type: 'array',
+      description: 'Pedidos com status_interno=nao_encontrado, por plataforma — e há quanto '
+        + 'tempo a compra foi feita sem aparecer na Red Rock ainda.',
+      items: {
+        type: 'object',
+        properties: {
+          plataforma: texto(60), total: { type: 'integer' },
+          media_dias_desde_compra: { type: ['number', 'null'] },
+          compra_mais_antiga: { type: ['string', 'null'], format: 'date-time' },
+          compra_mais_recente: { type: ['string', 'null'], format: 'date-time' },
+        },
+      },
+    },
+    transicoes_status: {
+      type: 'array',
+      description: 'Quanto tempo um pedido fica num status antes de passar pro próximo '
+        + '(ex.: pending → shipped). Cada linha é uma transição observada de verdade.',
+      items: {
+        type: 'object',
+        properties: {
+          status_anterior: texto(60), status_novo: texto(60), amostras: { type: 'integer' },
+          media_horas: { type: ['number', 'null'] }, mediana_horas: { type: ['number', 'null'] },
+        },
+      },
+    },
+    sem_codigo_rastreio: {
+      type: 'array',
+      description: 'Já encontrado num provedor (pending/shipped/delivered/cancelled) mas ainda '
+        + 'sem tracking_number — normal em pending recém-criado, estranho se persistir.',
+      items: {
+        type: 'object',
+        properties: { status_interno: texto(60), plataforma: texto(60), total: { type: 'integer' } },
+      },
+    },
+    funil_por_plataforma: {
+      type: 'array',
+      description: 'O mesmo corte do ResumoRastreio, mas quebrado por plataforma — pra achar '
+        + 'de cara qual plataforma está com a saúde de rastreio pior.',
+      items: {
+        type: 'object',
+        properties: {
+          plataforma: texto(60), total: { type: 'integer' },
+          pendente_consulta: { type: 'integer' }, nao_encontrado: { type: 'integer' },
+          pending: { type: 'integer' }, shipped: { type: 'integer' },
+          delivered: { type: 'integer' }, cancelled: { type: 'integer' },
+        },
+      },
+    },
+    provedores: {
+      type: 'array',
+      description: "Quantos pedidos cada provedor de rastreio já cobre — hoje é sempre "
+        + "'redrock', mas o campo já existe pra quando entrar um segundo (ex.: Fulstack).",
+      items: {
+        type: 'object',
+        properties: { provedor: texto(60), total: { type: 'integer' } },
+      },
+    },
   },
 };
 
@@ -588,7 +675,7 @@ export const TODOS = [
   PainelLinhaMensagens, PainelLinhaHistorico, ConfigDisparo, PainelUsuario,
   Credenciais, ParTokens, PedidoRefresh, Erro,
   ContagemPorEstado, ResumoEtapa, Produto, Balde, EntradaDia, ContagemStatus,
-  RastreioPedido, RastreioEvento, RastreioDetalhe, ResumoRastreio, RastreioPublico,
+  RastreioPedido, RastreioEvento, RastreioDetalhe, ResumoRastreio, SaudeRastreio, RastreioPublico,
 ];
 
 /**
