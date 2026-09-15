@@ -919,6 +919,19 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
 .selo-estado[data-e="finalizado"] i  { color: var(--st-finalizado); }
 .selo-estado[data-e="cancelado"] i   { color: var(--st-cancelado); }
 
+/* Rastreio de pedidos (Red Rock) — reaproveita a mesma paleta de 6 tons
+   acima, sem cor nova. `nao_encontrado` e `desconhecido` ficam neutros de
+   propósito (cinza) — não são erro, só ainda sem correlação com a Red Rock;
+   só `exception` (falha real de consulta) usa o vermelho de alarme. */
+.selo-estado[data-e="rst-pendente_consulta"] i { color: var(--st-processando); }
+.selo-estado[data-e="rst-nao_encontrado"] i    { color: var(--st-cancelado); }
+.selo-estado[data-e="rst-pending"] i           { color: var(--st-em-dia); }
+.selo-estado[data-e="rst-shipped"] i           { color: var(--st-atrasado); }
+.selo-estado[data-e="rst-delivered"] i         { color: var(--st-finalizado); }
+.selo-estado[data-e="rst-cancelled"] i         { color: var(--st-cancelado); }
+.selo-estado[data-e="rst-exception"] i         { color: var(--st-travado); }
+.selo-estado[data-e="rst-desconhecido"] i      { color: var(--st-cancelado); }
+
 .paginacao {
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
   padding-top: 14px; font-size: 12px; color: var(--tinta-fraca);
@@ -2288,3 +2301,19 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 }
 .gd-preview-rodape a { color: var(--eixo); text-decoration: none; }
 .gd-preview-rodape a:hover { text-decoration: underline; }
+
+/* ── linha do tempo do rastreio (página pública /rastrear e aba interna) ── */
+.rastreio-linha-tempo {
+  list-style: none; margin: 14px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.rastreio-linha-tempo li {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 2px; border-bottom: 1px solid var(--borda); font-size: 13px;
+}
+.rastreio-linha-tempo li:last-child { border-bottom: none; }
+.rastreio-linha-tempo li strong { color: var(--tinta); font-weight: 600; }
+.rastreio-linha-tempo li span { color: var(--tinta-fraca); font-variant-numeric: tabular-nums; }
+.rastreio-linha-tempo-vazia {
+  justify-content: flex-start !important; color: var(--tinta-fraca) !important; line-height: 1.5;
+}

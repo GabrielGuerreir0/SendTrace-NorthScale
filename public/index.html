@@ -217,6 +217,16 @@
       </svg>
       <span class="menu-rotulo">Relatório de Métricas</span>
     </button>
+
+    <button class="menu-item" id="aba-btn-rastreio" type="button"
+            aria-selected="false" title="Rastreio de Pedidos">
+      <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
+           stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 6.2 L10 2.5 L17 6.2 L17 13.8 L10 17.5 L3 13.8 Z"/>
+        <path d="M3 6.2 L10 9.7 L17 6.2 M10 9.7 L10 17.5"/>
+      </svg>
+      <span class="menu-rotulo">Rastreio de Pedidos</span>
+    </button>
   </nav>
 </aside>
 
@@ -2080,6 +2090,85 @@
       </div>
     </header>
     <ol class="sup-ranking" id="rel-fotos"><li class="vazio-suave">carregando…</li></ol>
+  </section>
+
+</main>
+
+<!-- ═══════════════════  Rastreio de Pedidos (Red Rock)  ═══════════════════ -->
+<main class="conteudo" id="aba-rastreio" hidden>
+
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Rastreio de Pedidos</h2>
+        <p class="cartao-sub">
+          Consulta contra a Red Rock, feita por um script à parte (nunca em tempo real). Hoje só
+          cobre o fulfillment center já integrado — a maioria dos pedidos JVZoo/BuyGoods aparece
+          como "não encontrado na Red Rock", o que é esperado, não erro: é outro fulfillment
+          center, ainda sem integração própria.
+        </p>
+      </div>
+      <button class="btn btn-icone" id="rst-atualizar" type="button" title="Atualizar agora">
+        <span aria-hidden="true">↻</span><span class="sr">Atualizar agora</span>
+      </button>
+    </header>
+  </section>
+
+  <section class="kpis kpis--suporte" id="rst-kpis"></section>
+  <section class="kpis kpis--suporte" id="rst-kpis-status"></section>
+
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Pedidos</h2>
+        <p class="cartao-sub">Clique numa linha para ver a ficha completa e a linha do tempo.</p>
+      </div>
+      <div class="tk-filtros">
+        <label class="campo campo--cresce">
+          <span class="sr">Buscar transação, cliente ou código de rastreio</span>
+          <input type="text" id="rst-busca" placeholder="Buscar transação, cliente ou código de rastreio…">
+        </label>
+        <label class="campo">
+          <span>Status</span>
+          <select id="rst-sel-status">
+            <option value="">Todos</option>
+            <option value="pendente_consulta">Consultando fornecedor</option>
+            <option value="nao_encontrado">Não encontrado na Red Rock</option>
+            <option value="pending">Pedido recebido</option>
+            <option value="shipped">A caminho</option>
+            <option value="delivered">Entregue</option>
+            <option value="cancelled">Cancelado</option>
+            <option value="exception">Erro na consulta</option>
+            <option value="desconhecido">Status não mapeado</option>
+          </select>
+        </label>
+        <label class="campo-sel campo-produto" id="rst-campo-produto">
+          <span class="sr">Filtrar por produto</span>
+          <select id="rst-sel-produto"><option value="">Todos os produtos</option></select>
+        </label>
+        <label class="campo-sel campo-produto" id="rst-campo-plataforma">
+          <span class="sr">Filtrar por plataforma</span>
+          <select id="rst-sel-plataforma"><option value="">Todas as plataformas</option></select>
+        </label>
+      </div>
+    </header>
+    <div class="tabela-envolve">
+      <table class="tabela">
+        <thead>
+          <tr>
+            <th scope="col">Pedido</th>
+            <th scope="col">Produto</th>
+            <th scope="col">Plataforma</th>
+            <th scope="col">Status</th>
+            <th scope="col">Transportadora</th>
+            <th scope="col">Código de rastreio</th>
+            <th scope="col">Atualizado</th>
+          </tr>
+        </thead>
+        <tbody id="rst-tabela-corpo"><tr><td colspan="7" class="vazio-suave">carregando…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="paginacao" id="rst-tabela-paginacao"></div>
   </section>
 
 </main>

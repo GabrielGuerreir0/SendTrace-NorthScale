@@ -139,6 +139,19 @@ export const LABEL_ETAPA_AUTOMACAO = {
   gerando_resposta: 'Gerando resposta', enviando: 'Enviando', enviado: 'Enviado',
   erro_ia: 'Erro na IA', erro_envio: 'Erro no envio',
 };
+// Mesmos rótulos que api/rotas/rastreio.js usa no `status_rotulo` público —
+// aqui só um pouco mais específicos (ex.: "não encontrado" nomeia a Red Rock)
+// porque a aba interna, ao contrário da pública, pode mostrar o motivo real.
+export const LABEL_STATUS_RASTREIO = {
+  pendente_consulta: 'Consultando fornecedor',
+  nao_encontrado: 'Não encontrado na Red Rock',
+  pending: 'Pedido recebido',
+  shipped: 'A caminho',
+  delivered: 'Entregue',
+  cancelled: 'Cancelado',
+  exception: 'Erro na consulta',
+  desconhecido: 'Status não mapeado',
+};
 
 const rotular = (mapa, valor) => (valor ? (mapa[valor] ?? valor) : '—');
 export const rotularCategoria = (v) => rotular(LABEL_CATEGORIA, v);
@@ -148,6 +161,7 @@ export const rotularResponsavel = (v) => rotular(LABEL_RESPONSAVEL, v);
 export const rotularPagamento = (v) => rotular(LABEL_PROBLEMA_PAGAMENTO, v);
 export const rotularPlataforma = (v) => rotular(LABEL_PLATAFORMA, v);
 export const rotularTipoConteudo = (v) => rotular(LABEL_TIPO_CONTEUDO, v);
+export const rotularStatusRastreio = (v) => rotular(LABEL_STATUS_RASTREIO, v);
 
 /* ══════════════════════════  chips de estado  ═════════════════════════════
    Reaproveita .selo-estado (já usado pelos 6 estados da régua) com novos
@@ -177,6 +191,10 @@ export const chipEtapaAutomacao = (v) => chip(`auto-${v}`, ROT_ETAPA_AUTOMACAO[v
 
 const ROT_SITUACAO_PEDIDO = { nao_cancelado: 'Não cancelado', ja_cancelado: 'Já cancelado', sem_pedido_vinculado: 'Sem pedido vinculado' };
 export const chipSituacaoPedido = (v) => chip(`sit-${v}`, ROT_SITUACAO_PEDIDO[v] ?? v ?? '—');
+
+// `nao_encontrado` NÃO é erro (é só outro fulfillment center, ver PLANO.md) —
+// só `exception` (falha real de consulta) recebe cor de alarme no CSS.
+export const chipRastreio = (v) => chip(`rst-${v}`, LABEL_STATUS_RASTREIO[v] ?? v ?? '—');
 
 /* ══════════════════════════  copiar e-mail  ═══════════════════════════════
    Um botão pequeno reaproveitado em toda a Central de E-mail IA (tickets,

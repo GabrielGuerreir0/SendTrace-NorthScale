@@ -299,6 +299,121 @@ export const ProdutoAlias = {
 
 /* ──────────────────────────────  acesso  ──────────────────────────── */
 
+/* ─────────────────────  rastreamento de pedidos (Red Rock)  ────────────── */
+
+export const RastreioPedido = {
+  $id: 'RastreioPedido',
+  type: 'object',
+  description: 'Snapshot atual do rastreio de um pedido, gravado pelo script de polling '
+    + '(nunca pelo painel). Ver PLANO.md em "Rastreamento de Disparo" pro desenho completo.',
+  properties: {
+    transacao_id: { type: 'string', maxLength: 120 },
+    nome: texto(200),
+    produto: texto(300),
+    plataforma: texto(60),
+    provedor: { type: ['string', 'null'], description: "'redrock' quando encontrado; nulo enquanto não achado em nenhum provedor." },
+    status_interno: {
+      type: 'string',
+      enum: ['pendente_consulta', 'nao_encontrado', 'pending', 'shipped', 'delivered', 'cancelled', 'exception', 'desconhecido'],
+    },
+    status_bruto: texto(60),
+    order_number: texto(120),
+    order_created_at: { type: ['string', 'null'], format: 'date-time' },
+    total: decimal,
+    currency: texto(10),
+    fully_fulfilled: { type: ['boolean', 'null'] },
+    fully_fulfilled_at: { type: ['string', 'null'], format: 'date-time' },
+    tracking_number: texto(120),
+    carrier_code: texto(60),
+    tracking_url: texto(500),
+    tracking_status: texto(300),
+    shipped_at: { type: ['string', 'null'], format: 'date-time' },
+    delivered_at: { type: ['string', 'null'], format: 'date-time' },
+    ultima_consulta_em: { type: ['string', 'null'], format: 'date-time' },
+    ultimo_erro: texto(500),
+    criado_em: { ...dataHora, readOnly: true },
+    atualizado_em: { ...dataHora, readOnly: true },
+  },
+  required: ['transacao_id', 'status_interno'],
+};
+
+export const RastreioEvento = {
+  $id: 'RastreioEvento',
+  type: 'object',
+  description: 'Uma mudança de status detectada — o histórico que a Red Rock não entrega pronto.',
+  properties: {
+    id: { type: 'integer', readOnly: true },
+    status_anterior: texto(60),
+    status_novo: { type: 'string', maxLength: 60 },
+    fonte: { type: 'string', enum: ['backfill', 'tracking-updates'] },
+    detectado_em: { ...dataHora, readOnly: true },
+  },
+  required: ['id', 'status_novo', 'fonte', 'detectado_em'],
+};
+
+export const RastreioDetalhe = {
+  $id: 'RastreioDetalhe',
+  type: 'object',
+  allOf: [
+    { $ref: 'RastreioPedido#' },
+    {
+      type: 'object',
+      properties: {
+        tracking: { type: ['array', 'null'], description: 'Array tracking[] cru da Red Rock — cobre reenvio/superseded.' },
+        cancellation: { type: ['object', 'null'] },
+        eventos: { type: 'array', items: { $ref: 'RastreioEvento#' } },
+      },
+    },
+  ],
+};
+
+export const ResumoRastreio = {
+  $id: 'ResumoRastreio',
+  type: 'object',
+  properties: {
+    total: { type: 'integer' },
+    pendente_consulta: { type: 'integer' },
+    nao_encontrado: { type: 'integer', description: 'Não é erro — pedido de outro fulfillment center.' },
+    pending: { type: 'integer' },
+    shipped: { type: 'integer' },
+    delivered: { type: 'integer' },
+    cancelled: { type: 'integer' },
+    exception: { type: 'integer' },
+    desconhecido: { type: 'integer' },
+    taxa_entrega: { type: ['number', 'null'], description: 'delivered / (shipped + delivered), em %.' },
+  },
+};
+
+export const RastreioPublico = {
+  $id: 'RastreioPublico',
+  type: 'object',
+  description: 'Resposta da consulta pública (sem login) — deliberadamente sem PII: '
+    + 'nunca endereço, e-mail ou telefone.',
+  properties: {
+    encontrado: { type: 'boolean' },
+    produto: texto(300),
+    status_interno: texto(60),
+    status_rotulo: texto(120),
+    carrier_code: texto(60),
+    tracking_number: texto(120),
+    tracking_url: texto(500),
+    tracking_status: texto(300),
+    shipped_at: { type: ['string', 'null'], format: 'date-time' },
+    delivered_at: { type: ['string', 'null'], format: 'date-time' },
+    eventos: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          status: { type: 'string' },
+          em: { type: 'string', format: 'date-time' },
+        },
+      },
+    },
+  },
+  required: ['encontrado'],
+};
+
 export const PainelUsuario = {
   $id: 'PainelUsuario',
   type: 'object',
@@ -444,6 +559,7 @@ export const TODOS = [
   PainelLinhaMensagens, PainelLinhaHistorico, ConfigDisparo, PainelUsuario,
   Credenciais, ParTokens, PedidoRefresh, Erro,
   ContagemPorEstado, ResumoEtapa, Produto, Balde, EntradaDia, ContagemStatus,
+  RastreioPedido, RastreioEvento, RastreioDetalhe, ResumoRastreio, RastreioPublico,
 ];
 
 /**

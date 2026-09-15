@@ -1460,3 +1460,27 @@ export async function visaoGeralResumo(dias = 30) {
 
   return { ...geral, status };
 }
+
+/* ─────────────────────  rastreamento de pedidos (Red Rock)  ────────────── */
+
+/**
+ * Aba interna "Rastreio" — os três, thin proxy puro pra rota agregada/CRUD
+ * já pronta em api/rotas/rastreio.js (mesmo padrão de suporteResumo/
+ * suporteConversas acima: a SQL já mora na API, aqui só repassa filtros).
+ */
+export async function rastreioResumo(params = {}) {
+  return obter('/api/metricas/rastreio/', params);
+}
+
+export async function rastreioLista(params = {}) {
+  const limpos = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== null && v !== undefined && v !== '') limpos[k] = v;
+  }
+  const dados = await obter('/api/rastreio/', limpos);
+  return { total: dados.count ?? 0, pedidos: dados.results ?? [] };
+}
+
+export async function rastreioDetalhe(transacaoId) {
+  return obter(`/api/rastreio/${encodeURIComponent(transacaoId)}/`);
+}

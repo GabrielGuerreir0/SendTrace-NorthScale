@@ -1,0 +1,237 @@
+/**
+ * Rastreamento de pedidos (Red Rock) — leitura de `rastreio_pedidos`/
+ * `rastreio_eventos`.
+ *
+ * Escrita é só do script `server/rastreio/consultar_redrock.py` (acesso
+ * direto ao Postgres) — esta API nunca fala com a Red Rock. Ver o plano
+ * completo em `arquivo/Rastreamento de Disparo (plano nao implementado)/PLANO.md`.
+ *
+ * Duas famílias de rota aqui: as internas (`/api/rastreio/...`, exigem
+ * sessão, mesmo padrão do resto da API) e UMA pública (`/rastrear/:id`,
+ * sem token — o lead consulta o próprio pedido). A pública nunca devolve
+ * PII (endereço/e-mail/telefone) e é rate-limited por IP.
+ */
+import { query } from '../../server/db.js';
+import { DO_PRODUTO, DA_PLATAFORMA } from '../sql.js';
+import { fatiar, montarOrdem, ErroHttp } from '../comum.js';
+import { paginado, paginacaoParams } from '../esquemas.js';
+
+const COLUNAS_LISTA = `r.transacao_id, d.nome, d.produto, d.plataforma, r.provedor,
+  r.status_interno, r.status_bruto, r.order_number, r.order_created_at, r.total,
+  r.currency, r.fully_fulfilled, r.fully_fulfilled_at, r.tracking_number,
+  r.carrier_code, r.tracking_url, r.tracking_status, r.shipped_at, r.delivered_at,
+  r.ultima_consulta_em, r.ultimo_erro, r.criado_em, r.atualizado_em`;
+
+const ROTULO_STATUS = {
+  pendente_consulta: 'Consultando fornecedor',
+  nao_encontrado: 'Rastreio ainda não disponível',
+  pending: 'Pedido recebido, preparando envio',
+  shipped: 'A caminho',
+  delivered: 'Entregue',
+  cancelled: 'Cancelado',
+  exception: 'Rastreio ainda não disponível',
+  desconhecido: 'Rastreio ainda não disponível',
+};
+
+/* ───────────────────  rate limit hand-rolled da rota pública  ──────────────
+ *
+ * Sem dependência nova (@fastify/rate-limit não está no package.json) — janela
+ * fixa em memória por IP, reiniciada a cada minuto. Não precisa sobreviver a
+ * um restart nem ser exata: o objetivo é travar scraping em massa (o
+ * transacao_id do DigiStore24 tem só 8 caracteres, entropia baixa), não
+ * fechar contra um atacante sofisticado.
+ */
+const JANELA_MS = 60_000;
+const LIMITE_JANELA = 20;
+const contadores = new Map();
+
+function excedeuLimite(ip) {
+  const agora = Date.now();
+  const atual = contadores.get(ip);
+  if (!atual || agora - atual.inicio >= JANELA_MS) {
+    contadores.set(ip, { inicio: agora, n: 1 });
+    return false;
+  }
+  atual.n += 1;
+  return atual.n > LIMITE_JANELA;
+}
+
+// Limpeza periódica — sem isto o Map cresceria pra sempre com um IP por
+// visitante único, nunca liberando memória de quem não volta mais.
+setInterval(() => {
+  const corte = Date.now() - JANELA_MS;
+  for (const [ip, v] of contadores) if (v.inicio < corte) contadores.delete(ip);
+}, JANELA_MS).unref();
+
+function extrairIp(req) {
+  const xff = req.headers['x-forwarded-for'];
+  if (xff) return String(xff).split(',')[0].trim();
+  return req.socket?.remoteAddress || 'desconhecido';
+}
+
+export default async function rotasRastreio(app) {
+  /* ═══════════════════════════  internas (painel)  ═══════════════════════ */
+
+  app.get('/api/rastreio/', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Rastreio'],
+      summary: 'Lista o rastreio dos pedidos',
+      description: 'Junta com `disparos_pos_venda` pelo `transacao_id` pra trazer nome/produto/'
+        + 'plataforma. Só existe linha aqui pro pedido que já foi consultado ao menos uma vez.',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          ...paginacaoParams,
+          status: {
+            type: 'string',
+            enum: ['pendente_consulta', 'nao_encontrado', 'pending', 'shipped', 'delivered', 'cancelled', 'exception', 'desconhecido'],
+          },
+          provedor: { type: 'string' },
+          produto: { type: 'string' },
+          plataforma: { type: 'string' },
+          search: { type: 'string', description: 'Procura em: transacao_id, nome, tracking_number.' },
+          ordering: { type: 'string', description: 'Aceita: atualizado_em, criado_em, order_created_at.' },
+        },
+      },
+      response: { 200: paginado('RastreioPedido') },
+    },
+  }, async (req) => {
+    const valores = [];
+    const partes = ['1=1'];
+
+    if (req.query.status) { valores.push(req.query.status); partes.push(`r.status_interno = $${valores.length}`); }
+    if (req.query.provedor) { valores.push(req.query.provedor); partes.push(`r.provedor = $${valores.length}`); }
+    if (req.query.produto) { valores.push(req.query.produto); partes.push(`d.produto = $${valores.length}`); }
+    if (req.query.plataforma) { valores.push(req.query.plataforma); partes.push(`btrim(d.plataforma) = $${valores.length}`); }
+    if (req.query.search) {
+      valores.push(`%${req.query.search}%`);
+      const i = valores.length;
+      partes.push(`(r.transacao_id ILIKE $${i} OR d.nome ILIKE $${i} OR r.tracking_number ILIKE $${i})`);
+    }
+    const onde = `WHERE ${partes.join(' AND ')}`;
+    const base = `FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id ${onde}`;
+
+    const cont = await query(`SELECT count(*)::int AS n ${base}`, valores);
+    const { limit, offset, envelope } = fatiar(req, cont.rows[0].n);
+    const ordem = montarOrdem(req.query.ordering, ['atualizado_em', 'criado_em', 'order_created_at'], 'r.atualizado_em DESC');
+    const { rows } = await query(
+      `SELECT ${COLUNAS_LISTA} ${base} ORDER BY ${ordem}
+       LIMIT $${valores.length + 1} OFFSET $${valores.length + 2}`,
+      [...valores, limit, offset],
+    );
+    return envelope(rows);
+  });
+
+  app.get('/api/rastreio/:transacao_id/', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Rastreio'],
+      summary: 'Detalhe de um pedido + a linha do tempo (últimos 100 eventos)',
+      security: [{ bearerAuth: [] }],
+      params: { type: 'object', properties: { transacao_id: { type: 'string' } }, required: ['transacao_id'] },
+      response: { 200: { $ref: 'RastreioDetalhe#' }, 404: { $ref: 'Erro#' } },
+    },
+  }, async (req) => {
+    const { rows } = await query(
+      `SELECT ${COLUNAS_LISTA}, r.tracking, r.cancellation
+       FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+       WHERE r.transacao_id = $1`,
+      [req.params.transacao_id],
+    );
+    if (!rows[0]) throw new ErroHttp(404, 'Nenhum rastreio para este transacao_id ainda.');
+
+    const eventos = await query(
+      `SELECT id, status_anterior, status_novo, fonte, detectado_em
+       FROM rastreio_eventos WHERE transacao_id = $1
+       ORDER BY detectado_em DESC LIMIT 100`,
+      [req.params.transacao_id],
+    );
+    return { ...rows[0], eventos: eventos.rows };
+  });
+
+  app.get('/api/metricas/rastreio/', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Métricas'],
+      summary: 'Contagem por status de rastreio + taxa de entrega',
+      security: [{ bearerAuth: [] }],
+      querystring: { type: 'object', properties: { produto: { type: 'string' }, plataforma: { type: 'string' } } },
+      response: { 200: { $ref: 'ResumoRastreio#' } },
+    },
+  }, async (req) => {
+    const { rows } = await query(
+      `SELECT
+         count(*)::int                                                    AS total,
+         count(*) FILTER (WHERE r.status_interno = 'pendente_consulta')::int AS pendente_consulta,
+         count(*) FILTER (WHERE r.status_interno = 'nao_encontrado')::int    AS nao_encontrado,
+         count(*) FILTER (WHERE r.status_interno = 'pending')::int           AS pending,
+         count(*) FILTER (WHERE r.status_interno = 'shipped')::int           AS shipped,
+         count(*) FILTER (WHERE r.status_interno = 'delivered')::int         AS delivered,
+         count(*) FILTER (WHERE r.status_interno = 'cancelled')::int         AS cancelled,
+         count(*) FILTER (WHERE r.status_interno = 'exception')::int         AS exception,
+         count(*) FILTER (WHERE r.status_interno = 'desconhecido')::int      AS desconhecido
+       FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+       WHERE ${DO_PRODUTO(1, 'd.')} AND ${DA_PLATAFORMA(2, 'd.')}`,
+      [req.query.produto ?? null, req.query.plataforma ?? null],
+    );
+    const t = rows[0];
+    const base = t.shipped + t.delivered;
+    return { ...t, taxa_entrega: base > 0 ? Math.round((t.delivered / base) * 1000) / 10 : null };
+  });
+
+  /* ═══════════════════════════  pública (lead)  ═══════════════════════ */
+
+  app.get('/rastrear/:transacao_id', {
+    schema: {
+      tags: ['Rastreio'],
+      summary: 'Rastreio público de um pedido (sem login)',
+      description: 'Pro lead consultar o próprio pedido pelo transacao_id. Nunca devolve '
+        + 'endereço, e-mail ou telefone. `encontrado: false` cobre 3 situações diferentes '
+        + '(pedido inexistente, ainda não consultado, ou não encontrado na Red Rock) de '
+        + 'propósito — a resposta não diz qual, pra não virar oráculo de que IDs existem.',
+      params: { type: 'object', properties: { transacao_id: { type: 'string' } }, required: ['transacao_id'] },
+      response: { 200: { $ref: 'RastreioPublico#' }, 429: { $ref: 'Erro#' } },
+    },
+  }, async (req, resposta) => {
+    if (excedeuLimite(extrairIp(req.raw))) {
+      throw new ErroHttp(429, 'Muitas consultas em pouco tempo. Tente de novo em 1 minuto.');
+    }
+    // Sem cache no navegador: um "ainda não chegou" guardado não deve
+    // esconder um "chegou" real na próxima vez que o lead checar.
+    resposta.header('Cache-Control', 'no-store');
+
+    const { rows } = await query(
+      `SELECT r.status_interno, r.carrier_code, r.tracking_number, r.tracking_url,
+              r.tracking_status, r.shipped_at, r.delivered_at, d.produto
+       FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+       WHERE r.transacao_id = $1`,
+      [req.params.transacao_id],
+    );
+    const MOSTRAVEL = new Set(['pending', 'shipped', 'delivered', 'cancelled']);
+    if (!rows[0] || !MOSTRAVEL.has(rows[0].status_interno)) {
+      return { encontrado: false };
+    }
+
+    const eventos = await query(
+      `SELECT status_novo, detectado_em FROM rastreio_eventos
+       WHERE transacao_id = $1 ORDER BY detectado_em DESC LIMIT 20`,
+      [req.params.transacao_id],
+    );
+    const r = rows[0];
+    return {
+      encontrado: true,
+      produto: r.produto,
+      status_interno: r.status_interno,
+      status_rotulo: ROTULO_STATUS[r.status_interno] ?? 'Rastreio ainda não disponível',
+      carrier_code: r.carrier_code,
+      tracking_number: r.tracking_number,
+      tracking_url: r.tracking_url,
+      tracking_status: r.tracking_status,
+      shipped_at: r.shipped_at,
+      delivered_at: r.delivered_at,
+      eventos: eventos.rows.map((e) => ({ status: e.status_novo, em: e.detectado_em })),
+    };
+  });
+}

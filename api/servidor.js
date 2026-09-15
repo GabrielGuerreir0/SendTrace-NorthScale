@@ -40,6 +40,7 @@ import rotasRelatorio from './rotas/relatorio.js';
 import rotasPixel from './rotas/pixel.js';
 import rotasVisaoGeral from './rotas/visaoGeral.js';
 import rotasAlertas, { verificarEEnviarAlertas } from './rotas/alertas.js';
+import rotasRastreio from './rotas/rastreio.js';
 
 const PORTA = Number(process.env.API_PORT) || 4400;
 const HOST = process.env.API_HOST || '127.0.0.1';
@@ -226,6 +227,7 @@ await app.register(swagger, {
       { name: 'Catálogo', description: "O catálogo canônico de produtos (slug, nomes, e-book, suporte) e os aliases. '*' é o padrão da cascata de copy." },
       { name: 'Suporte', description: 'Histórico de atendimentos do chatbot — a memória do suporte por cliente.' },
       { name: 'Central de E-mail IA', description: 'Chat com o banco e geração de rascunho de resposta, os dois recursos que chamam Claude.' },
+      { name: 'Rastreio', description: 'Onde cada pedido está de verdade (Red Rock) — snapshot, linha do tempo e a rota pública `/rastrear/:transacao_id`, sem login.' },
       { name: 'Saúde', description: 'A API está de pé?' },
     ],
   },
@@ -346,6 +348,7 @@ await app.register(rotasRelatorio);
 await app.register(rotasPixel);
 await app.register(rotasVisaoGeral);
 await app.register(rotasAlertas);
+await app.register(rotasRastreio);
 
 /* ═══════════════════════════════  subida  ══════════════════════════════ */
 

@@ -17,6 +17,7 @@ import {
   etapasTempos, salvarTempoEtapa,
   produtosDaFila, plataformasDaFila, fonteDados, suporteResumo, suporteConversas,
   catalogoProdutos, reguaInsights, visaoGeralResumo,
+  rastreioResumo, rastreioLista, rastreioDetalhe,
 } from './dados.js';
 import {
   apiConfigurada, enderecoApi, saude as saudeApi, ErroApi,
@@ -53,12 +54,13 @@ const COOKIE = 'painel_sessao';
 const PUBLICOS = new Set([
   '/login', '/login.html', '/login.js',
   '/recuperar', '/recuperar.html', '/recuperar.js',
+  '/rastrear', '/rastrear.html', '/rastrear.js',
   '/styles.css', '/src/logo_northscale.png',
 ]);
 
-/* /login e /recuperar são as duas telas públicas (arquivo .html) — o resto
-   dos PUBLICOS já bate o nome do arquivo direto. */
-const PAGINA_PUBLICA = { '/login': '/login.html', '/recuperar': '/recuperar.html' };
+/* /login, /recuperar e /rastrear são as três telas públicas (arquivo .html) —
+   o resto dos PUBLICOS já bate o nome do arquivo direto. */
+const PAGINA_PUBLICA = { '/login': '/login.html', '/recuperar': '/recuperar.html', '/rastrear': '/rastrear.html' };
 
 function lerCookie(req, nome) {
   const cru = req.headers.cookie;
@@ -1680,6 +1682,35 @@ async function atender(req, res, url, sessao) {
     return json(res, 200, await visaoGeralResumo(dias ?? 30));
   }
 
+  /* ── aba interna "Rastreio" (Red Rock) — thin proxy, mesmo padrão de
+     /api/suporte e /api/suporte/conversas acima ── */
+  if (url.pathname === '/api/rastreio') {
+    const q = url.searchParams;
+    return json(res, 200, await rastreioLista({
+      status: textoOuNulo(q.get('status')),
+      provedor: textoOuNulo(q.get('provedor')),
+      produto: textoOuNulo(q.get('produto')),
+      plataforma: textoOuNulo(q.get('plataforma')),
+      search: textoOuNulo(q.get('search')),
+      ordering: textoOuNulo(q.get('ordering')),
+      page: q.get('page') ?? undefined,
+      page_size: q.get('page_size') ?? undefined,
+    }));
+  }
+
+  if (url.pathname === '/api/metricas/rastreio') {
+    return json(res, 200, await rastreioResumo({
+      produto: textoOuNulo(url.searchParams.get('produto')),
+      plataforma: textoOuNulo(url.searchParams.get('plataforma')),
+    }));
+  }
+
+  if (url.pathname.startsWith('/api/rastreio/')) {
+    const id = decodeURIComponent(url.pathname.slice('/api/rastreio/'.length).replace(/\/$/, ''));
+    if (!id) return json(res, 404, { erro: 'transacao_id ausente' });
+    return json(res, 200, await rastreioDetalhe(id));
+  }
+
   // A API é a única dependência do painel agora. `/api/health/` dela é rota
   // pública, então este teste não depende de o token de ninguém estar válido.
   if (url.pathname === '/api/health') {
@@ -1757,6 +1788,31 @@ const servidor = http.createServer(async (req, res) => {
         // cliente de e-mail — devolve o pixel mesmo se a API estiver fora.
         res.writeHead(200, { 'Content-Type': 'image/gif', 'Cache-Control': 'no-store' });
         return res.end(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBTAA7', 'base64'));
+      }
+    }
+
+    /*
+     * Rastreio público de pedido — o lead consulta o próprio pedido sem
+     * login. Mesma rota pública da API (api/rotas/rastreio.js), só
+     * repassada por aqui para sair com HTTPS/domínio de verdade e para o
+     * rate-limit por IP da API enxergar o IP de quem chegou, não o do
+     * proxy — mesmo motivo do bloco /pixel/ acima. ANTES da guarda de
+     * sessão: quem bate aqui pode nunca ter feito login.
+     */
+    if (url.pathname.startsWith('/rastrear/')) {
+      try {
+        const alvo = await fetch(`${enderecoApi}${url.pathname}`, {
+          signal: AbortSignal.timeout(8000),
+          headers: {
+            Accept: 'application/json',
+            'X-Forwarded-For': req.headers['x-forwarded-for'] || req.socket.remoteAddress || '',
+          },
+        });
+        const corpo = await alvo.text();
+        res.writeHead(alvo.status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        return res.end(corpo);
+      } catch {
+        return json(res, 502, { erro: 'sem conexão com o servidor' });
       }
     }
 

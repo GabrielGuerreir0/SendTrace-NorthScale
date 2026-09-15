@@ -38,6 +38,7 @@ const ABAS = {
   galeriaia: 'aba-galeriaia',
   suporteescalado: 'aba-suporteescalado',
   relatorioia: 'aba-relatorioia',
+  rastreio: 'aba-rastreio',
 };
 
 // Título da aba do navegador por seção — com várias abas do painel abertas
@@ -52,6 +53,7 @@ const TITULOS = {
   galeriaia: 'Galeria de Imagens',
   suporteescalado: 'Suporte Escalado',
   relatorioia: 'Relatório de Métricas',
+  rastreio: 'Rastreio de Pedidos',
 };
 
 function mostrarAba(qual) {
