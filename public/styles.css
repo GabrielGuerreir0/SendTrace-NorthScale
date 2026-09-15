@@ -2302,7 +2302,7 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 .gd-preview-rodape a { color: var(--eixo); text-decoration: none; }
 .gd-preview-rodape a:hover { text-decoration: underline; }
 
-/* ── linha do tempo do rastreio (página pública /rastrear e aba interna) ── */
+/* ── linha do tempo do rastreio, versão log de eventos (aba interna) ── */
 .rastreio-linha-tempo {
   list-style: none; margin: 14px 0 0; padding: 0;
   display: flex; flex-direction: column; gap: 2px;
@@ -2317,3 +2317,39 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 .rastreio-linha-tempo-vazia {
   justify-content: flex-start !important; color: var(--tinta-fraca) !important; line-height: 1.5;
 }
+
+/* ── linha do tempo do rastreio, versão degraus (página pública /rastreio) ──
+   Degrau fixo (recebido → enviado → entregue), não um log de eventos: mostra
+   onde o pedido ESTÁ na jornada, não só o que já aconteceu — é o que um lead
+   sem contexto técnico entende de cara. */
+.rastreio-etapas {
+  list-style: none; margin: 18px 0 0; padding: 0;
+}
+.rastreio-etapa {
+  position: relative;
+  display: flex; align-items: flex-start; gap: 12px;
+  padding-bottom: 22px;
+}
+.rastreio-etapa:last-child { padding-bottom: 0; }
+.rastreio-etapa::before {
+  content: ''; position: absolute; left: 5px; top: 16px; bottom: -6px;
+  width: 2px; background: var(--borda);
+}
+.rastreio-etapa:last-child::before { display: none; }
+.rastreio-etapa.is-concluida::before { background: var(--st-finalizado); }
+.rastreio-etapa-ponto {
+  flex: none; width: 12px; height: 12px; margin-top: 2px; border-radius: 50%;
+  background: var(--superficie-2); border: 2px solid var(--eixo);
+}
+.rastreio-etapa.is-concluida .rastreio-etapa-ponto {
+  background: var(--st-finalizado); border-color: var(--st-finalizado);
+}
+.rastreio-etapa.is-atual .rastreio-etapa-ponto {
+  background: var(--st-em-dia); border-color: var(--st-em-dia);
+  box-shadow: 0 0 0 3px rgba(66, 96, 230, .18);
+}
+.rastreio-etapa-corpo { display: flex; flex-direction: column; gap: 2px; }
+.rastreio-etapa-corpo strong { font-size: 13.5px; font-weight: 600; color: var(--tinta-fraca); }
+.rastreio-etapa.is-concluida .rastreio-etapa-corpo strong,
+.rastreio-etapa.is-atual .rastreio-etapa-corpo strong { color: var(--tinta); }
+.rastreio-etapa-data { font-size: 12px; color: var(--tinta-fraca); font-variant-numeric: tabular-nums; }

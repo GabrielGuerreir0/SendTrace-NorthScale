@@ -14,12 +14,12 @@ const $ = (id) => document.getElementById(id);
 const temaSalvo = localStorage.getItem('tema');
 if (temaSalvo) document.documentElement.dataset.theme = temaSalvo;
 
-const ROTULO_EVENTO = {
-  pending: 'Pedido recebido',
-  shipped: 'Enviado',
-  delivered: 'Entregue',
-  cancelled: 'Cancelado',
-};
+/** As 3 etapas da jornada, em ordem — cancelado é tratado à parte (não é um degrau, é um desvio). */
+const ETAPAS = [
+  { status: 'pending', rotulo: 'Pedido recebido' },
+  { status: 'shipped', rotulo: 'Enviado' },
+  { status: 'delivered', rotulo: 'Entregue' },
+];
 
 function dataHora(iso) {
   if (!iso) return '';
@@ -46,9 +46,52 @@ function ocupado(sim) {
   $('r-buscar').textContent = sim ? 'Buscando…' : 'Rastrear pedido';
 }
 
+/**
+ * Desenha os degraus fixos (recebido → enviado → entregue), marcando os já
+ * cumpridos e destacando o atual. `cancelled` não é um degrau a mais — é um
+ * desvio da jornada normal, então troca a lista inteira por um aviso.
+ */
+function renderizarEtapas(statusAtual, eventos) {
+  const ol = $('r-etapas');
+  const elCancelado = $('r-cancelado');
+  ol.innerHTML = '';
+
+  if (statusAtual === 'cancelled') {
+    ol.hidden = true;
+    const ev = (eventos ?? []).find((e) => e.status === 'cancelled');
+    elCancelado.hidden = false;
+    elCancelado.textContent = ev
+      ? `Este pedido foi cancelado em ${dataHora(ev.em)}.`
+      : 'Este pedido foi cancelado.';
+    return;
+  }
+  elCancelado.hidden = true;
+  ol.hidden = false;
+
+  const dataPorStatus = new Map((eventos ?? []).map((e) => [e.status, e.em]));
+  const rankAtual = ETAPAS.findIndex((e) => e.status === statusAtual);
+
+  for (const [i, etapa] of ETAPAS.entries()) {
+    const concluida = rankAtual >= 0 && i <= rankAtual;
+    const atual = i === rankAtual;
+    const li = document.createElement('li');
+    li.className = ['rastreio-etapa', concluida && 'is-concluida', atual && 'is-atual']
+      .filter(Boolean).join(' ');
+    const quando = dataPorStatus.get(etapa.status);
+    li.innerHTML = `
+      <span class="rastreio-etapa-ponto" aria-hidden="true"></span>
+      <div class="rastreio-etapa-corpo">
+        <strong>${etapa.rotulo}</strong>
+        <span class="rastreio-etapa-data">${quando ? dataHora(quando) : (concluida ? '' : 'ainda não')}</span>
+      </div>`;
+    ol.appendChild(li);
+  }
+}
+
 function renderizarResultado(dados) {
   $('form-buscar').hidden = true;
   $('r-resultado').hidden = false;
+  $('r-sem-info').hidden = true;
 
   $('r-status-rotulo').textContent = dados.status_rotulo || 'Rastreio ainda não disponível';
   $('r-produto').textContent = dados.produto || '';
@@ -70,14 +113,7 @@ function renderizarResultado(dados) {
     }
   }
 
-  const lista = $('r-linha-tempo');
-  lista.innerHTML = '';
-  for (const ev of dados.eventos ?? []) {
-    const li = document.createElement('li');
-    const rotulo = ROTULO_EVENTO[ev.status] ?? ev.status;
-    li.innerHTML = `<strong>${rotulo}</strong><span>${dataHora(ev.em)}</span>`;
-    lista.appendChild(li);
-  }
+  renderizarEtapas(dados.status_interno, dados.eventos);
 }
 
 function renderizarNaoEncontrado() {
@@ -86,9 +122,9 @@ function renderizarNaoEncontrado() {
   $('r-status-rotulo').textContent = 'Rastreio ainda não disponível';
   $('r-produto').hidden = true;
   $('r-transportadora').hidden = true;
-  $('r-linha-tempo').innerHTML =
-    '<li class="rastreio-linha-tempo-vazia">Ainda não temos informação de rastreio para este '
-    + 'pedido. Se você comprou recentemente, tente de novo em algumas horas.</li>';
+  $('r-etapas').hidden = true;
+  $('r-cancelado').hidden = true;
+  $('r-sem-info').hidden = false;
 }
 
 $('form-buscar').addEventListener('submit', async (ev) => {
