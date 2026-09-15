@@ -51,6 +51,24 @@ import { LABEL_CATEGORIA } from './relatorio.js';
 const rotuloCategoria = (c) => LABEL_CATEGORIA[c]
   ?? String(c ?? '').replace(/_/g, ' ').replace(/^./, (ch) => ch.toUpperCase());
 
+/**
+ * E-mails de antes do sistema de resposta automática entrar no ar (import
+ * histórico de caixa antiga, feito em 06/08/2026) nunca tiveram chance real
+ * de receber resposta da IA — taxa de resposta automática era 0% até
+ * 04/08/2026, só passa a existir de verdade a partir de 05/08. Contá-los nos
+ * KPIs/listas gerais (Tickets, Suporte IA) infla os números sem refletir a
+ * operação atual. Decisão do usuário (16/09/2026): aplicar um piso de data
+ * por padrão nesses agregados, mas só quando NINGUÉM escolheu um período
+ * (`dias`/`data_de`/`data_ate`) e não é uma busca pelo histórico de UM
+ * cliente específico (`email` exato) — abrir a timeline completa de alguém
+ * precisa continuar mostrando tudo, senão o contato mais antigo dele some.
+ */
+const DATA_LANCAMENTO_IA = '2026-08-05';
+function comPisoLancamento(qs) {
+  if (qs.dias || qs.data_de || qs.data_ate || qs.email) return qs;
+  return { ...qs, data_de: DATA_LANCAMENTO_IA };
+}
+
 /* ═══════════════════════════════  GET /api/dados  ═══════════════════════════ */
 
 async function ticketsKpis(qs) {
@@ -611,7 +629,7 @@ export default async function rotasEmailIACentral(app) {
       security: [{ bearerAuth: [] }],
     },
   }, async (req) => {
-    const qs = await resolverEmailsProdutoLoja(req.query, query);
+    const qs = await resolverEmailsProdutoLoja(comPisoLancamento(req.query), query);
     const [
       ticketsKpisRes, ticketsRes, ticketsEvolucaoRes, ticketsTendenciasRes, evolucaoRes, plataformasRes,
       kpisRes, devolucaoConfRes, motivos, categorias, sentimentosRes, areas, responsaveis,
@@ -692,7 +710,7 @@ export default async function rotasEmailIACentral(app) {
       security: [{ bearerAuth: [] }],
     },
   }, async (req) => {
-    const qs = await resolverEmailsProdutoLoja(req.query, query);
+    const qs = await resolverEmailsProdutoLoja(comPisoLancamento(req.query), query);
     return { itens: await ultimosEmails(qs) };
   });
 
