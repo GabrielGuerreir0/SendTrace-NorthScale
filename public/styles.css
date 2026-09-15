@@ -2353,3 +2353,23 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 .rastreio-etapa.is-concluida .rastreio-etapa-corpo strong,
 .rastreio-etapa.is-atual .rastreio-etapa-corpo strong { color: var(--tinta); }
 .rastreio-etapa-data { font-size: 12px; color: var(--tinta-fraca); font-variant-numeric: tabular-nums; }
+
+/* ── bloco de transportadora na página pública /rastreio ──
+   Coluna com gap próprio em vez de empilhar `.login-nota` (que tem
+   margin-top NEGATIVO, pensado pra ficar colado num título — duas seguidas
+   sem isso apertam demais). O botão é um <a>, que por padrão é `inline`:
+   sem display explícito aqui, o padding grande do .btn-forte SOBREPÕE o
+   texto da linha acima/abaixo em vez de empurrar o layout (achado 15/09,
+   reproduzia em desktop e mobile). */
+#r-transportadora {
+  display: flex; flex-direction: column; gap: 8px;
+  margin-top: 14px;
+}
+#r-transportadora .login-nota { margin: 0; }
+#r-tracking-url {
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-top: 4px; align-self: flex-start;
+}
+@media (max-width: 480px) {
+  #r-tracking-url { align-self: stretch; }
+}
