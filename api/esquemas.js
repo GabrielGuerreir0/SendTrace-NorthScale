@@ -351,6 +351,29 @@ export const RastreioEvento = {
   required: ['id', 'status_novo', 'fonte', 'detectado_em'],
 };
 
+/** Compartilhado entre RastreioDetalhe e RastreioPublico — ver comentário em api/rotas/rastreio.js. */
+const marcos = {
+  type: 'object',
+  description: 'Os 3 carimbos que já temos de graça — criação (da própria plataforma de venda), envio e entrega.',
+  properties: {
+    criado_em: { type: ['string', 'null'], format: 'date-time' },
+    enviado_em: { type: ['string', 'null'], format: 'date-time' },
+    entregue_em: { type: ['string', 'null'], format: 'date-time' },
+  },
+};
+const checkpointsTransportadora = {
+  type: ['array', 'null'],
+  items: { type: 'string' },
+  description: "Histórico bruto de `tracking_delivery_exceptions` da Red Rock, quando a "
+    + 'transportadora manda (hoje só visto em remessas USPS — GOFO, a mais comum nos nossos '
+    + "pedidos, não preenche). Sem data por evento — é texto livre da transportadora, não "
+    + 'um provedor de tracking granular (isso é a Parcels API v4, ver PLANO.md seção 13).',
+};
+const parado = {
+  parado: { type: 'boolean', description: 'Sem NENHUMA mudança de status há mais que o limite (3 dias em pending, 7 em shipped).' },
+  dias_sem_mudanca: { type: ['integer', 'null'] },
+};
+
 export const RastreioDetalhe = {
   $id: 'RastreioDetalhe',
   type: 'object',
@@ -362,6 +385,9 @@ export const RastreioDetalhe = {
         tracking: { type: ['array', 'null'], description: 'Array tracking[] cru da Red Rock — cobre reenvio/superseded.' },
         cancellation: { type: ['object', 'null'] },
         eventos: { type: 'array', items: { $ref: 'RastreioEvento#' } },
+        marcos,
+        checkpoints_transportadora: checkpointsTransportadora,
+        ...parado,
       },
     },
   ],
@@ -410,6 +436,9 @@ export const RastreioPublico = {
         },
       },
     },
+    marcos,
+    checkpoints_transportadora: checkpointsTransportadora,
+    ...parado,
   },
   required: ['encontrado'],
 };

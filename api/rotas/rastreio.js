@@ -22,6 +22,37 @@ const COLUNAS_LISTA = `r.transacao_id, d.nome, d.produto, d.plataforma, r.proved
   r.carrier_code, r.tracking_url, r.tracking_status, r.shipped_at, r.delivered_at,
   r.ultima_consulta_em, r.ultimo_erro, r.criado_em, r.atualizado_em`;
 
+/**
+ * A Red Rock só dá 4 status simples (pending/shipped/delivered/cancelled) —
+ * pra enriquecer sem depender de um provedor novo (ver PLANO.md seção 13,
+ * a Parcels API v4 é a opção paga, com data/local por evento), usa dois
+ * dados que já vêm de graça e ninguém expunha:
+ *   · `tracking_delivery_exceptions` — histórico bruto da transportadora,
+ *     quando ela manda (visto até agora só em remessas USPS; GOFO, o
+ *     carrier mais comum nos nossos pedidos, não preenche isso);
+ *   · quanto tempo faz sem NENHUMA mudança detectada — calculado sobre o
+ *     próprio histórico de polling (`atualizado_em`), não precisa de API
+ *     nova nenhuma.
+ */
+const LIMITE_PARADO_DIAS = { pending: 3, shipped: 7 };
+
+function checkpointsTransportadora(trackingArr) {
+  const lista = Array.isArray(trackingArr) ? trackingArr : [];
+  const atual = lista.find((t) => t.is_current) ?? lista[lista.length - 1];
+  const bruto = atual?.tracking_delivery_exceptions;
+  if (!bruto) return null;
+  // A Red Rock manda isso com aspas simples sobrando na ponta (artefato do
+  // lado deles, não é JSON) — tira antes de partir pelo separador.
+  return String(bruto).replace(/^'+|'+$/g, '').split('|').map((s) => s.trim()).filter(Boolean);
+}
+
+function montarParado(statusInterno, atualizadoEm) {
+  const limite = LIMITE_PARADO_DIAS[statusInterno];
+  if (!limite || !atualizadoEm) return { parado: false, dias_sem_mudanca: null };
+  const dias = (Date.now() - new Date(atualizadoEm).getTime()) / 86_400_000;
+  return { parado: dias >= limite, dias_sem_mudanca: Math.floor(dias) };
+}
+
 const ROTULO_STATUS = {
   pendente_consulta: 'Consultando fornecedor',
   nao_encontrado: 'Rastreio ainda não disponível',
@@ -148,7 +179,17 @@ export default async function rotasRastreio(app) {
        ORDER BY detectado_em DESC LIMIT 100`,
       [req.params.transacao_id],
     );
-    return { ...rows[0], eventos: eventos.rows };
+    return {
+      ...rows[0],
+      eventos: eventos.rows,
+      marcos: {
+        criado_em: rows[0].order_created_at,
+        enviado_em: rows[0].shipped_at,
+        entregue_em: rows[0].delivered_at,
+      },
+      checkpoints_transportadora: checkpointsTransportadora(rows[0].tracking),
+      ...montarParado(rows[0].status_interno, rows[0].atualizado_em),
+    };
   });
 
   app.get('/api/metricas/rastreio/', {
@@ -204,7 +245,8 @@ export default async function rotasRastreio(app) {
 
     const { rows } = await query(
       `SELECT r.status_interno, r.carrier_code, r.tracking_number, r.tracking_url,
-              r.tracking_status, r.shipped_at, r.delivered_at, d.produto
+              r.tracking_status, r.order_created_at, r.shipped_at, r.delivered_at,
+              r.tracking, r.atualizado_em, d.produto
        FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
        WHERE r.transacao_id = $1`,
       [req.params.transacao_id],
@@ -232,6 +274,9 @@ export default async function rotasRastreio(app) {
       shipped_at: r.shipped_at,
       delivered_at: r.delivered_at,
       eventos: eventos.rows.map((e) => ({ status: e.status_novo, em: e.detectado_em })),
+      marcos: { criado_em: r.order_created_at, enviado_em: r.shipped_at, entregue_em: r.delivered_at },
+      checkpoints_transportadora: checkpointsTransportadora(r.tracking),
+      ...montarParado(r.status_interno, r.atualizado_em),
     };
   });
 }
