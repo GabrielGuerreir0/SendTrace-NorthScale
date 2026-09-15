@@ -54,13 +54,16 @@ const COOKIE = 'painel_sessao';
 const PUBLICOS = new Set([
   '/login', '/login.html', '/login.js',
   '/recuperar', '/recuperar.html', '/recuperar.js',
-  '/rastrear', '/rastrear.html', '/rastrear.js',
+  // URL pública é /rastreio (mais natural pro lead) — o arquivo continua
+  // chamando rastrear.html/.js por dentro, só pra não colidir de nome com
+  // o rastreio.js da aba INTERNA do painel (arquivo diferente, mesma pasta).
+  '/rastreio', '/rastrear.html', '/rastrear.js',
   '/styles.css', '/src/logo_northscale.png',
 ]);
 
-/* /login, /recuperar e /rastrear são as três telas públicas (arquivo .html) —
+/* /login, /recuperar e /rastreio são as três telas públicas (arquivo .html) —
    o resto dos PUBLICOS já bate o nome do arquivo direto. */
-const PAGINA_PUBLICA = { '/login': '/login.html', '/recuperar': '/recuperar.html', '/rastrear': '/rastrear.html' };
+const PAGINA_PUBLICA = { '/login': '/login.html', '/recuperar': '/recuperar.html', '/rastreio': '/rastrear.html' };
 
 function lerCookie(req, nome) {
   const cru = req.headers.cookie;
