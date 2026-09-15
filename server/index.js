@@ -1393,7 +1393,7 @@ async function atender(req, res, url, sessao) {
     if (!q.get('board_id')) return json(res, 400, { erro: 'Informe o board.' });
     try {
       return json(res, 200, await obterApi('/api/suporte-escalado', {
-        board_id: q.get('board_id'), q: q.get('q'), dias: q.get('dias'),
+        board_id: q.get('board_id'), q: q.get('q'), dias: q.get('dias'), plataforma: q.get('plataforma'),
       }));
     } catch (err) {
       if (err instanceof ErroApi && (err.status === 403 || err.status === 404)) {
