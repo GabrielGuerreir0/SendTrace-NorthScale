@@ -33,6 +33,7 @@ let transicoes = [];
 let movimentosDiarios = [];
 let resumoMovimentos = {};
 let busca = '';
+let plataforma = ''; // '' (todas) | 'direto' | 'digistore24' | 'jvzoo' | 'buygoods' | ...
 let ordem = 'recentes'; // 'recentes' | 'antigos'
 const expandidos = new Set();
 let arrastandoId = null;
@@ -855,6 +856,12 @@ function criarCard(item) {
     card.append(produto);
   }
 
+  const plataformaTxt = item.plataforma_origem ? rotularPlataforma(item.plataforma_origem) : 'Direto (nossa caixa)';
+  const linhaPlataforma = document.createElement('div');
+  linhaPlataforma.className = 'esc-card-plataforma';
+  linhaPlataforma.textContent = `✉ ${plataformaTxt}`;
+  card.append(linhaPlataforma);
+
   if (item.motivo_escalonamento) {
     const motivo = document.createElement('div');
     motivo.className = 'esc-card-motivo';
@@ -1421,6 +1428,7 @@ export async function carregarDados() {
     const p = new URLSearchParams();
     p.set('board_id', boardId);
     if (busca && boardId !== 'todos') p.set('q', busca);
+    if (plataforma && boardId !== 'todos') p.set('plataforma', plataforma);
     const { ok, dados: d } = await api(`/api/suporte-escalado?${p}`);
     if (meu !== geracao) return;
     if (!ok) throw new Error(d?.detail ?? d?.erro ?? 'falha ao carregar');
@@ -1456,6 +1464,11 @@ $('esc-ordem').addEventListener('change', (e) => {
   ordem = e.target.value || 'recentes';
   paginaColuna.clear();
   if (boardId && boardId !== 'todos') renderBoard();
+});
+$('esc-plataforma').addEventListener('change', (e) => {
+  plataforma = e.target.value || '';
+  paginaColuna.clear();
+  carregarDados();
 });
 
 $('esc-board-seletor').addEventListener('change', (e) => {

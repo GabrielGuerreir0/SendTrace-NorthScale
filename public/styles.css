@@ -1990,6 +1990,7 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 .esc-card-email-linha { display: flex; align-items: center; gap: 3px; }
 .esc-card-email { font-size: 11px; color: var(--tinta-fraca); word-break: break-all; }
 .esc-card-produto { font-size: 11px; color: var(--tinta-2); }
+.esc-card-plataforma { font-size: 11px; color: var(--tinta-fraca); }
 .esc-card-motivo {
   font-size: 11.5px; line-height: 1.4; color: var(--tinta);
   padding: 7px 9px; border-radius: 9px;

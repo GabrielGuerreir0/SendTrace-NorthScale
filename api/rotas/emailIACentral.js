@@ -1250,7 +1250,10 @@ export default async function rotasEmailIACentral(app) {
         + 'administrador) pra uma visão agregada de todos os boards, sem drag-and-drop (cada '
         + 'board tem colunas próprias — não dá pra misturar num board só). `q` busca em nome, '
         + 'e-mail, resumo da conversa e motivo do escalonamento — os KPIs refletem o mesmo '
-        + 'recorte da busca (ignorado na visão geral).',
+        + 'recorte da busca (ignorado na visão geral). `plataforma` filtra pela origem do '
+        + 'e-mail que gerou o caso (`digistore24`, `jvzoo`, `buygoods`, etc. — mesmo valor de '
+        + '`email_ia.emails.plataforma_origem`), ou o literal `direto` pra casos sem plataforma '
+        + '(e-mail caiu direto na nossa caixa, sem passar por helpdesk de reseller).',
       security: [{ bearerAuth: [] }],
       querystring: {
         type: 'object',
@@ -1258,6 +1261,7 @@ export default async function rotasEmailIACentral(app) {
         properties: {
           board_id: { type: 'string' },
           q: { type: 'string' },
+          plataforma: { type: 'string' },
           dias: { type: 'integer', description: 'Janela (em dias) das métricas de transição/movimentação — padrão 30.' },
         },
       },
@@ -1285,6 +1289,19 @@ export default async function rotasEmailIACentral(app) {
       valores.push(`%${req.query.q}%`);
       i += 1;
     }
+    // 'direto' = e-mail caiu sem passar por nenhum helpdesk de plataforma
+    // (e.plataforma_origem vazio/NULL) — mesmo caso que o resto do painel já
+    // mostra como "—" via rotularPlataforma(), só que aqui precisa de um
+    // valor explícito no filtro pra representar essa opção. `e` é sempre um
+    // LEFT JOIN com email_ia.emails (abaixo) — casos sem email_id (raros)
+    // nunca batem num filtro de plataforma específico, só em "todas".
+    if (req.query.plataforma === 'direto') {
+      condicoes.push(`(e.plataforma_origem IS NULL OR e.plataforma_origem = '')`);
+    } else if (req.query.plataforma) {
+      condicoes.push(`e.plataforma_origem = $${i}`);
+      valores.push(req.query.plataforma);
+      i += 1;
+    }
     const onde = condicoes.join(' AND ');
 
     const [colunasRes, kpisRes, itensRes, transicoesRes, movimentosRes] = await Promise.all([
@@ -1294,16 +1311,19 @@ export default async function rotasEmailIACentral(app) {
       ),
       query(
         `SELECT s.status, count(*)::int AS total
-         FROM email_ia.suporte_escalado s WHERE ${onde}
+         FROM email_ia.suporte_escalado s
+         LEFT JOIN email_ia.emails e ON e.id = s.email_id
+         WHERE ${onde}
          GROUP BY s.status`,
         valores,
       ),
       query(
         `SELECT s.id, s.remetente_email, s.nome, s.resumo_conversa, s.motivo_escalonamento, s.status,
                 s.email_id, s.criado_em, s.atualizado_em, s.iniciado_em, s.finalizado_em,
-                s.data_entrega, mv.produto AS produto_pedido
+                s.data_entrega, mv.produto AS produto_pedido, e.plataforma_origem
          FROM email_ia.suporte_escalado s
          LEFT JOIN email_ia.mv_emails_x_pedidos mv ON mv.email_id = s.email_id
+         LEFT JOIN email_ia.emails e ON e.id = s.email_id
          WHERE ${onde}
          ORDER BY s.criado_em DESC`,
         valores,
