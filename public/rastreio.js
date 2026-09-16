@@ -419,14 +419,14 @@ $('rst-atualizar').addEventListener('click', carregarTudo);
 
 /**
  * O catálogo do topo (`sel-produto`/`sel-plataforma`) só existe depois do
- * primeiro `/api/snapshot` do painel voltar — se o usuário abrir a aba
- * Rastreio antes disso (comum: é a primeira coisa que ele clica depois do
- * login), `sincronizarSelects()` clona uma lista vazia e nada dispara de
- * novo sozinho depois (esta aba não tem polling). Tenta de novo por até 6s
- * — de sobra pro snapshot inicial chegar — e para assim que o topo tiver
- * mais que só a opção "Todos/Todas".
+ * primeiro `/api/snapshot` do painel voltar — medido em produção: ~6s desde
+ * o login. Se o usuário abrir a aba Rastreio antes disso (comum: é a
+ * primeira coisa que ele clica depois do login), `sincronizarSelects()`
+ * clona uma lista vazia e nada dispara de novo sozinho depois (esta aba não
+ * tem polling). Tenta de novo por até 15s — margem folgada sobre os ~6s
+ * observados — e para assim que o topo tiver mais que só "Todos/Todas".
  */
-function tentarSincronizarSelects(tentativasRestantes = 4) {
+function tentarSincronizarSelects(tentativasRestantes = 10) {
   sincronizarSelects();
   const topoProduto = $('sel-produto');
   const rstProduto = $('rst-sel-produto');
