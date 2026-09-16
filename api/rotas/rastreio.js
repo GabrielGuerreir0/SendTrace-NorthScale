@@ -15,6 +15,31 @@ import { query } from '../../server/db.js';
 import { DO_PRODUTO, DA_PLATAFORMA } from '../sql.js';
 import { fatiar, montarOrdem, ErroHttp } from '../comum.js';
 import { paginado, paginacaoParams } from '../esquemas.js';
+import { condicaoPeriodo } from '../filtrosEmailIA.js';
+
+/** `dias`/`data_de`/`data_ate` documentados nas 3 rotas que os aceitam — ver condicaoPeriodo. */
+const PERIODO_QS = {
+  dias: { type: 'string', description: 'Janela relativa em dias (ex.: 7, 30, 60, 90). Tem prioridade sobre data_de/data_ate.' },
+  data_de: { type: 'string', description: 'Pedidos comprados a partir desta data (formato YYYY-MM-DD).' },
+  data_ate: { type: 'string', description: 'Pedidos comprados até esta data, incluída (formato YYYY-MM-DD).' },
+};
+
+/**
+ * Produto/plataforma/período sobre `disparos_pos_venda d` — os 3 recortes
+ * que a aba de Rastreio já mostra no filtro (produto e plataforma) mais o
+ * período (07/09/2026, pedido do usuário) — usado igual nas 6 sub-consultas
+ * de `/api/metricas/rastreio/saude/`, cada uma com sua própria contagem de
+ * placeholders (por isso sempre começa em $1 e devolve um `valores` próprio).
+ */
+function filtroCompra(qs, colunaData = 'd.criado_em') {
+  const condicoes = [];
+  const valores = [];
+  let i = 1;
+  if (qs.produto) { condicoes.push(`d.produto = $${i}`); valores.push(String(qs.produto)); i += 1; }
+  if (qs.plataforma) { condicoes.push(`btrim(d.plataforma) = $${i}`); valores.push(String(qs.plataforma)); i += 1; }
+  condicaoPeriodo(qs, colunaData, condicoes, valores, i);
+  return { sql: condicoes.length ? condicoes.join(' AND ') : '1=1', valores };
+}
 
 const COLUNAS_LISTA = `r.transacao_id, d.nome, d.produto, d.plataforma, r.provedor,
   r.status_interno, r.status_bruto, r.order_number, r.order_created_at, r.total,
@@ -124,6 +149,7 @@ export default async function rotasRastreio(app) {
           plataforma: { type: 'string' },
           search: { type: 'string', description: 'Procura em: transacao_id, nome, tracking_number.' },
           ordering: { type: 'string', description: 'Aceita: atualizado_em, criado_em, order_created_at.' },
+          ...PERIODO_QS,
         },
       },
       response: { 200: paginado('RastreioPedido') },
@@ -141,6 +167,7 @@ export default async function rotasRastreio(app) {
       const i = valores.length;
       partes.push(`(r.transacao_id ILIKE $${i} OR d.nome ILIKE $${i} OR r.tracking_number ILIKE $${i})`);
     }
+    condicaoPeriodo(req.query, 'd.criado_em', partes, valores, valores.length + 1);
     const onde = `WHERE ${partes.join(' AND ')}`;
     const base = `FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id ${onde}`;
 
@@ -198,10 +225,17 @@ export default async function rotasRastreio(app) {
       tags: ['Métricas'],
       summary: 'Contagem por status de rastreio + taxa de entrega',
       security: [{ bearerAuth: [] }],
-      querystring: { type: 'object', properties: { produto: { type: 'string' }, plataforma: { type: 'string' } } },
+      querystring: {
+        type: 'object',
+        properties: { produto: { type: 'string' }, plataforma: { type: 'string' }, ...PERIODO_QS },
+      },
       response: { 200: { $ref: 'ResumoRastreio#' } },
     },
   }, async (req) => {
+    const condicoes = [];
+    const valores = [null, null];
+    condicaoPeriodo(req.query, 'd.criado_em', condicoes, valores, 3);
+    const filtroPeriodo = condicoes.length ? `AND ${condicoes.join(' AND ')}` : '';
     const { rows } = await query(
       `SELECT
          count(*)::int                                                    AS total,
@@ -212,10 +246,13 @@ export default async function rotasRastreio(app) {
          count(*) FILTER (WHERE r.status_interno = 'delivered')::int         AS delivered,
          count(*) FILTER (WHERE r.status_interno = 'cancelled')::int         AS cancelled,
          count(*) FILTER (WHERE r.status_interno = 'exception')::int         AS exception,
-         count(*) FILTER (WHERE r.status_interno = 'desconhecido')::int      AS desconhecido
+         count(*) FILTER (WHERE r.status_interno = 'desconhecido')::int      AS desconhecido,
+         count(*) FILTER (
+           WHERE r.tracking_number IS NULL AND r.status_interno IN ('pending', 'shipped', 'delivered', 'cancelled')
+         )::int AS sem_codigo_rastreio
        FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
-       WHERE ${DO_PRODUTO(1, 'd.')} AND ${DA_PLATAFORMA(2, 'd.')}`,
-      [req.query.produto ?? null, req.query.plataforma ?? null],
+       WHERE ${DO_PRODUTO(1, 'd.')} AND ${DA_PLATAFORMA(2, 'd.')} ${filtroPeriodo}`,
+      [req.query.produto ?? null, req.query.plataforma ?? null, ...valores.slice(2)],
     );
     const t = rows[0];
     const base = t.shipped + t.delivered;
@@ -229,11 +266,20 @@ export default async function rotasRastreio(app) {
       summary: 'Saúde do rastreio: velocidade de detecção, cobertura e transições de status',
       description: 'Todas as médias/medianas excluem `fonte = \'backfill-email\'` (o backfill '
         + 'retroativo por e-mail, rodado uma vez em 15/09/2026) — sem isso, um pedido antigo '
-        + '"achado" só hoje entraria como se tivesse levado meses pra ser detectado.',
+        + '"achado" só hoje entraria como se tivesse levado meses pra ser detectado. Aceita os '
+        + 'mesmos recortes de produto/plataforma/período da lista de pedidos.',
       security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: { produto: { type: 'string' }, plataforma: { type: 'string' }, ...PERIODO_QS },
+      },
       response: { 200: { $ref: 'SaudeRastreio#' } },
     },
-  }, async () => {
+  }, async (req) => {
+    // Mesmo filtro (produto/plataforma/período), reaproveitado nas 6
+    // sub-consultas — cada `query()` é independente, então os placeholders
+    // $1/$2/... recomeçam certos em cada uma sem precisar recalcular nada.
+    const f = filtroCompra(req.query);
     const [tempoParaEncontrar, naoEncontrados, transicoesStatus, semCodigoRastreio, funilPorPlataforma, provedores] = await Promise.all([
       query(`
         WITH primeiro_evento AS (
@@ -249,9 +295,9 @@ export default async function rotasRastreio(app) {
           )::numeric, 1)::float8 AS mediana_horas
         FROM primeiro_evento pe
         JOIN disparos_pos_venda d ON d.transacao_id = pe.transacao_id
-        WHERE pe.fonte <> 'backfill-email'
+        WHERE pe.fonte <> 'backfill-email' AND ${f.sql}
         GROUP BY 1 ORDER BY amostras DESC
-      `),
+      `, f.valores),
       query(`
         SELECT btrim(d.plataforma) AS plataforma,
           count(*)::int AS total,
@@ -259,12 +305,12 @@ export default async function rotasRastreio(app) {
           min(d.criado_em) AS compra_mais_antiga,
           max(d.criado_em) AS compra_mais_recente
         FROM rastreio_pedidos r JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
-        WHERE r.status_interno = 'nao_encontrado'
+        WHERE r.status_interno = 'nao_encontrado' AND ${f.sql}
         GROUP BY 1 ORDER BY total DESC
-      `),
+      `, f.valores),
       query(`
         WITH eventos AS (
-          SELECT status_anterior, status_novo, detectado_em,
+          SELECT transacao_id, status_anterior, status_novo, detectado_em,
             LAG(detectado_em) OVER (PARTITION BY transacao_id ORDER BY detectado_em) AS entrou_em
           FROM rastreio_eventos WHERE fonte <> 'backfill-email'
         )
@@ -274,16 +320,18 @@ export default async function rotasRastreio(app) {
           round(percentile_cont(0.5) WITHIN GROUP (
             ORDER BY extract(epoch FROM (detectado_em - entrou_em)) / 3600
           )::numeric, 1)::float8 AS mediana_horas
-        FROM eventos WHERE entrou_em IS NOT NULL
+        FROM eventos ev JOIN disparos_pos_venda d ON d.transacao_id = ev.transacao_id
+        WHERE ev.entrou_em IS NOT NULL AND ${f.sql}
         GROUP BY 1, 2 ORDER BY amostras DESC
-      `),
+      `, f.valores),
       query(`
         SELECT r.status_interno, btrim(d.plataforma) AS plataforma, count(*)::int AS total
         FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
         WHERE r.provedor IS NOT NULL AND r.tracking_number IS NULL
           AND r.status_interno IN ('pending', 'shipped', 'delivered', 'cancelled')
+          AND ${f.sql}
         GROUP BY 1, 2 ORDER BY total DESC
-      `),
+      `, f.valores),
       query(`
         SELECT btrim(d.plataforma) AS plataforma,
           count(*)::int AS total,
@@ -294,12 +342,15 @@ export default async function rotasRastreio(app) {
           count(*) FILTER (WHERE r.status_interno = 'delivered')::int AS delivered,
           count(*) FILTER (WHERE r.status_interno = 'cancelled')::int AS cancelled
         FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+        WHERE ${f.sql}
         GROUP BY 1 ORDER BY total DESC
-      `),
+      `, f.valores),
       query(`
-        SELECT coalesce(provedor, 'nenhum') AS provedor, count(*)::int AS total
-        FROM rastreio_pedidos GROUP BY 1 ORDER BY total DESC
-      `),
+        SELECT coalesce(r.provedor, 'nenhum') AS provedor, count(*)::int AS total
+        FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+        WHERE ${f.sql}
+        GROUP BY 1 ORDER BY total DESC
+      `, f.valores),
     ]);
 
     return {

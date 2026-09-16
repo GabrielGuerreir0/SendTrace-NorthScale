@@ -406,6 +406,10 @@ export const ResumoRastreio = {
     cancelled: { type: 'integer' },
     exception: { type: 'integer' },
     desconhecido: { type: 'integer' },
+    sem_codigo_rastreio: {
+      type: 'integer',
+      description: 'Já encontrado num provedor (pending/shipped/delivered/cancelled) mas ainda sem tracking_number.',
+    },
     taxa_entrega: { type: ['number', 'null'], description: 'delivered / (shipped + delivered), em %.' },
   },
 };

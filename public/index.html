@@ -2260,6 +2260,25 @@
           <span class="sr">Filtrar por plataforma</span>
           <select id="rst-sel-plataforma"><option value="">Todas as plataformas</option></select>
         </label>
+        <label class="campo-sel" id="rst-campo-periodo">
+          <span class="sr">Período</span>
+          <select id="rst-sel-periodo">
+            <option value="7">7 dias</option>
+            <option value="30">30 dias</option>
+            <option value="60">60 dias</option>
+            <option value="90">90 dias</option>
+            <option value="" selected>Tudo</option>
+            <option value="intervalo">Escolher datas…</option>
+          </select>
+        </label>
+        <label class="campo" id="rst-campo-data-de" hidden>
+          <span class="sr">De</span>
+          <input type="date" id="rst-data-de" title="Pedidos comprados a partir desta data">
+        </label>
+        <label class="campo" id="rst-campo-data-ate" hidden>
+          <span class="sr">Até</span>
+          <input type="date" id="rst-data-ate" title="Pedidos comprados até esta data (incluída)">
+        </label>
       </div>
     </header>
     <div class="tabela-envolve">

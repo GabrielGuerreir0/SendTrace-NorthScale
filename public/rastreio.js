@@ -21,9 +21,28 @@ import { n, dataHora, dia, duracaoH } from './format.js';
 const POR_PAGINA = 25;
 const estado = {
   busca: '', status: '', produto: '', plataforma: '', pagina: 1,
+  periodo: '', dataDe: '', dataAte: '',
 };
 
 const pct = (v) => (v === null || v === undefined ? '—' : `${String(v).replace('.', ',')}%`);
+
+/**
+ * Produto/plataforma/período — os 3 recortes que valem pra tudo nesta aba
+ * (KPIs, Saúde e lista de pedidos), não só a tabela. Mesmo mecanismo de
+ * "dias" OU "data_de"/"data_ate" (mutuamente exclusivos) de emailFiltro.js.
+ */
+function paramsFiltro() {
+  const p = new URLSearchParams();
+  if (estado.produto) p.set('produto', estado.produto);
+  if (estado.plataforma) p.set('plataforma', estado.plataforma);
+  if (estado.periodo) {
+    p.set('dias', estado.periodo);
+  } else {
+    if (estado.dataDe) p.set('data_de', estado.dataDe);
+    if (estado.dataAte) p.set('data_ate', estado.dataAte);
+  }
+  return p;
+}
 
 /* ══════════════  produto/plataforma — clonados do seletor do topo  ═════════
  * Mesmo truque de emailFiltro.js (sincronizarOpcoes): mesmo catálogo de
@@ -73,11 +92,25 @@ function renderKpis(r) {
   );
   $('rst-kpis-status').replaceChildren(
     kpiCard({ icone: '◐', tom: 'neutro', rotulo: 'Consultando fornecedor', valor: n(r.pendente_consulta) }),
-    kpiCard({ icone: '●', tom: 'neutro', rotulo: 'Pedido recebido', valor: n(r.pending) }),
-    kpiCard({ icone: '➤', tom: 'neutro', rotulo: 'A caminho', valor: n(r.shipped) }),
+    kpiCard({
+      icone: '●', tom: 'neutro', rotulo: 'Pedido recebido', valor: n(r.pending),
+      nota: 'pedidos que a fulfillment recebeu das plataformas e ainda não foi enviado',
+    }),
+    kpiCard({
+      icone: '➤', tom: 'neutro', rotulo: 'A caminho', valor: n(r.shipped),
+      nota: 'pedidos que foram enviados',
+    }),
     kpiCard({ icone: '✓', tom: 'bom', rotulo: 'Entregue', valor: n(r.delivered) }),
-    kpiCard({ icone: '✕', tom: 'neutro', rotulo: 'Cancelado', valor: n(r.cancelled) }),
+    kpiCard({
+      icone: '✕', tom: 'neutro', rotulo: 'Cancelado', valor: n(r.cancelled),
+      nota: 'pedidos que foram cancelados',
+    }),
     kpiCard({ icone: '?', tom: 'neutro', rotulo: 'Status não mapeado', valor: n(r.desconhecido) }),
+    kpiCard({
+      icone: '▭', tom: r.sem_codigo_rastreio > 0 ? 'medio' : 'neutro', rotulo: 'Sem código de rastreio',
+      valor: n(r.sem_codigo_rastreio),
+      nota: 'na fulfillment (recebido, a caminho, entregue ou cancelado) mas ainda sem tracking_number',
+    }),
   );
 }
 
@@ -187,10 +220,8 @@ let geracaoLista = 0;
 
 async function carregarLista() {
   const meu = ++geracaoLista;
-  const params = new URLSearchParams();
+  const params = paramsFiltro();
   if (estado.status) params.set('status', estado.status);
-  if (estado.produto) params.set('produto', estado.produto);
-  if (estado.plataforma) params.set('plataforma', estado.plataforma);
   if (estado.busca) params.set('search', estado.busca);
   params.set('page', String(estado.pagina));
   params.set('page_size', String(POR_PAGINA));
@@ -215,8 +246,9 @@ async function carregarLista() {
 
 /* ═══════════════════════════════  saúde do rastreio  ═══════════════════════
  * Seis tabelas de cruzamento (ver /api/metricas/rastreio/saude em
- * api/rotas/rastreio.js) — carrega uma vez só junto com o resumo, sem
- * filtro de produto/plataforma (é visão geral de saúde, não um recorte). */
+ * api/rotas/rastreio.js) — carrega junto com o resumo, com os MESMOS
+ * recortes de produto/plataforma/período (paramsFiltro), não é mais uma
+ * visão geral sem filtro nenhum. */
 
 function renderSaudeTempo(linhas) {
   const colunas = [
@@ -281,7 +313,8 @@ function renderSaudeProvedores(linhas) {
 }
 
 async function carregarSaude() {
-  const { ok, dados: s } = await api('/api/metricas/rastreio/saude');
+  const params = paramsFiltro();
+  const { ok, dados: s } = await api(`/api/metricas/rastreio/saude?${params}`);
   if (!ok) return;
   renderSaudeTempo(s.tempo_para_encontrar);
   renderSaudeNaoEncontrado(s.nao_encontrados);
@@ -292,9 +325,7 @@ async function carregarSaude() {
 }
 
 async function carregarResumo() {
-  const params = new URLSearchParams();
-  if (estado.produto) params.set('produto', estado.produto);
-  if (estado.plataforma) params.set('plataforma', estado.plataforma);
+  const params = paramsFiltro();
   const { ok, dados: r } = await api(`/api/metricas/rastreio?${params}`);
   if (!ok) return;
   renderKpis(r);
@@ -328,6 +359,53 @@ $('rst-sel-plataforma').addEventListener('change', (e) => {
   estado.pagina = 1;
   carregarTudo();
 });
+
+/**
+ * "Escolher datas…" é um valor de vitrine no <select> — ao escolhê-lo, só
+ * troca quais campos aparecem; o período em si fica vazio (= "Tudo") até
+ * o usuário preencher De/Até. Mesmo padrão de emailFiltro.js (ce-sel-periodo).
+ */
+function mostrarCamposIntervaloRastreio(mostrar) {
+  const campoDe = $('rst-campo-data-de');
+  const campoAte = $('rst-campo-data-ate');
+  if (campoDe) campoDe.hidden = !mostrar;
+  if (campoAte) campoAte.hidden = !mostrar;
+}
+
+$('rst-sel-periodo').addEventListener('change', (e) => {
+  if (e.target.value === 'intervalo') {
+    estado.periodo = '';
+    mostrarCamposIntervaloRastreio(true);
+    estado.pagina = 1;
+    carregarTudo();
+    return;
+  }
+  estado.periodo = e.target.value || '';
+  estado.dataDe = '';
+  estado.dataAte = '';
+  const inputDe = $('rst-data-de');
+  const inputAte = $('rst-data-ate');
+  if (inputDe) { inputDe.value = ''; inputDe.max = ''; }
+  if (inputAte) { inputAte.value = ''; inputAte.min = ''; }
+  mostrarCamposIntervaloRastreio(false);
+  estado.pagina = 1;
+  carregarTudo();
+});
+$('rst-data-de').addEventListener('change', (e) => {
+  estado.dataDe = e.target.value || '';
+  const inputAte = $('rst-data-ate');
+  if (inputAte) inputAte.min = estado.dataDe;
+  estado.pagina = 1;
+  carregarTudo();
+});
+$('rst-data-ate').addEventListener('change', (e) => {
+  estado.dataAte = e.target.value || '';
+  const inputDe = $('rst-data-de');
+  if (inputDe) inputDe.max = estado.dataAte;
+  estado.pagina = 1;
+  carregarTudo();
+});
+
 $('rst-atualizar').addEventListener('click', carregarTudo);
 
 // O catálogo do topo pode chegar depois desta aba já ter carregado — sincroniza
