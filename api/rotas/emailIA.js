@@ -120,11 +120,49 @@ email_ia.emails (~21 mil linhas, 1 e-mail por linha):
   resposta_enviada_em, resposta_automatica (bool), erro_resposta_automatica, erro_analise.
 
 email_ia.tickets (1 por remetente_email, minúsculas):
-  remetente_email, nome, qtd_emails, status (nao_iniciado | em_aberto | resolvido),
-  primeiro_email_em, ultimo_email_em, iniciado_em, resolvido_em, reaberturas,
-  resumo_conversa, resumo_conversa_em.
+  id, remetente_email, nome, qtd_emails, status (nao_iniciado | em_aberto | resolvido),
+  primeiro_email_em, ultimo_email_em, iniciado_em, resolvido_em, reaberturas, atualizado_em,
+  resumo_conversa, resumo_conversa_em, boas_vindas_enviada_em, liberado_ia_em,
+  ultima_resposta_ia_em.
   Mantida por trigger: e-mail de cliente real cria/reabre o ticket. E-mail de plataforma
   (plataforma_origem preenchida) NÃO gera ticket.
+
+email_ia.ticket_eventos (histórico de mudança de status de UM ticket):
+  ticket_id (referencia email_ia.tickets, sem FK direta pra remetente_email — junte por ticket_id
+  se já tiver, senão by remetente_email+tempo), de_status (NULL = primeiro registro), para_status,
+  em, origem.
+
+email_ia.suporte_escalado (16/09/2026 — casos que saíram do fluxo automático de e-mail e foram
+  pro Kanban de atendimento humano; motivo_escalonamento é texto livre, classificado por ILIKE em
+  quem lê, não por um enum fixo — ex.: "reembolso", "cancelamento", "endereço de devolução"):
+  id, remetente_email (índice único por lower(email) — 1 caso ativo por pessoa), nome,
+  resumo_conversa, motivo_escalonamento, status (default 'pendente'), email_id (referencia
+  email_ia.emails), criado_em, atualizado_em, iniciado_em, finalizado_em, board_id, data_entrega.
+email_ia.suporte_escalado_boards (quadros do Kanban — hoje: Vitória, Rodrigo, etc.):
+  id, nome, usuario_id (dono, se for pessoal), ativo, criado_em, criado_por.
+email_ia.suporte_escalado_colunas (colunas de UM board, ordem configurável):
+  id, board_id, chave, rotulo, ordem, descricao.
+email_ia.suporte_escalado_historico (histórico de mudança de coluna/status de UM caso):
+  suporte_escalado_id, board_id, status_anterior (NULL = primeiro registro), status_novo, mudou_em.
+email_ia.suporte_escalado_notas (comentários internos num caso, não vão pro cliente):
+  suporte_escalado_id, autor, nota, criado_em, atualizado_em.
+
+email_ia.aberturas_email (pixel de abertura — pode ter várias linhas por e-mail, uma por abertura):
+  email_id (referencia email_ia.emails), token, ip, user_agent, aberto_em.
+  "Esse e-mail foi aberto?" = EXISTS numa subquery, não JOIN direto (senão duplica a linha do e-mail
+  por cada abertura).
+
+email_ia.execucoes_resposta_automatica (1 linha por e-mail que passou pelo pipeline de resposta
+  automática, mostra a ETAPA ATUAL — não é histórico, é o estado corrente, chave é email_id):
+  email_id, remetente_email, remetente_nome, assunto, etapa, detalhe, iniciado_em, atualizado_em.
+
+email_ia.rascunhos_resposta (rascunhos gerados fora do fluxo de email_ia.emails.resposta_sugerida —
+  usado pelo pipeline automático, não pela geração manual via /api/resposta):
+  message_id, texto_gerado, status (default 'pendente'), texto_final, revisado_por, enviado_em,
+  criado_em.
+
+email_ia.relatorios (relatório semanal já pronto, texto final, não recalcula nada):
+  tipo (default 'semanal'), periodo_fim, conteudo, criado_em. Único por (tipo, periodo_fim).
 
 email_ia.anexos (imagens, PDFs, comprovantes):
   message_id (vínculo por valor com emails.message_id, sem FK), nome_arquivo, mime_type,
@@ -140,11 +178,44 @@ email_ia.mv_emails_x_pedidos (materialized view, cruzamento e-mail ↔ venda, at
 
 public.disparos_pos_venda (vendas na régua de pós-venda):
   transacao_id, nome, email, telefone, produto, produto_slug, plataforma,
-  status (ativo | concluido | cancelado | falhou), criado_em, chat_resumo.
+  status (ativo | concluido | cancelado | falhou), criado_em, chat_resumo,
+  reembolsado_em, chargeback_em (ambas NULL = nem um nem outro aconteceu; datam o evento, não são
+  bool), id_rastreio (identificador usado pra consultar a Red Rock — ver rastreio_pedidos abaixo;
+  NULL = ainda não calculado/recebido, não necessariamente "sem rastreio nenhum").
+
+public.rastreio_pedidos (16/09/2026 — status de entrega via Red Rock, 1 linha por transacao_id já
+  consultado ao menos uma vez; pedido nunca consultado NÃO aparece aqui, não confunda com "não
+  encontrado"):
+  transacao_id (= disparos_pos_venda.transacao_id), provedor ('redrock' ou NULL = nenhum provedor
+  encontrou ainda), status_interno (pendente_consulta | nao_encontrado | pending | shipped |
+  delivered | cancelled | exception | desconhecido — 'nao_encontrado' NÃO é erro, é só outro
+  fulfillment center ainda sem integração, comum em JVZoo/BuyGoods), status_bruto (valor cru da
+  Red Rock), order_number, order_created_at, total, currency, fully_fulfilled (bool),
+  fully_fulfilled_at, tracking_number, carrier_code, tracking_url, tracking_status, shipped_at,
+  delivered_at, ultima_consulta_em, ultimo_erro, criado_em, atualizado_em.
+  "Pedido X já foi entregue?" / "quanto tempo demorou pra entregar?" / "esse reembolso foi antes ou
+  depois da entrega?" (cruzando com disparos_pos_venda.reembolsado_em) — tudo isso vem daqui.
+
+public.rastreio_eventos (histórico de transição de status de UM rastreio_pedidos):
+  transacao_id, status_anterior (NULL = primeiro registro), status_novo, fonte, detectado_em.
+  fonte='backfill-email' é o backfill retroativo por e-mail (rodado uma vez em 15/09/2026) — EXCLUA
+  sempre que calcular "quanto tempo leva pra..." (senão um pedido antigo achado só agora entra como
+  se tivesse levado meses). fonte='backfill' é o polling normal (via cron horário), inclui tanto
+  pedido novo de verdade quanto pedido antigo sendo consultado pela primeira vez — não é sinônimo de
+  "não é ao vivo".
 
 public.chat_atendimentos (atendimentos do chat de IA do site):
-  email, transacao_id, motivo, resumo, desfecho, resolvido, reembolso_pedido, reembolso_evitado,
-  risco_chargeback, csat, duracao_s.
+  id, email, transacao_id, motivo, resumo, desfecho, resolvido, reembolso_pedido,
+  reembolso_evitado, risco_chargeback, csat, duracao_s, etapa_regua, iniciado_em, criado_em,
+  topico_id (referencia chat_topicos).
+public.chat_topicos (catálogo de assunto do chat do site): id, slug, nome, descricao.
+public.chat_perguntas_sem_resposta (pergunta que a IA do chat do site não conseguiu responder —
+  útil pra achar lacuna de conteúdo/FAQ): pergunta, transacao_id, email, produto, criado_em.
+
+public.aberturas_disparo (pixel de abertura de UM disparo da régua de pós-venda — pode ter várias
+  linhas por disparo, uma por abertura; não confundir com email_ia.aberturas_email, que é dos
+  e-mails de suporte, não da régua):
+  disparo_id, etapa, token, ip, user_agent, aberto_em.
 
 public.produtos (catálogo): slug, nome, nome_sms, forma, uso, link_ebook, email_suporte, ativo.
 public.produto_aliases: apelido por plataforma → produto_slug.
@@ -162,6 +233,14 @@ public.compras_upsell_downsell (13/09/2026): upsell/downsell comprado pelo MESMO
 - venda ↔ e-mail: por transacao_id = numero_pedido, ou por e-mail (prefira mv_emails_x_pedidos).
 - venda ↔ chat do site: por transacao_id ou e-mail.
 - venda ↔ upsell/downsell: por lower(email) em public.compras_upsell_downsell.
+- venda ↔ rastreio de entrega: por transacao_id em public.rastreio_pedidos (LEFT JOIN — nem toda
+  venda tem linha lá ainda). Pra saber se um reembolso/chargeback foi antes ou depois da entrega,
+  compare disparos_pos_venda.reembolsado_em (ou chargeback_em) com rastreio_pedidos.delivered_at.
+- e-mail ↔ caso escalado: email_ia.suporte_escalado.email_id = email_ia.emails.id, OU por
+  lower(remetente_email) quando email_id vier NULL.
+- ticket ↔ histórico de status: email_ia.ticket_eventos.ticket_id = email_ia.tickets.id.
+- caso escalado ↔ histórico/notas: email_ia.suporte_escalado_historico/notas.suporte_escalado_id =
+  email_ia.suporte_escalado.id.
 
 ── Pedido de "recomendação de resposta a um e-mail" ──
 Busque o e-mail completo, o histórico do remetente (outros e-mails dele), a venda vinculada
