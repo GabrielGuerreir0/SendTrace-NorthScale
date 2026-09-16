@@ -179,6 +179,25 @@ function resolverMetricaTempo(req, f) {
     if (req.query.sem_codigo === '1') extra.push(`r.provedor IS NOT NULL`, `r.tracking_number IS NULL`);
   }
 
+  // Clique num ponto do gráfico "Evolução no tempo": o dia do PONTO é o
+  // mesmo dia de referência da série (`diaExpr` em /saude/serie/) — entrega
+  // pra transporte/total, evento pras outras duas — NUNCA a data da compra.
+  // Por isso é um parâmetro à parte (`dia`), não data_de/data_ate: aquele
+  // passa por filtroCompra() e sempre filtra por `d.criado_em` (data da
+  // COMPRA), que pra transporte/total é um dia completamente diferente do
+  // que apareceu no gráfico — um pedido comprado em agosto pode ter sido
+  // entregue em setembro, e é o dia de SETEMBRO que a pessoa clicou.
+  if (req.query.dia) {
+    const colunaDia = req.query.metrica === 'transporte' || req.query.metrica === 'total'
+      ? 'r.delivered_at'
+      : req.query.metrica === 'deteccao' ? 'pe.detectado_em'
+        : req.query.metrica === 'transicao' ? 'ev.detectado_em'
+          : 'r.criado_em';
+    extra.push(`(${colunaDia})::date = $${i}::date`);
+    valores.push(String(req.query.dia));
+    i += 1;
+  }
+
   return { de, extra, duracaoExpr, valores, i };
 }
 
@@ -491,6 +510,12 @@ export default async function rotasRastreio(app) {
           status_interno: { type: 'string', description: 'Filtro extra pra metrica=lista (ex.: linha de funil_por_plataforma ou sem_codigo_rastreio).' },
           provedor: { type: 'string', description: 'Filtro extra pra metrica=lista (linha de provedores).' },
           sem_codigo: { type: 'string', enum: ['1'], description: "Filtro extra pra metrica=lista (linha de sem_codigo_rastreio) — restringe a 'provedor IS NOT NULL AND tracking_number IS NULL'." },
+          dia: {
+            type: 'string',
+            description: 'Clique num ponto do gráfico de linha (YYYY-MM-DD) — filtra pelo dia de '
+              + 'REFERÊNCIA da métrica (entrega pra transporte/total, evento pras outras), não pela '
+              + 'data da compra. Independente de dias/data_de/data_ate (não usar os dois juntos).',
+          },
           ...PERIODO_QS,
         },
       },

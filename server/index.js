@@ -1735,7 +1735,7 @@ async function atender(req, res, url, sessao) {
       produto: textoOuNulo(q.get('produto')),
       plataforma: textoOuNulo(q.get('plataforma')),
       dias: q.get('dias'), data_de: q.get('data_de'), data_ate: q.get('data_ate'),
-      metrica: q.get('metrica'),
+      metrica: q.get('metrica'), dia: q.get('dia'),
       status_anterior: q.get('status_anterior'), status_novo: q.get('status_novo'),
       status_interno: q.get('status_interno'), provedor: q.get('provedor'),
       sem_codigo: q.get('sem_codigo'),

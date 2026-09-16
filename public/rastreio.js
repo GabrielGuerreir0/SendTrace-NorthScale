@@ -301,9 +301,12 @@ async function carregarDetalheSaude() {
   for (const [chave, valor] of Object.entries(detalheExtra)) {
     // Um clique no gráfico de linha manda dias:'' pra travar num dia exato
     // (data_de=data_ate=aquele dia) — sem isto, o filtro de período do topo
-    // da aba (ex.: "últimos 30 dias") continuaria valendo e ignoraria o dia
-    // clicado, porque `dias` tem prioridade sobre data_de/data_ate no backend.
-    if (chave === 'dias' && valor === '') { params.delete('dias'); continue; }
+    // da aba (ex.: "últimos 30 dias"/"escolher datas…") continuaria valendo
+    // JUNTO com `dia` (são condições AND independentes no backend, uma sobre
+    // data de compra e outra sobre o dia do ponto) — sem apagar os três, um
+    // filtro de período restritivo no topo podia zerar o resultado mesmo
+    // com o `dia` certo.
+    if (['dias', 'data_de', 'data_ate'].includes(chave) && valor === '') { params.delete(chave); continue; }
     if (valor !== undefined && valor !== null && valor !== '') params.set(chave, valor);
   }
   params.set('page', String(detalhePagina));
@@ -514,7 +517,10 @@ async function carregarSerie() {
       rotuloMetrica, `${rotularPlataforma(plataforma)} · ${rotuloDia(diaClicado)} — do mais lento pro mais rápido`,
       {
         metrica: tipo, plataforma, status_anterior: statusAnterior, status_novo: statusNovo,
-        dias: '', data_de: diaClicado, data_ate: diaClicado,
+        // `dia` (não data_de/data_ate): o backend sabe que o dia de um ponto
+        // do gráfico é o dia de ENTREGA/EVENTO da métrica, não o de compra —
+        // ver o comentário em resolverMetricaTempo (api/rotas/rastreio.js).
+        dias: '', data_de: '', data_ate: '', dia: diaClicado.slice(0, 10),
       },
     ),
   });
