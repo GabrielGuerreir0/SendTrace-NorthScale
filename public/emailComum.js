@@ -5,6 +5,7 @@
  * mesmo desenho de KPI/tabela/paginação quatro vezes.
  */
 import { n } from './format.js';
+import { idiomaAtual } from './i18n.js';
 
 export const $ = (id) => document.getElementById(id);
 
@@ -142,16 +143,34 @@ export const LABEL_ETAPA_AUTOMACAO = {
 // Mesmos rótulos que api/rotas/rastreio.js usa no `status_rotulo` público —
 // aqui só um pouco mais específicos (ex.: "não encontrado" nomeia a Red Rock)
 // porque a aba interna, ao contrário da pública, pode mostrar o motivo real.
-export const LABEL_STATUS_RASTREIO = {
-  pendente_consulta: 'Consultando fornecedor',
-  nao_encontrado: 'Não encontrado na Red Rock',
-  pending: 'Pedido recebido',
-  shipped: 'A caminho',
-  delivered: 'Entregue',
-  cancelled: 'Cancelado',
-  exception: 'Erro na consulta',
-  desconhecido: 'Status não mapeado',
+// Bilíngue (só esta tabela — usada exclusivamente por rastreio.js, ver
+// rotularStatusRastreio/chipRastreio abaixo): o resto do painel continua só
+// em português, então não tem risco de vazar inglês pra outra aba.
+const LABEL_STATUS_RASTREIO_POR_IDIOMA = {
+  en: {
+    pendente_consulta: 'Checking with provider',
+    nao_encontrado: 'Not found at Red Rock',
+    pending: 'Order received',
+    shipped: 'On its way',
+    delivered: 'Delivered',
+    cancelled: 'Cancelled',
+    exception: 'Query error',
+    desconhecido: 'Unmapped status',
+  },
+  pt: {
+    pendente_consulta: 'Consultando fornecedor',
+    nao_encontrado: 'Não encontrado na Red Rock',
+    pending: 'Pedido recebido',
+    shipped: 'A caminho',
+    delivered: 'Entregue',
+    cancelled: 'Cancelado',
+    exception: 'Erro na consulta',
+    desconhecido: 'Status não mapeado',
+  },
 };
+export const LABEL_STATUS_RASTREIO = new Proxy({}, {
+  get(_alvo, chave) { return LABEL_STATUS_RASTREIO_POR_IDIOMA[idiomaAtual()][chave]; },
+});
 
 const rotular = (mapa, valor) => (valor ? (mapa[valor] ?? valor) : '—');
 export const rotularCategoria = (v) => rotular(LABEL_CATEGORIA, v);

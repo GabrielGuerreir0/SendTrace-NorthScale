@@ -11,6 +11,14 @@
  * PLANO.md, "Rastreamento de Disparo", seção 3). Só `exception` (falha real
  * de consulta) usa estilo de alarme — em todo o resto (KPI, pílula da
  * tabela, ficha) isso é respeitado de propósito.
+ *
+ * i18n (16/09/2026): única aba do painel com tradução — os textos ESTÁTICOS
+ * do HTML usam `data-t="chave"` (ver aplicarTraducoesEstaticas) e os
+ * DINÂMICOS (KPI, tabelas, modal, gráfico) chamam `t('chave')` direto. Padrão
+ * inglês (clientes das plataformas são americanos), com toggle pra
+ * português salvo por navegador — ver i18n.js. `LABEL_STATUS_RASTREIO` em
+ * emailComum.js também é bilíngue, mas só ela: nenhuma outra aba usa aquela
+ * tabela, então trocar o idioma aqui nunca vaza pra outro lugar do painel.
  */
 import {
   $, api, debounce, kpiCard, montarPaginacao, renderTabela, chipRastreio,
@@ -18,6 +26,7 @@ import {
 } from './emailComum.js';
 import { n, dataHora, dia, duracaoH } from './format.js';
 import { desenharLinha } from './charts.js';
+import { criarTradutor, idiomaAtual, montarSeletorIdioma } from './i18n.js';
 
 /** dia (col. `date` do Postgres, "AAAA-MM-DD" sem hora/fuso) → "DD/MM" sem
  * passar por `new Date()`: um `date` puro seria lido como meia-noite UTC e o
@@ -35,7 +44,219 @@ const estado = {
   periodo: '', dataDe: '', dataAte: '',
 };
 
-const pct = (v) => (v === null || v === undefined ? '—' : `${String(v).replace('.', ',')}%`);
+/* ═══════════════════════════════════  i18n  ═════════════════════════════════ */
+
+const DIC = {
+  // cabeçalho da aba
+  titRastreio: { en: 'Order Tracking', pt: 'Rastreio de Pedidos' },
+  subRastreio: {
+    en: 'Checked against Red Rock by a separate script (never real-time). Today it only covers '
+      + 'the fulfillment center already integrated — most JVZoo/BuyGoods orders show up as '
+      + '"not found at Red Rock", which is expected, not an error: it\'s another fulfillment '
+      + "center, not integrated yet.",
+    pt: 'Consulta contra a Red Rock, feita por um script à parte (nunca em tempo real). Hoje só '
+      + 'cobre o fulfillment center já integrado — a maioria dos pedidos JVZoo/BuyGoods aparece '
+      + 'como "não encontrado na Red Rock", o que é esperado, não erro: é outro fulfillment '
+      + 'center, ainda sem integração própria.',
+  },
+  atualizarAgora: { en: 'Refresh now', pt: 'Atualizar agora' },
+
+  // KPIs
+  kpiTotal: { en: 'Total orders', pt: 'Total de pedidos' },
+  kpiTotalNota: { en: 'checked at Red Rock at least once', pt: 'já consultados na Red Rock ao menos uma vez' },
+  kpiTaxaEntrega: { en: 'Delivery rate', pt: 'Taxa de entrega' },
+  kpiTaxaEntregaNota: { en: 'delivered ÷ (on its way + delivered)', pt: 'entregues ÷ (a caminho + entregues)' },
+  kpiErroConsulta: { en: 'Query error', pt: 'Erro na consulta' },
+  kpiErroConsultaNota: { en: 'real API/network failure — the only status treated as an alarm here', pt: 'falha real de API/rede — o único status tratado como alarme aqui' },
+  kpiNaoEncontrado: { en: 'Not found at Red Rock', pt: 'Não encontrado na Red Rock' },
+  kpiNaoEncontradoNota: { en: 'another fulfillment center, not integrated yet — expected for JVZoo/BuyGoods', pt: 'outro fulfillment center, ainda não integrado — esperado pra JVZoo/BuyGoods' },
+  kpiConsultando: { en: 'Checking with provider', pt: 'Consultando fornecedor' },
+  kpiConsultandoNota: { en: 'orders being checked at Red Rock for the first time right now', pt: 'pedidos sendo consultados na Red Rock pela primeira vez agora' },
+  kpiRecebido: { en: 'Order received', pt: 'Pedido recebido' },
+  kpiRecebidoNota: { en: 'orders fulfillment received from the platforms and hasn\'t shipped yet', pt: 'pedidos que a fulfillment recebeu das plataformas e ainda não foi enviado' },
+  kpiACaminho: { en: 'On its way', pt: 'A caminho' },
+  kpiACaminhoNota: { en: 'orders that have shipped', pt: 'pedidos que foram enviados' },
+  kpiEntregue: { en: 'Delivered', pt: 'Entregue' },
+  kpiEntregueNota: { en: 'orders that already reached the customer', pt: 'pedidos que já chegaram no cliente' },
+  kpiCancelado: { en: 'Cancelled', pt: 'Cancelado' },
+  kpiCanceladoNota: { en: 'orders that were cancelled', pt: 'pedidos que foram cancelados' },
+  kpiStatusNaoMapeado: { en: 'Unmapped status', pt: 'Status não mapeado' },
+  kpiStatusNaoMapeadoNota: { en: 'Red Rock returned a status we don\'t recognize yet', pt: 'a Red Rock devolveu um status que ainda não reconhecemos' },
+  kpiSemCodigo: { en: 'Missing tracking code', pt: 'Sem código de rastreio' },
+  kpiSemCodigoNota: { en: 'in fulfillment (received, shipped, delivered or cancelled) but still no tracking_number', pt: 'na fulfillment (recebido, a caminho, entregue ou cancelado) mas ainda sem tracking_number' },
+
+  // Saúde do rastreio (seção)
+  titSaude: { en: 'Tracking Health', pt: 'Saúde do rastreio' },
+  subSaude: {
+    en: 'Detection speed, coverage by platform, delivery time and status transitions. Click a row '
+      + 'to see the orders behind that number. Detection/transition averages never include the '
+      + 'retroactive email backfill (09/15) — organic detection only, so old orders "found" only '
+      + 'now don\'t inflate the numbers; transport/total time use Red Rock\'s own timestamps, so '
+      + "they don't have that limitation.",
+    pt: 'Velocidade de detecção, cobertura por plataforma, tempo de entrega e transições de '
+      + 'status. Clique numa linha pra ver os pedidos por trás daquele número. As médias '
+      + 'de detecção/transição nunca incluem o backfill retroativo por e-mail (15/09) — só '
+      + 'detecção orgânica, pra não inflar os números com pedidos antigos "achados" só agora; '
+      + 'as de tempo de transporte/total usam os timestamps da própria Red Rock, então não '
+      + 'têm essa limitação.',
+  },
+  tabTempoTit: { en: 'Time to appear at Red Rock', pt: 'Tempo até aparecer na Red Rock' },
+  tabTempoSub: { en: 'From purchase to first tracking record, by platform.', pt: 'Da compra até o primeiro registro de rastreio, por plataforma.' },
+  tabNaoEncTit: { en: 'Not found at Red Rock', pt: 'Não encontrados na Red Rock' },
+  tabNaoEncSub: { en: 'By platform — and how long since the purchase was made.', pt: 'Por plataforma — e há quanto tempo a compra foi feita.' },
+  tabTransicoesTit: { en: 'Time between status changes', pt: 'Tempo entre mudanças de status' },
+  tabTransicoesSub: { en: 'How long an order takes from one status to the next.', pt: 'Quanto tempo um pedido leva de um status pro próximo.' },
+  tabTransporteTit: { en: 'Transit time', pt: 'Tempo de transporte' },
+  tabTransporteSub: { en: "From dispatch (on its way) to delivery, by platform — straight from Red Rock's timestamps.", pt: 'Do despacho (a caminho) até a entrega, por plataforma — direto dos timestamps da Red Rock.' },
+  tabTotalTit: { en: 'Total time: purchase → delivery', pt: 'Tempo total: compra → entrega' },
+  tabTotalSub: { en: 'Full cycle, by platform — includes prep time before dispatch.', pt: 'Ciclo completo, por plataforma — inclui o tempo de preparação antes do despacho.' },
+  tabSemCodigoTit: { en: 'Found but missing tracking code', pt: 'Encontrados sem código de rastreio' },
+  tabSemCodigoSub: { en: 'Already has a status at Red Rock, but still no tracking_number.', pt: 'Já tem status na Red Rock, mas ainda sem tracking_number.' },
+  tabFunilTit: { en: 'Funnel by platform', pt: 'Funil por plataforma' },
+  tabFunilSub: { en: 'The same breakdown as the KPIs above, split by platform.', pt: 'O mesmo corte dos KPIs acima, quebrado por plataforma.' },
+  tabProvedoresTit: { en: 'Tracking providers', pt: 'Provedores de rastreio' },
+  tabProvedoresSub: { en: 'How many orders each provider already covers.', pt: 'Quantos pedidos cada provedor já cobre.' },
+
+  // colunas de tabela (reaproveitadas em várias)
+  colPlataforma: { en: 'Platform', pt: 'Plataforma' },
+  colAmostras: { en: 'Samples', pt: 'Amostras' },
+  colMedia: { en: 'Average', pt: 'Média' },
+  colMediana: { en: 'Median', pt: 'Mediana' },
+  colTotal: { en: 'Total', pt: 'Total' },
+  colMediaDias: { en: 'Average days', pt: 'Média dias' },
+  colCompraAntiga: { en: 'Oldest purchase', pt: 'Compra mais antiga' },
+  colDe: { en: 'From', pt: 'De' },
+  colPara: { en: 'To', pt: 'Para' },
+  colStatus: { en: 'Status', pt: 'Status' },
+  colConsultando: { en: 'Checking', pt: 'Consultando' },
+  colNaoEncontrado: { en: 'Not found', pt: 'Não encontrado' },
+  colRecebido: { en: 'Received', pt: 'Recebido' },
+  colACaminho: { en: 'On its way', pt: 'A caminho' },
+  colEntregue: { en: 'Delivered', pt: 'Entregue' },
+  colCancelado: { en: 'Cancelled', pt: 'Cancelado' },
+  colProvedor: { en: 'Provider', pt: 'Provedor' },
+  colPedido: { en: 'Order', pt: 'Pedido' },
+  colProduto: { en: 'Product', pt: 'Produto' },
+  colTransportadora: { en: 'Carrier', pt: 'Transportadora' },
+  colCodigoRastreio: { en: 'Tracking code', pt: 'Código de rastreio' },
+  colAtualizado: { en: 'Updated', pt: 'Atualizado' },
+  colNome: { en: 'Name', pt: 'Nome' },
+  colRastreio: { en: 'Tracking', pt: 'Rastreio' },
+  colCriadoEm: { en: 'Created at', pt: 'Criado em' },
+  colDuracao: { en: 'Duration', pt: 'Duração' },
+  colPeriodo: { en: 'Period', pt: 'Período' },
+  colAte: { en: 'To', pt: 'Até' },
+  carregando: { en: 'loading…', pt: 'carregando…' },
+
+  // Evolução no tempo
+  titEvolucao: { en: 'Trend Over Time', pt: 'Evolução no tempo' },
+  subEvolucao: {
+    en: 'Pick which status change to see — each line is a platform, each point a day. Click a '
+      + 'point to see that day\'s orders, from slowest to fastest.',
+    pt: 'Escolha qual mudança de status ver — cada linha é uma plataforma, cada ponto um dia. '
+      + 'Clique num ponto pra ver os pedidos daquele dia, do mais lento pro mais rápido.',
+  },
+  labelMetrica: { en: 'Metric', pt: 'Métrica' },
+  metricaDeteccao: { en: 'Time to appear at Red Rock (purchase → 1st record)', pt: 'Tempo até aparecer na Red Rock (compra → 1º registro)' },
+  metricaTransporte: { en: 'Transit time (on its way → delivered)', pt: 'Tempo de transporte (a caminho → entregue)' },
+  metricaTotal: { en: 'Total time (purchase → delivered)', pt: 'Tempo total (compra → entregue)' },
+  tempoMedioUnidade: { en: 'average time', pt: 'tempo médio' },
+  semDadosGrafico: { en: "Not enough data for this range yet.", pt: 'Sem dados suficientes pra esse recorte ainda.' },
+  slowestToFastest: { en: 'slowest to fastest', pt: 'do mais lento pro mais rápido' },
+
+  // Pedidos (lista)
+  titPedidos: { en: 'Orders', pt: 'Pedidos' },
+  subPedidos: { en: 'Click a row to see the full record and timeline.', pt: 'Clique numa linha para ver a ficha completa e a linha do tempo.' },
+  buscaSr: { en: 'Search transaction, customer or tracking code', pt: 'Buscar transação, cliente ou código de rastreio' },
+  buscaPlaceholder: { en: 'Search transaction, customer or tracking code…', pt: 'Buscar transação, cliente ou código de rastreio…' },
+  statusTodos: { en: 'All', pt: 'Todos' },
+  statusPendenteConsulta: { en: 'Checking with provider', pt: 'Consultando fornecedor' },
+  statusNaoEncontrado: { en: 'Not found at Red Rock', pt: 'Não encontrado na Red Rock' },
+  statusPending: { en: 'Order received', pt: 'Pedido recebido' },
+  statusShipped: { en: 'On its way', pt: 'A caminho' },
+  statusDelivered: { en: 'Delivered', pt: 'Entregue' },
+  statusCancelled: { en: 'Cancelled', pt: 'Cancelado' },
+  statusException: { en: 'Query error', pt: 'Erro na consulta' },
+  statusDesconhecido: { en: 'Unmapped status', pt: 'Status não mapeado' },
+  statusSemCodigo: { en: 'Missing tracking code', pt: 'Sem código de rastreio' },
+  filtrarProduto: { en: 'Filter by product', pt: 'Filtrar por produto' },
+  todosProdutos: { en: 'All products', pt: 'Todos os produtos' },
+  filtrarPlataforma: { en: 'Filter by platform', pt: 'Filtrar por plataforma' },
+  todasPlataformas: { en: 'All platforms', pt: 'Todas as plataformas' },
+  periodo7: { en: '7 days', pt: '7 dias' },
+  periodo30: { en: '30 days', pt: '30 dias' },
+  periodo60: { en: '60 days', pt: '60 dias' },
+  periodo90: { en: '90 days', pt: '90 dias' },
+  periodoTudo: { en: 'All time', pt: 'Tudo' },
+  periodoEscolher: { en: 'Choose dates…', pt: 'Escolher datas…' },
+  dataDeTitle: { en: 'Orders purchased from this date', pt: 'Pedidos comprados a partir desta data' },
+  dataAteTitle: { en: 'Orders purchased up to this date (inclusive)', pt: 'Pedidos comprados até esta data (incluída)' },
+
+  // empty states / erros
+  vazioTempo: { en: 'No organic detection recorded yet.', pt: 'Sem detecção orgânica registrada ainda.' },
+  vazioNaoEnc: { en: 'No order without a Red Rock match.', pt: 'Nenhum pedido sem correlação com a Red Rock.' },
+  vazioTransicoes: { en: 'Not enough status transitions yet.', pt: 'Ainda sem transições de status suficientes.' },
+  vazioSemCodigo: { en: 'Every order found already has a tracking code.', pt: 'Todo pedido encontrado já tem código de rastreio.' },
+  vazioConsultado: { en: 'No order checked yet.', pt: 'Nenhum pedido consultado ainda.' },
+  vazioTransporte: { en: 'No delivered order with a recorded dispatch yet.', pt: 'Nenhum pedido entregue com despacho registrado ainda.' },
+  vazioEntregue: { en: 'No delivered order yet.', pt: 'Nenhum pedido entregue ainda.' },
+  vazioFiltroPedidos: { en: 'No order found with this filter.', pt: 'Nenhum pedido encontrado com este filtro.' },
+  erroCarregarPedidos: { en: "Couldn't load orders right now.", pt: 'Não consegui carregar os pedidos agora.' },
+  erroCarregarDetalhe: { en: "Couldn't load these orders.", pt: 'Não consegui carregar estes pedidos.' },
+  vazioDetalhe: { en: 'No order found with this scope.', pt: 'Nenhum pedido encontrado com este recorte.' },
+  erroCarregarFicha: { en: "Couldn't load this order's details.", pt: 'Não consegui carregar os detalhes deste pedido.' },
+
+  // drill-down (títulos abertos ao clicar numa linha)
+  detalheNaoEncontrados: { en: 'Not found at Red Rock', pt: 'Não encontrados na Red Rock' },
+  detalheSemCodigo: { en: 'Missing tracking code', pt: 'Sem código de rastreio' },
+  detalheFunil: { en: 'Funnel by platform', pt: 'Funil por plataforma' },
+  detalheProvedor: { en: 'Tracking provider', pt: 'Provedor de rastreio' },
+  detalheTempoPorPedido: { en: 'time per order', pt: 'tempo por pedido' },
+
+  // ficha do pedido
+  fichaStatus: { en: 'Status', pt: 'Status' },
+  fichaErroUltimaConsulta: { en: 'Error on last check', pt: 'Erro na última consulta' },
+  fichaStatusBruto: { en: 'Raw status (provider)', pt: 'Status bruto (fornecedor)' },
+  fichaProduto: { en: 'Product', pt: 'Produto' },
+  fichaPlataforma: { en: 'Platform', pt: 'Plataforma' },
+  fichaProvedor: { en: 'Provider', pt: 'Provedor' },
+  fichaNumeroPedido: { en: 'Order number', pt: 'Número do pedido' },
+  fichaPedidoCriadoEm: { en: 'Order created at', pt: 'Pedido criado em' },
+  fichaTotal: { en: 'Total', pt: 'Total' },
+  fichaTotalmenteAtendido: { en: 'Fully fulfilled', pt: 'Totalmente atendido' },
+  fichaSim: { en: 'Yes', pt: 'Sim' },
+  fichaNao: { en: 'No', pt: 'Não' },
+  fichaTransportadora: { en: 'Carrier', pt: 'Transportadora' },
+  fichaCodigoRastreio: { en: 'Tracking code', pt: 'Código de rastreio' },
+  fichaStatusTransportadora: { en: 'Carrier status', pt: 'Status na transportadora' },
+  fichaLinkRastreio: { en: 'Tracking link', pt: 'Link de rastreio' },
+  fichaEnviadoEm: { en: 'Shipped at', pt: 'Enviado em' },
+  fichaEntregueEm: { en: 'Delivered at', pt: 'Entregue em' },
+  fichaUltimaConsulta: { en: 'Last check at Red Rock', pt: 'Última consulta à Red Rock' },
+  fichaLinhaTempo: { en: 'Timeline', pt: 'Linha do tempo' },
+  linhaTempoVazia: { en: 'No status change recorded yet.', pt: 'Nenhuma mudança de status registrada ainda.' },
+  primeiroRegistro: { en: 'First record — {status}', pt: 'Primeiro registro — {status}' },
+};
+const t = criarTradutor(DIC);
+
+/** Locale-aware: separador decimal PT (vírgula) vs EN (ponto). */
+const pct = (v) => {
+  if (v === null || v === undefined) return '—';
+  const casa = idiomaAtual() === 'pt' ? ',' : '.';
+  return `${String(v).replace('.', casa)}%`;
+};
+
+/** Varre todo `[data-t]`/`[data-t-title]` DENTRO da aba (e do modal de
+ * drill-down, que mora fora dela no DOM mas é exclusivo dela) e aplica o
+ * idioma atual — chamado no load e a cada troca EN/PT. */
+function aplicarTraducoesEstaticas() {
+  const raiz = [$('aba-rastreio'), $('rst-detalhe-modal')].filter(Boolean);
+  for (const container of raiz) {
+    container.querySelectorAll('[data-t]').forEach((el) => { el.textContent = t(el.dataset.t); });
+    container.querySelectorAll('[data-t-placeholder]').forEach((el) => { el.placeholder = t(el.dataset.tPlaceholder); });
+    container.querySelectorAll('[data-t-title]').forEach((el) => { el.title = t(el.dataset.tTitle); });
+  }
+}
 
 /**
  * Produto/plataforma/período — os 3 recortes que valem pra tudo nesta aba
@@ -61,15 +282,23 @@ function paramsFiltro() {
  * catálogo do topo pode ainda não ter chegado na primeira carga desta aba. */
 function sincronizarSelects() {
   const pares = [
-    [$('sel-produto'), $('rst-sel-produto')],
-    [$('sel-plataforma'), $('rst-sel-plataforma')],
+    [$('sel-produto'), $('rst-sel-produto'), 'todosProdutos'],
+    [$('sel-plataforma'), $('rst-sel-plataforma'), 'todasPlataformas'],
   ];
-  for (const [origem, destino] of pares) {
+  for (const [origem, destino, chavePlaceholder] of pares) {
     if (!origem || !destino) continue;
-    if (destino.options.length >= origem.options.length) continue;
-    const valorAtual = destino.value;
-    destino.replaceChildren(...[...origem.options].map((o) => o.cloneNode(true)));
-    destino.value = valorAtual;
+    if (destino.options.length < origem.options.length) {
+      const valorAtual = destino.value;
+      destino.replaceChildren(...[...origem.options].map((o) => o.cloneNode(true)));
+      destino.value = valorAtual;
+    }
+    // O catálogo clonado vem do seletor do topo (só em português) — o
+    // placeholder ("Todos os produtos"/"Todas as plataformas") é o único
+    // item dessa lista que faz sentido traduzir; os nomes de produto/
+    // plataforma em si são nomes próprios, iguais nos dois idiomas. Roda
+    // TODA vez (não só ao clonar), pra acompanhar troca de idioma mesmo
+    // sem re-clonar.
+    if (destino.options[0]?.value === '') destino.options[0].textContent = t(chavePlaceholder);
   }
 }
 
@@ -84,52 +313,21 @@ function tomTaxa(taxa) {
 
 function renderKpis(r) {
   $('rst-kpis').replaceChildren(
-    kpiCard({
-      icone: '◍', tom: 'neutro', rotulo: 'Total de pedidos', valor: n(r.total),
-      nota: 'já consultados na Red Rock ao menos uma vez',
-    }),
-    kpiCard({
-      icone: '✓', tom: tomTaxa(r.taxa_entrega), rotulo: 'Taxa de entrega', valor: pct(r.taxa_entrega),
-      nota: 'entregues ÷ (a caminho + entregues)',
-    }),
-    kpiCard({
-      icone: '⚠', tom: r.exception > 0 ? 'ruim' : 'neutro', rotulo: 'Erro na consulta', valor: n(r.exception),
-      nota: 'falha real de API/rede — o único status tratado como alarme aqui',
-    }),
-    kpiCard({
-      icone: '○', tom: 'neutro', rotulo: 'Não encontrado na Red Rock', valor: n(r.nao_encontrado),
-      nota: 'outro fulfillment center, ainda não integrado — esperado pra JVZoo/BuyGoods',
-    }),
+    kpiCard({ icone: '◍', tom: 'neutro', rotulo: t('kpiTotal'), valor: n(r.total), nota: t('kpiTotalNota') }),
+    kpiCard({ icone: '✓', tom: tomTaxa(r.taxa_entrega), rotulo: t('kpiTaxaEntrega'), valor: pct(r.taxa_entrega), nota: t('kpiTaxaEntregaNota') }),
+    kpiCard({ icone: '⚠', tom: r.exception > 0 ? 'ruim' : 'neutro', rotulo: t('kpiErroConsulta'), valor: n(r.exception), nota: t('kpiErroConsultaNota') }),
+    kpiCard({ icone: '○', tom: 'neutro', rotulo: t('kpiNaoEncontrado'), valor: n(r.nao_encontrado), nota: t('kpiNaoEncontradoNota') }),
   );
   $('rst-kpis-status').replaceChildren(
+    kpiCard({ icone: '◐', tom: 'neutro', rotulo: t('kpiConsultando'), valor: n(r.pendente_consulta), nota: t('kpiConsultandoNota') }),
+    kpiCard({ icone: '●', tom: 'neutro', rotulo: t('kpiRecebido'), valor: n(r.pending), nota: t('kpiRecebidoNota') }),
+    kpiCard({ icone: '➤', tom: 'neutro', rotulo: t('kpiACaminho'), valor: n(r.shipped), nota: t('kpiACaminhoNota') }),
+    kpiCard({ icone: '✓', tom: 'bom', rotulo: t('kpiEntregue'), valor: n(r.delivered), nota: t('kpiEntregueNota') }),
+    kpiCard({ icone: '✕', tom: 'neutro', rotulo: t('kpiCancelado'), valor: n(r.cancelled), nota: t('kpiCanceladoNota') }),
+    kpiCard({ icone: '?', tom: 'neutro', rotulo: t('kpiStatusNaoMapeado'), valor: n(r.desconhecido), nota: t('kpiStatusNaoMapeadoNota') }),
     kpiCard({
-      icone: '◐', tom: 'neutro', rotulo: 'Consultando fornecedor', valor: n(r.pendente_consulta),
-      nota: 'pedidos sendo consultados na Red Rock pela primeira vez agora',
-    }),
-    kpiCard({
-      icone: '●', tom: 'neutro', rotulo: 'Pedido recebido', valor: n(r.pending),
-      nota: 'pedidos que a fulfillment recebeu das plataformas e ainda não foi enviado',
-    }),
-    kpiCard({
-      icone: '➤', tom: 'neutro', rotulo: 'A caminho', valor: n(r.shipped),
-      nota: 'pedidos que foram enviados',
-    }),
-    kpiCard({
-      icone: '✓', tom: 'bom', rotulo: 'Entregue', valor: n(r.delivered),
-      nota: 'pedidos que já chegaram no cliente',
-    }),
-    kpiCard({
-      icone: '✕', tom: 'neutro', rotulo: 'Cancelado', valor: n(r.cancelled),
-      nota: 'pedidos que foram cancelados',
-    }),
-    kpiCard({
-      icone: '?', tom: 'neutro', rotulo: 'Status não mapeado', valor: n(r.desconhecido),
-      nota: 'a Red Rock devolveu um status que ainda não reconhecemos',
-    }),
-    kpiCard({
-      icone: '▭', tom: r.sem_codigo_rastreio > 0 ? 'medio' : 'neutro', rotulo: 'Sem código de rastreio',
-      valor: n(r.sem_codigo_rastreio),
-      nota: 'na fulfillment (recebido, a caminho, entregue ou cancelado) mas ainda sem tracking_number',
+      icone: '▭', tom: r.sem_codigo_rastreio > 0 ? 'medio' : 'neutro', rotulo: t('kpiSemCodigo'),
+      valor: n(r.sem_codigo_rastreio), nota: t('kpiSemCodigoNota'),
     }),
   );
 }
@@ -157,7 +355,7 @@ function renderLinhaTempo(eventos) {
   if (!eventos?.length) {
     const li = document.createElement('li');
     li.className = 'rastreio-linha-tempo-vazia';
-    li.textContent = 'Nenhuma mudança de status registrada ainda.';
+    li.textContent = t('linhaTempoVazia');
     ul.append(li);
     return ul;
   }
@@ -166,7 +364,7 @@ function renderLinhaTempo(eventos) {
     const strong = document.createElement('strong');
     strong.textContent = ev.status_anterior
       ? `${rotularStatusRastreio(ev.status_anterior)} → ${rotularStatusRastreio(ev.status_novo)}`
-      : `Primeiro registro — ${rotularStatusRastreio(ev.status_novo)}`;
+      : t('primeiroRegistro', { status: rotularStatusRastreio(ev.status_novo) });
     const span = document.createElement('span');
     span.textContent = `${dataHora(ev.detectado_em)} · ${ev.fonte}`;
     li.append(strong, span);
@@ -177,7 +375,7 @@ function renderLinhaTempo(eventos) {
 
 async function abrirDetalhePedido(linha) {
   const { ok, dados: d } = await api(`/api/rastreio/${encodeURIComponent(linha.transacao_id)}`);
-  if (!ok) { window.alert('Não consegui carregar os detalhes deste pedido.'); return; }
+  if (!ok) { window.alert(t('erroCarregarFicha')); return; }
 
   let linkRastreio = null;
   if (d.tracking_url) {
@@ -192,29 +390,29 @@ async function abrirDetalhePedido(linha) {
     titulo: d.transacao_id,
     subtitulo: d.nome || '',
     campos: [
-      { rotulo: 'Status', valor: chipRastreio(d.status_interno) },
+      { rotulo: t('fichaStatus'), valor: chipRastreio(d.status_interno) },
       d.status_interno === 'exception' && d.ultimo_erro
-        && { rotulo: 'Erro na última consulta', valor: d.ultimo_erro, largo: true },
+        && { rotulo: t('fichaErroUltimaConsulta'), valor: d.ultimo_erro, largo: true },
       d.status_interno === 'desconhecido'
-        && { rotulo: 'Status bruto (fornecedor)', valor: d.status_bruto || '—' },
-      { rotulo: 'Produto', valor: d.produto || '—' },
-      { rotulo: 'Plataforma', valor: rotularPlataforma(d.plataforma) },
-      { rotulo: 'Provedor', valor: seloProvedor(d.provedor) },
-      { rotulo: 'Número do pedido', valor: d.order_number || '—' },
-      { rotulo: 'Pedido criado em', valor: d.order_created_at ? dataHora(d.order_created_at) : '—' },
-      { rotulo: 'Total', valor: d.total ? `${d.total} ${d.currency || ''}`.trim() : '—' },
+        && { rotulo: t('fichaStatusBruto'), valor: d.status_bruto || '—' },
+      { rotulo: t('fichaProduto'), valor: d.produto || '—' },
+      { rotulo: t('fichaPlataforma'), valor: rotularPlataforma(d.plataforma) },
+      { rotulo: t('fichaProvedor'), valor: seloProvedor(d.provedor) },
+      { rotulo: t('fichaNumeroPedido'), valor: d.order_number || '—' },
+      { rotulo: t('fichaPedidoCriadoEm'), valor: d.order_created_at ? dataHora(d.order_created_at) : '—' },
+      { rotulo: t('fichaTotal'), valor: d.total ? `${d.total} ${d.currency || ''}`.trim() : '—' },
       {
-        rotulo: 'Totalmente atendido',
-        valor: d.fully_fulfilled ? `Sim${d.fully_fulfilled_at ? ` · ${dataHora(d.fully_fulfilled_at)}` : ''}` : 'Não',
+        rotulo: t('fichaTotalmenteAtendido'),
+        valor: d.fully_fulfilled ? `${t('fichaSim')}${d.fully_fulfilled_at ? ` · ${dataHora(d.fully_fulfilled_at)}` : ''}` : t('fichaNao'),
       },
-      { rotulo: 'Transportadora', valor: d.carrier_code || '—' },
-      { rotulo: 'Código de rastreio', valor: d.tracking_number || '—' },
-      { rotulo: 'Status na transportadora', valor: d.tracking_status || '—' },
-      linkRastreio && { rotulo: 'Link de rastreio', valor: linkRastreio },
-      { rotulo: 'Enviado em', valor: d.shipped_at ? dataHora(d.shipped_at) : '—' },
-      { rotulo: 'Entregue em', valor: d.delivered_at ? dataHora(d.delivered_at) : '—' },
-      { rotulo: 'Última consulta à Red Rock', valor: d.ultima_consulta_em ? dataHora(d.ultima_consulta_em) : '—' },
-      { rotulo: 'Linha do tempo', valor: renderLinhaTempo(d.eventos), largo: true },
+      { rotulo: t('fichaTransportadora'), valor: d.carrier_code || '—' },
+      { rotulo: t('fichaCodigoRastreio'), valor: d.tracking_number || '—' },
+      { rotulo: t('fichaStatusTransportadora'), valor: d.tracking_status || '—' },
+      linkRastreio && { rotulo: t('fichaLinkRastreio'), valor: linkRastreio },
+      { rotulo: t('fichaEnviadoEm'), valor: d.shipped_at ? dataHora(d.shipped_at) : '—' },
+      { rotulo: t('fichaEntregueEm'), valor: d.delivered_at ? dataHora(d.delivered_at) : '—' },
+      { rotulo: t('fichaUltimaConsulta'), valor: d.ultima_consulta_em ? dataHora(d.ultima_consulta_em) : '—' },
+      { rotulo: t('fichaLinhaTempo'), valor: renderLinhaTempo(d.eventos), largo: true },
     ],
   });
 }
@@ -231,7 +429,7 @@ function renderTabelaPedidos(pedidos) {
     { classe: 'cel-mono', render: (p) => (p.atualizado_em ? dataHora(p.atualizado_em) : '—') },
   ];
   colunas.aoClicarLinha = abrirDetalhePedido;
-  renderTabela($('rst-tabela-corpo'), pedidos, colunas, { vazio: 'Nenhum pedido encontrado com este filtro.' });
+  renderTabela($('rst-tabela-corpo'), pedidos, colunas, { vazio: t('vazioFiltroPedidos') });
 }
 
 /* ═══════════════════════════════  carregamento  ═══════════════════════════ */
@@ -249,7 +447,7 @@ async function carregarLista() {
   const { ok, dados: d } = await api(`/api/rastreio?${params}`);
   if (meu !== geracaoLista) return;
   if (!ok) {
-    renderTabela($('rst-tabela-corpo'), [], [{ render: () => '' }], { vazio: 'Não consegui carregar os pedidos agora.' });
+    renderTabela($('rst-tabela-corpo'), [], [{ render: () => '' }], { vazio: t('erroCarregarPedidos') });
     $('rst-tabela-paginacao').replaceChildren();
     return;
   }
@@ -315,11 +513,11 @@ async function carregarDetalheSaude() {
   const { ok, dados: d } = await api(`/api/metricas/rastreio/saude/detalhe?${params}`);
   if (meu !== detalheGeracao) return;
   if (!ok) {
-    renderTabela($('rst-detalhe-corpo'), [], colunasDetalhe(), { vazio: 'Não consegui carregar estes pedidos.' });
+    renderTabela($('rst-detalhe-corpo'), [], colunasDetalhe(), { vazio: t('erroCarregarDetalhe') });
     $('rst-detalhe-pag').replaceChildren();
     return;
   }
-  renderTabela($('rst-detalhe-corpo'), d.pedidos, colunasDetalhe(), { vazio: 'Nenhum pedido encontrado com este recorte.' });
+  renderTabela($('rst-detalhe-corpo'), d.pedidos, colunasDetalhe(), { vazio: t('vazioDetalhe') });
   const totalPaginas = Math.max(1, Math.ceil(d.total / DETALHE_POR_PAGINA));
   montarPaginacao($('rst-detalhe-pag'), { pagina: detalhePagina, totalPaginas, total: d.total, rotuloItem: 'pedido' }, (p) => {
     detalhePagina = p;
@@ -346,10 +544,10 @@ function renderSaudeTempo(linhas) {
     { render: (l) => duracaoH(l.mediana_horas) },
   ];
   colunas.aoClicarLinha = (l) => abrirDetalheSaude(
-    'Tempo até aparecer na Red Rock', rotularPlataforma(l.plataforma),
+    t('tabTempoTit'), rotularPlataforma(l.plataforma),
     { metrica: 'deteccao', plataforma: l.plataforma },
   );
-  renderTabela($('rst-saude-tempo'), linhas, colunas, { vazio: 'Sem detecção orgânica registrada ainda.' });
+  renderTabela($('rst-saude-tempo'), linhas, colunas, { vazio: t('vazioTempo') });
 }
 
 function renderSaudeNaoEncontrado(linhas) {
@@ -360,10 +558,10 @@ function renderSaudeNaoEncontrado(linhas) {
     { render: (l) => (l.compra_mais_antiga ? dia(l.compra_mais_antiga) : '—') },
   ];
   colunas.aoClicarLinha = (l) => abrirDetalheSaude(
-    'Não encontrados na Red Rock', rotularPlataforma(l.plataforma),
+    t('detalheNaoEncontrados'), rotularPlataforma(l.plataforma),
     { metrica: 'lista', plataforma: l.plataforma, status_interno: 'nao_encontrado' },
   );
-  renderTabela($('rst-saude-naoencontrado'), linhas, colunas, { vazio: 'Nenhum pedido sem correlação com a Red Rock.' });
+  renderTabela($('rst-saude-naoencontrado'), linhas, colunas, { vazio: t('vazioNaoEnc') });
 }
 
 function renderSaudeTransicoes(linhas) {
@@ -375,10 +573,10 @@ function renderSaudeTransicoes(linhas) {
     { render: (l) => duracaoH(l.mediana_horas) },
   ];
   colunas.aoClicarLinha = (l) => abrirDetalheSaude(
-    `${rotularStatusRastreio(l.status_anterior)} → ${rotularStatusRastreio(l.status_novo)}`, 'tempo por pedido',
+    `${rotularStatusRastreio(l.status_anterior)} → ${rotularStatusRastreio(l.status_novo)}`, t('detalheTempoPorPedido'),
     { metrica: 'transicao', status_anterior: l.status_anterior ?? '', status_novo: l.status_novo },
   );
-  renderTabela($('rst-saude-transicoes'), linhas, colunas, { vazio: 'Ainda sem transições de status suficientes.' });
+  renderTabela($('rst-saude-transicoes'), linhas, colunas, { vazio: t('vazioTransicoes') });
 }
 
 function renderSaudeSemCodigo(linhas) {
@@ -388,10 +586,10 @@ function renderSaudeSemCodigo(linhas) {
     { render: (l) => n(l.total) },
   ];
   colunas.aoClicarLinha = (l) => abrirDetalheSaude(
-    'Sem código de rastreio', `${rotularStatusRastreio(l.status_interno)} · ${rotularPlataforma(l.plataforma)}`,
+    t('detalheSemCodigo'), `${rotularStatusRastreio(l.status_interno)} · ${rotularPlataforma(l.plataforma)}`,
     { metrica: 'lista', plataforma: l.plataforma, status_interno: l.status_interno, sem_codigo: '1' },
   );
-  renderTabela($('rst-saude-semcodigo'), linhas, colunas, { vazio: 'Todo pedido encontrado já tem código de rastreio.' });
+  renderTabela($('rst-saude-semcodigo'), linhas, colunas, { vazio: t('vazioSemCodigo') });
 }
 
 function renderSaudeFunil(linhas) {
@@ -406,10 +604,10 @@ function renderSaudeFunil(linhas) {
     { render: (l) => n(l.cancelled) },
   ];
   colunas.aoClicarLinha = (l) => abrirDetalheSaude(
-    'Funil por plataforma', rotularPlataforma(l.plataforma),
+    t('detalheFunil'), rotularPlataforma(l.plataforma),
     { metrica: 'lista', plataforma: l.plataforma },
   );
-  renderTabela($('rst-saude-funil'), linhas, colunas, { vazio: 'Nenhum pedido consultado ainda.' });
+  renderTabela($('rst-saude-funil'), linhas, colunas, { vazio: t('vazioConsultado') });
 }
 
 function renderSaudeProvedores(linhas) {
@@ -418,10 +616,10 @@ function renderSaudeProvedores(linhas) {
     { render: (l) => n(l.total) },
   ];
   colunas.aoClicarLinha = (l) => abrirDetalheSaude(
-    'Provedor de rastreio', l.provedor,
+    t('detalheProvedor'), l.provedor,
     { metrica: 'lista', provedor: l.provedor },
   );
-  renderTabela($('rst-saude-provedores'), linhas, colunas, { vazio: 'Nenhum pedido consultado ainda.' });
+  renderTabela($('rst-saude-provedores'), linhas, colunas, { vazio: t('vazioConsultado') });
 }
 
 function renderSaudeTransporte(linhas) {
@@ -432,10 +630,10 @@ function renderSaudeTransporte(linhas) {
     { render: (l) => duracaoH(l.mediana_horas) },
   ];
   colunas.aoClicarLinha = (l) => abrirDetalheSaude(
-    'Tempo de transporte', rotularPlataforma(l.plataforma),
+    t('tabTransporteTit'), rotularPlataforma(l.plataforma),
     { metrica: 'transporte', plataforma: l.plataforma },
   );
-  renderTabela($('rst-saude-transporte'), linhas, colunas, { vazio: 'Nenhum pedido entregue com despacho registrado ainda.' });
+  renderTabela($('rst-saude-transporte'), linhas, colunas, { vazio: t('vazioTransporte') });
 }
 
 function renderSaudeTotal(linhas) {
@@ -446,10 +644,10 @@ function renderSaudeTotal(linhas) {
     { render: (l) => duracaoH(l.mediana_horas) },
   ];
   colunas.aoClicarLinha = (l) => abrirDetalheSaude(
-    'Tempo total: compra → entrega', rotularPlataforma(l.plataforma),
+    t('tabTotalTit'), rotularPlataforma(l.plataforma),
     { metrica: 'total', plataforma: l.plataforma },
   );
-  renderTabela($('rst-saude-total'), linhas, colunas, { vazio: 'Nenhum pedido entregue ainda.' });
+  renderTabela($('rst-saude-total'), linhas, colunas, { vazio: t('vazioEntregue') });
 }
 
 /* ═════════════  Evolução no tempo (gráfico de linha, por plataforma)  ══════════
@@ -465,13 +663,13 @@ function popularSelectSerie(transicoes) {
   if (!sel) return;
   const valorAtual = sel.value;
   const opcoes = [
-    { valor: 'deteccao', rotulo: 'Tempo até aparecer na Red Rock (compra → 1º registro)' },
-    ...transicoes.map((t) => ({
-      valor: `transicao|${t.status_anterior ?? ''}|${t.status_novo}`,
-      rotulo: `${rotularStatusRastreio(t.status_anterior)} → ${rotularStatusRastreio(t.status_novo)}`,
+    { valor: 'deteccao', rotulo: t('metricaDeteccao') },
+    ...transicoes.map((tr) => ({
+      valor: `transicao|${tr.status_anterior ?? ''}|${tr.status_novo}`,
+      rotulo: `${rotularStatusRastreio(tr.status_anterior)} → ${rotularStatusRastreio(tr.status_novo)}`,
     })),
-    { valor: 'transporte', rotulo: 'Tempo de transporte (a caminho → entregue)' },
-    { valor: 'total', rotulo: 'Tempo total (compra → entregue)' },
+    { valor: 'transporte', rotulo: t('metricaTransporte') },
+    { valor: 'total', rotulo: t('metricaTotal') },
   ];
   sel.replaceChildren(...opcoes.map(({ valor, rotulo }) => {
     const opt = document.createElement('option');
@@ -496,7 +694,7 @@ async function carregarSerie() {
 
   const { ok, dados: s } = await api(`/api/metricas/rastreio/saude/serie?${params}`);
   if (!ok || !s.pontos.length) {
-    desenharLinha(container, [], [], { textoVazio: 'Sem dados suficientes pra esse recorte ainda.' });
+    desenharLinha(container, [], [], { textoVazio: t('semDadosGrafico') });
     return;
   }
 
@@ -512,9 +710,9 @@ async function carregarSerie() {
 
   const rotuloMetrica = sel.options[sel.selectedIndex]?.textContent ?? '';
   desenharLinha(container, dias, series, {
-    tooltip, unidade: 'tempo médio', formatarValor: duracaoH, rotuloEixoX: rotuloDia,
+    tooltip, unidade: t('tempoMedioUnidade'), formatarValor: duracaoH, rotuloEixoX: rotuloDia,
     aoClicarPonto: (plataforma, diaClicado) => abrirDetalheSaude(
-      rotuloMetrica, `${rotularPlataforma(plataforma)} · ${rotuloDia(diaClicado)} — do mais lento pro mais rápido`,
+      rotuloMetrica, `${rotularPlataforma(plataforma)} · ${rotuloDia(diaClicado)} — ${t('slowestToFastest')}`,
       {
         metrica: tipo, plataforma, status_anterior: statusAnterior, status_novo: statusNovo,
         // `dia` (não data_de/data_ate): o backend sabe que o dia de um ponto
@@ -556,6 +754,19 @@ function carregarTudo() {
   carregarSaude();
   carregarLista();
 }
+
+/* ═══════════════════════════  idioma (EN/PT)  ═══════════════════════════════
+ * Único par de botões da aba — trocar recarrega TUDO (KPIs, Saúde, gráfico,
+ * lista): mais simples e mais seguro que tentar re-rotular cada pedaço já
+ * renderizado, e o custo é baixo (é uma troca deliberada da pessoa, não algo
+ * que acontece o tempo todo). */
+function aoTrocarIdioma() {
+  aplicarTraducoesEstaticas();
+  sincronizarSelects();
+  carregarTudo();
+}
+if ($('rst-idioma-seletor')) montarSeletorIdioma($('rst-idioma-seletor'), aoTrocarIdioma);
+aplicarTraducoesEstaticas();
 
 /* ═══════════════════════════════════  filtros  ═════════════════════════════ */
 

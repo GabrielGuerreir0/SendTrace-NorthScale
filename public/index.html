@@ -1801,7 +1801,7 @@
 <dialog class="janela janela--larga" id="rst-detalhe-modal" aria-labelledby="rst-detalhe-titulo">
   <header class="janela-cabeca">
     <div>
-      <h2 id="rst-detalhe-titulo">Pedidos</h2>
+      <h2 id="rst-detalhe-titulo">Orders</h2>
       <p class="cartao-sub" id="rst-detalhe-sub"></p>
     </div>
     <button class="btn btn-icone" id="rst-detalhe-fechar" type="button" aria-label="Fechar">✕</button>
@@ -1810,11 +1810,11 @@
     <div class="tabela-envolve">
       <table class="tabela">
         <thead>
-          <tr><th scope="col">Pedido</th><th scope="col">Nome</th><th scope="col">Produto</th>
-            <th scope="col">Plataforma</th><th scope="col">Status</th><th scope="col">Rastreio</th>
-            <th scope="col">Criado em</th><th scope="col">Duração</th></tr>
+          <tr><th scope="col" data-t="colPedido">Order</th><th scope="col" data-t="colNome">Name</th><th scope="col" data-t="colProduto">Product</th>
+            <th scope="col" data-t="colPlataforma">Platform</th><th scope="col" data-t="colStatus">Status</th><th scope="col" data-t="colRastreio">Tracking</th>
+            <th scope="col" data-t="colCriadoEm">Created at</th><th scope="col" data-t="colDuracao">Duration</th></tr>
         </thead>
-        <tbody id="rst-detalhe-corpo"><tr><td colspan="8" class="vazio-suave">carregando…</td></tr></tbody>
+        <tbody id="rst-detalhe-corpo"><tr><td colspan="8" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody>
       </table>
     </div>
     <div class="paginacao" id="rst-detalhe-pag"></div>
@@ -2150,17 +2150,20 @@
   <section class="cartao">
     <header class="cartao-cabeca">
       <div>
-        <h2>Rastreio de Pedidos</h2>
-        <p class="cartao-sub">
-          Consulta contra a Red Rock, feita por um script à parte (nunca em tempo real). Hoje só
-          cobre o fulfillment center já integrado — a maioria dos pedidos JVZoo/BuyGoods aparece
-          como "não encontrado na Red Rock", o que é esperado, não erro: é outro fulfillment
-          center, ainda sem integração própria.
+        <h2 data-t="titRastreio">Order Tracking</h2>
+        <p class="cartao-sub" data-t="subRastreio">
+          Checked against Red Rock by a separate script (never real-time). Today it only covers
+          the fulfillment center already integrated — most JVZoo/BuyGoods orders show up as
+          "not found at Red Rock", which is expected, not an error: it's another fulfillment
+          center, not integrated yet.
         </p>
       </div>
-      <button class="btn btn-icone" id="rst-atualizar" type="button" title="Atualizar agora">
-        <span aria-hidden="true">↻</span><span class="sr">Atualizar agora</span>
-      </button>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div class="idioma-seletor" id="rst-idioma-seletor"></div>
+        <button class="btn btn-icone" id="rst-atualizar" type="button" data-t-title="atualizarAgora">
+          <span aria-hidden="true">↻</span><span class="sr" data-t="atualizarAgora">Refresh now</span>
+        </button>
+      </div>
     </header>
   </section>
 
@@ -2171,123 +2174,122 @@
   <section class="cartao">
     <header class="cartao-cabeca">
       <div>
-        <h2>Saúde do rastreio</h2>
-        <p class="cartao-sub">
-          Velocidade de detecção, cobertura por plataforma, tempo de entrega e transições de
-          status. Clique numa linha pra ver os pedidos por trás daquele número. As médias
-          de detecção/transição nunca incluem o backfill retroativo por e-mail (15/09) — só
-          detecção orgânica, pra não inflar os números com pedidos antigos "achados" só agora;
-          as de tempo de transporte/total usam os timestamps da própria Red Rock, então não
-          têm essa limitação.
+        <h2 data-t="titSaude">Tracking Health</h2>
+        <p class="cartao-sub" data-t="subSaude">
+          Detection speed, coverage by platform, delivery time and status transitions. Click a
+          row to see the orders behind that number. Detection/transition averages never include
+          the retroactive email backfill (09/15) — organic detection only, so old orders "found"
+          only now don't inflate the numbers; transport/total time use Red Rock's own
+          timestamps, so they don't have that limitation.
         </p>
       </div>
     </header>
     <div class="rst-saude-grade">
       <div class="rst-saude-bloco">
-        <h3>Tempo até aparecer na Red Rock</h3>
-        <p class="cartao-sub">Da compra até o primeiro registro de rastreio, por plataforma.</p>
+        <h3 data-t="tabTempoTit">Time to appear at Red Rock</h3>
+        <p class="cartao-sub" data-t="tabTempoSub">From purchase to first tracking record, by platform.</p>
         <div class="tabela-envolve">
           <table class="tabela tabela--compacta">
             <thead><tr>
-              <th scope="col">Plataforma</th><th scope="col">Amostras</th>
-              <th scope="col">Média</th><th scope="col">Mediana</th>
+              <th scope="col" data-t="colPlataforma">Platform</th><th scope="col" data-t="colAmostras">Samples</th>
+              <th scope="col" data-t="colMedia">Average</th><th scope="col" data-t="colMediana">Median</th>
             </tr></thead>
-            <tbody id="rst-saude-tempo"><tr><td colspan="4" class="vazio-suave">carregando…</td></tr></tbody>
+            <tbody id="rst-saude-tempo"><tr><td colspan="4" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody>
           </table>
         </div>
       </div>
 
       <div class="rst-saude-bloco">
-        <h3>Não encontrados na Red Rock</h3>
-        <p class="cartao-sub">Por plataforma — e há quanto tempo a compra foi feita.</p>
+        <h3 data-t="tabNaoEncTit">Not found at Red Rock</h3>
+        <p class="cartao-sub" data-t="tabNaoEncSub">By platform — and how long since the purchase was made.</p>
         <div class="tabela-envolve">
           <table class="tabela tabela--compacta">
             <thead><tr>
-              <th scope="col">Plataforma</th><th scope="col">Total</th>
-              <th scope="col">Média dias</th><th scope="col">Compra mais antiga</th>
+              <th scope="col" data-t="colPlataforma">Platform</th><th scope="col" data-t="colTotal">Total</th>
+              <th scope="col" data-t="colMediaDias">Average days</th><th scope="col" data-t="colCompraAntiga">Oldest purchase</th>
             </tr></thead>
-            <tbody id="rst-saude-naoencontrado"><tr><td colspan="4" class="vazio-suave">carregando…</td></tr></tbody>
+            <tbody id="rst-saude-naoencontrado"><tr><td colspan="4" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody>
           </table>
         </div>
       </div>
 
       <div class="rst-saude-bloco">
-        <h3>Tempo entre mudanças de status</h3>
-        <p class="cartao-sub">Quanto tempo um pedido leva de um status pro próximo.</p>
+        <h3 data-t="tabTransicoesTit">Time between status changes</h3>
+        <p class="cartao-sub" data-t="tabTransicoesSub">How long an order takes from one status to the next.</p>
         <div class="tabela-envolve">
           <table class="tabela tabela--compacta">
             <thead><tr>
-              <th scope="col">De</th><th scope="col">Para</th><th scope="col">Amostras</th>
-              <th scope="col">Média</th><th scope="col">Mediana</th>
+              <th scope="col" data-t="colDe">From</th><th scope="col" data-t="colPara">To</th><th scope="col" data-t="colAmostras">Samples</th>
+              <th scope="col" data-t="colMedia">Average</th><th scope="col" data-t="colMediana">Median</th>
             </tr></thead>
-            <tbody id="rst-saude-transicoes"><tr><td colspan="5" class="vazio-suave">carregando…</td></tr></tbody>
+            <tbody id="rst-saude-transicoes"><tr><td colspan="5" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody>
           </table>
         </div>
       </div>
 
       <div class="rst-saude-bloco">
-        <h3>Tempo de transporte</h3>
-        <p class="cartao-sub">Do despacho (a caminho) até a entrega, por plataforma — direto dos timestamps da Red Rock.</p>
+        <h3 data-t="tabTransporteTit">Transit time</h3>
+        <p class="cartao-sub" data-t="tabTransporteSub">From dispatch (on its way) to delivery, by platform — straight from Red Rock's timestamps.</p>
         <div class="tabela-envolve">
           <table class="tabela tabela--compacta">
             <thead><tr>
-              <th scope="col">Plataforma</th><th scope="col">Amostras</th>
-              <th scope="col">Média</th><th scope="col">Mediana</th>
+              <th scope="col" data-t="colPlataforma">Platform</th><th scope="col" data-t="colAmostras">Samples</th>
+              <th scope="col" data-t="colMedia">Average</th><th scope="col" data-t="colMediana">Median</th>
             </tr></thead>
-            <tbody id="rst-saude-transporte"><tr><td colspan="4" class="vazio-suave">carregando…</td></tr></tbody>
+            <tbody id="rst-saude-transporte"><tr><td colspan="4" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody>
           </table>
         </div>
       </div>
 
       <div class="rst-saude-bloco">
-        <h3>Tempo total: compra → entrega</h3>
-        <p class="cartao-sub">Ciclo completo, por plataforma — inclui o tempo de preparação antes do despacho.</p>
+        <h3 data-t="tabTotalTit">Total time: purchase → delivery</h3>
+        <p class="cartao-sub" data-t="tabTotalSub">Full cycle, by platform — includes prep time before dispatch.</p>
         <div class="tabela-envolve">
           <table class="tabela tabela--compacta">
             <thead><tr>
-              <th scope="col">Plataforma</th><th scope="col">Amostras</th>
-              <th scope="col">Média</th><th scope="col">Mediana</th>
+              <th scope="col" data-t="colPlataforma">Platform</th><th scope="col" data-t="colAmostras">Samples</th>
+              <th scope="col" data-t="colMedia">Average</th><th scope="col" data-t="colMediana">Median</th>
             </tr></thead>
-            <tbody id="rst-saude-total"><tr><td colspan="4" class="vazio-suave">carregando…</td></tr></tbody>
+            <tbody id="rst-saude-total"><tr><td colspan="4" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody>
           </table>
         </div>
       </div>
 
       <div class="rst-saude-bloco">
-        <h3>Encontrados sem código de rastreio</h3>
-        <p class="cartao-sub">Já tem status na Red Rock, mas ainda sem tracking_number.</p>
+        <h3 data-t="tabSemCodigoTit">Found but missing tracking code</h3>
+        <p class="cartao-sub" data-t="tabSemCodigoSub">Already has a status at Red Rock, but still no tracking_number.</p>
         <div class="tabela-envolve">
           <table class="tabela tabela--compacta">
             <thead><tr>
-              <th scope="col">Status</th><th scope="col">Plataforma</th><th scope="col">Total</th>
+              <th scope="col" data-t="colStatus">Status</th><th scope="col" data-t="colPlataforma">Platform</th><th scope="col" data-t="colTotal">Total</th>
             </tr></thead>
-            <tbody id="rst-saude-semcodigo"><tr><td colspan="3" class="vazio-suave">carregando…</td></tr></tbody>
+            <tbody id="rst-saude-semcodigo"><tr><td colspan="3" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody>
           </table>
         </div>
       </div>
 
       <div class="rst-saude-bloco rst-saude-bloco--largo">
-        <h3>Funil por plataforma</h3>
-        <p class="cartao-sub">O mesmo corte dos KPIs acima, quebrado por plataforma.</p>
+        <h3 data-t="tabFunilTit">Funnel by platform</h3>
+        <p class="cartao-sub" data-t="tabFunilSub">The same breakdown as the KPIs above, split by platform.</p>
         <div class="tabela-envolve">
           <table class="tabela tabela--compacta">
             <thead><tr>
-              <th scope="col">Plataforma</th><th scope="col">Total</th><th scope="col">Consultando</th>
-              <th scope="col">Não encontrado</th><th scope="col">Recebido</th>
-              <th scope="col">A caminho</th><th scope="col">Entregue</th><th scope="col">Cancelado</th>
+              <th scope="col" data-t="colPlataforma">Platform</th><th scope="col" data-t="colTotal">Total</th><th scope="col" data-t="colConsultando">Checking</th>
+              <th scope="col" data-t="colNaoEncontrado">Not found</th><th scope="col" data-t="colRecebido">Received</th>
+              <th scope="col" data-t="colACaminho">On its way</th><th scope="col" data-t="colEntregue">Delivered</th><th scope="col" data-t="colCancelado">Cancelled</th>
             </tr></thead>
-            <tbody id="rst-saude-funil"><tr><td colspan="8" class="vazio-suave">carregando…</td></tr></tbody>
+            <tbody id="rst-saude-funil"><tr><td colspan="8" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody>
           </table>
         </div>
       </div>
 
       <div class="rst-saude-bloco">
-        <h3>Provedores de rastreio</h3>
-        <p class="cartao-sub">Quantos pedidos cada provedor já cobre.</p>
+        <h3 data-t="tabProvedoresTit">Tracking providers</h3>
+        <p class="cartao-sub" data-t="tabProvedoresSub">How many orders each provider already covers.</p>
         <div class="tabela-envolve">
           <table class="tabela tabela--compacta">
-            <thead><tr><th scope="col">Provedor</th><th scope="col">Total</th></tr></thead>
-            <tbody id="rst-saude-provedores"><tr><td colspan="2" class="vazio-suave">carregando…</td></tr></tbody>
+            <thead><tr><th scope="col" data-t="colProvedor">Provider</th><th scope="col" data-t="colTotal">Total</th></tr></thead>
+            <tbody id="rst-saude-provedores"><tr><td colspan="2" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -2298,14 +2300,14 @@
   <section class="cartao">
     <header class="cartao-cabeca">
       <div>
-        <h2>Evolução no tempo</h2>
-        <p class="cartao-sub">
-          Escolha qual mudança de status ver — cada linha é uma plataforma, cada ponto um dia.
-          Clique num ponto pra ver os pedidos daquele dia, do mais lento pro mais rápido.
+        <h2 data-t="titEvolucao">Trend Over Time</h2>
+        <p class="cartao-sub" data-t="subEvolucao">
+          Pick which status change to see — each line is a platform, each point a day. Click a
+          point to see that day's orders, from slowest to fastest.
         </p>
       </div>
       <label class="campo">
-        <span>Métrica</span>
+        <span data-t="labelMetrica">Metric</span>
         <select id="rst-serie-metrica"></select>
       </label>
     </header>
@@ -2315,55 +2317,55 @@
   <section class="cartao">
     <header class="cartao-cabeca">
       <div>
-        <h2>Pedidos</h2>
-        <p class="cartao-sub">Clique numa linha para ver a ficha completa e a linha do tempo.</p>
+        <h2 data-t="titPedidos">Orders</h2>
+        <p class="cartao-sub" data-t="subPedidos">Click a row to see the full record and timeline.</p>
       </div>
       <div class="tk-filtros">
         <label class="campo campo--cresce">
-          <span class="sr">Buscar transação, cliente ou código de rastreio</span>
-          <input type="text" id="rst-busca" placeholder="Buscar transação, cliente ou código de rastreio…">
+          <span class="sr" data-t="buscaSr">Search transaction, customer or tracking code</span>
+          <input type="text" id="rst-busca" data-t-placeholder="buscaPlaceholder" placeholder="Search transaction, customer or tracking code…">
         </label>
         <label class="campo">
-          <span>Status</span>
+          <span data-t="colStatus">Status</span>
           <select id="rst-sel-status">
-            <option value="">Todos</option>
-            <option value="pendente_consulta">Consultando fornecedor</option>
-            <option value="nao_encontrado">Não encontrado na Red Rock</option>
-            <option value="pending">Pedido recebido</option>
-            <option value="shipped">A caminho</option>
-            <option value="delivered">Entregue</option>
-            <option value="cancelled">Cancelado</option>
-            <option value="exception">Erro na consulta</option>
-            <option value="desconhecido">Status não mapeado</option>
-            <option value="sem_codigo_rastreio">Sem código de rastreio</option>
+            <option value="" data-t="statusTodos">All</option>
+            <option value="pendente_consulta" data-t="statusPendenteConsulta">Checking with provider</option>
+            <option value="nao_encontrado" data-t="statusNaoEncontrado">Not found at Red Rock</option>
+            <option value="pending" data-t="statusPending">Order received</option>
+            <option value="shipped" data-t="statusShipped">On its way</option>
+            <option value="delivered" data-t="statusDelivered">Delivered</option>
+            <option value="cancelled" data-t="statusCancelled">Cancelled</option>
+            <option value="exception" data-t="statusException">Query error</option>
+            <option value="desconhecido" data-t="statusDesconhecido">Unmapped status</option>
+            <option value="sem_codigo_rastreio" data-t="statusSemCodigo">Missing tracking code</option>
           </select>
         </label>
         <label class="campo-sel campo-produto" id="rst-campo-produto">
-          <span class="sr">Filtrar por produto</span>
-          <select id="rst-sel-produto"><option value="">Todos os produtos</option></select>
+          <span class="sr" data-t="filtrarProduto">Filter by product</span>
+          <select id="rst-sel-produto"><option value="" data-t="todosProdutos">All products</option></select>
         </label>
         <label class="campo-sel campo-produto" id="rst-campo-plataforma">
-          <span class="sr">Filtrar por plataforma</span>
-          <select id="rst-sel-plataforma"><option value="">Todas as plataformas</option></select>
+          <span class="sr" data-t="filtrarPlataforma">Filter by platform</span>
+          <select id="rst-sel-plataforma"><option value="" data-t="todasPlataformas">All platforms</option></select>
         </label>
         <label class="campo-sel" id="rst-campo-periodo">
-          <span class="sr">Período</span>
+          <span class="sr" data-t="colPeriodo">Period</span>
           <select id="rst-sel-periodo">
-            <option value="7">7 dias</option>
-            <option value="30">30 dias</option>
-            <option value="60">60 dias</option>
-            <option value="90">90 dias</option>
-            <option value="" selected>Tudo</option>
-            <option value="intervalo">Escolher datas…</option>
+            <option value="7" data-t="periodo7">7 days</option>
+            <option value="30" data-t="periodo30">30 days</option>
+            <option value="60" data-t="periodo60">60 days</option>
+            <option value="90" data-t="periodo90">90 days</option>
+            <option value="" selected data-t="periodoTudo">All time</option>
+            <option value="intervalo" data-t="periodoEscolher">Choose dates…</option>
           </select>
         </label>
         <label class="campo" id="rst-campo-data-de" hidden>
-          <span class="sr">De</span>
-          <input type="date" id="rst-data-de" title="Pedidos comprados a partir desta data">
+          <span class="sr" data-t="colDe">From</span>
+          <input type="date" id="rst-data-de" data-t-title="dataDeTitle" title="Orders purchased from this date">
         </label>
         <label class="campo" id="rst-campo-data-ate" hidden>
-          <span class="sr">Até</span>
-          <input type="date" id="rst-data-ate" title="Pedidos comprados até esta data (incluída)">
+          <span class="sr" data-t="colAte">To</span>
+          <input type="date" id="rst-data-ate" data-t-title="dataAteTitle" title="Orders purchased up to this date (inclusive)">
         </label>
       </div>
     </header>
@@ -2371,17 +2373,17 @@
       <table class="tabela">
         <thead>
           <tr>
-            <th scope="col">Pedido</th>
-            <th scope="col">Produto</th>
-            <th scope="col">Plataforma</th>
-            <th scope="col">Status</th>
-            <th scope="col">Provedor</th>
-            <th scope="col">Transportadora</th>
-            <th scope="col">Código de rastreio</th>
-            <th scope="col">Atualizado</th>
+            <th scope="col" data-t="colPedido">Order</th>
+            <th scope="col" data-t="colProduto">Product</th>
+            <th scope="col" data-t="colPlataforma">Platform</th>
+            <th scope="col" data-t="colStatus">Status</th>
+            <th scope="col" data-t="colProvedor">Provider</th>
+            <th scope="col" data-t="colTransportadora">Carrier</th>
+            <th scope="col" data-t="colCodigoRastreio">Tracking code</th>
+            <th scope="col" data-t="colAtualizado">Updated</th>
           </tr>
         </thead>
-        <tbody id="rst-tabela-corpo"><tr><td colspan="8" class="vazio-suave">carregando…</td></tr></tbody>
+        <tbody id="rst-tabela-corpo"><tr><td colspan="8" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody>
       </table>
     </div>
     <div class="paginacao" id="rst-tabela-paginacao"></div>
