@@ -142,7 +142,12 @@ export default async function rotasRastreio(app) {
           ...paginacaoParams,
           status: {
             type: 'string',
-            enum: ['pendente_consulta', 'nao_encontrado', 'pending', 'shipped', 'delivered', 'cancelled', 'exception', 'desconhecido'],
+            enum: [
+              'pendente_consulta', 'nao_encontrado', 'pending', 'shipped', 'delivered', 'cancelled', 'exception', 'desconhecido',
+              'sem_codigo_rastreio',
+            ],
+            description: "'sem_codigo_rastreio' não é um status_interno de verdade — é um atalho pra "
+              + '"já encontrado num status (pending/shipped/delivered/cancelled) mas ainda sem tracking_number".',
           },
           provedor: { type: 'string' },
           produto: { type: 'string' },
@@ -158,7 +163,11 @@ export default async function rotasRastreio(app) {
     const valores = [];
     const partes = ['1=1'];
 
-    if (req.query.status) { valores.push(req.query.status); partes.push(`r.status_interno = $${valores.length}`); }
+    if (req.query.status === 'sem_codigo_rastreio') {
+      partes.push(`r.tracking_number IS NULL AND r.status_interno IN ('pending', 'shipped', 'delivered', 'cancelled')`);
+    } else if (req.query.status) {
+      valores.push(req.query.status); partes.push(`r.status_interno = $${valores.length}`);
+    }
     if (req.query.provedor) { valores.push(req.query.provedor); partes.push(`r.provedor = $${valores.length}`); }
     if (req.query.produto) { valores.push(req.query.produto); partes.push(`d.produto = $${valores.length}`); }
     if (req.query.plataforma) { valores.push(req.query.plataforma); partes.push(`btrim(d.plataforma) = $${valores.length}`); }

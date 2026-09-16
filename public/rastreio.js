@@ -91,7 +91,10 @@ function renderKpis(r) {
     }),
   );
   $('rst-kpis-status').replaceChildren(
-    kpiCard({ icone: '◐', tom: 'neutro', rotulo: 'Consultando fornecedor', valor: n(r.pendente_consulta) }),
+    kpiCard({
+      icone: '◐', tom: 'neutro', rotulo: 'Consultando fornecedor', valor: n(r.pendente_consulta),
+      nota: 'pedidos sendo consultados na Red Rock pela primeira vez agora',
+    }),
     kpiCard({
       icone: '●', tom: 'neutro', rotulo: 'Pedido recebido', valor: n(r.pending),
       nota: 'pedidos que a fulfillment recebeu das plataformas e ainda não foi enviado',
@@ -100,12 +103,18 @@ function renderKpis(r) {
       icone: '➤', tom: 'neutro', rotulo: 'A caminho', valor: n(r.shipped),
       nota: 'pedidos que foram enviados',
     }),
-    kpiCard({ icone: '✓', tom: 'bom', rotulo: 'Entregue', valor: n(r.delivered) }),
+    kpiCard({
+      icone: '✓', tom: 'bom', rotulo: 'Entregue', valor: n(r.delivered),
+      nota: 'pedidos que já chegaram no cliente',
+    }),
     kpiCard({
       icone: '✕', tom: 'neutro', rotulo: 'Cancelado', valor: n(r.cancelled),
       nota: 'pedidos que foram cancelados',
     }),
-    kpiCard({ icone: '?', tom: 'neutro', rotulo: 'Status não mapeado', valor: n(r.desconhecido) }),
+    kpiCard({
+      icone: '?', tom: 'neutro', rotulo: 'Status não mapeado', valor: n(r.desconhecido),
+      nota: 'a Red Rock devolveu um status que ainda não reconhecemos',
+    }),
     kpiCard({
       icone: '▭', tom: r.sem_codigo_rastreio > 0 ? 'medio' : 'neutro', rotulo: 'Sem código de rastreio',
       valor: n(r.sem_codigo_rastreio),
@@ -408,11 +417,28 @@ $('rst-data-ate').addEventListener('change', (e) => {
 
 $('rst-atualizar').addEventListener('click', carregarTudo);
 
-// O catálogo do topo pode chegar depois desta aba já ter carregado — sincroniza
-// de novo a cada vez que a aba é aberta, sem custo (o clone é idempotente).
-$('aba-btn-rastreio').addEventListener('click', sincronizarSelects);
+/**
+ * O catálogo do topo (`sel-produto`/`sel-plataforma`) só existe depois do
+ * primeiro `/api/snapshot` do painel voltar — se o usuário abrir a aba
+ * Rastreio antes disso (comum: é a primeira coisa que ele clica depois do
+ * login), `sincronizarSelects()` clona uma lista vazia e nada dispara de
+ * novo sozinho depois (esta aba não tem polling). Tenta de novo por até 6s
+ * — de sobra pro snapshot inicial chegar — e para assim que o topo tiver
+ * mais que só a opção "Todos/Todas".
+ */
+function tentarSincronizarSelects(tentativasRestantes = 4) {
+  sincronizarSelects();
+  const topoProduto = $('sel-produto');
+  const rstProduto = $('rst-sel-produto');
+  const pronto = !topoProduto || !rstProduto || rstProduto.options.length >= topoProduto.options.length;
+  if (!pronto && tentativasRestantes > 0) {
+    setTimeout(() => tentarSincronizarSelects(tentativasRestantes - 1), 1500);
+  }
+}
+
+$('aba-btn-rastreio').addEventListener('click', () => tentarSincronizarSelects());
 
 // Primeira carga — mesma mecânica das outras abas (todas ficam no DOM, só
 // escondidas), sem polling: dado de fulfillment não muda a cada segundos.
-sincronizarSelects();
+tentarSincronizarSelects();
 carregarTudo();
