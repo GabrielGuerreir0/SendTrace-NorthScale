@@ -428,10 +428,14 @@ $('rst-atualizar').addEventListener('click', carregarTudo);
  */
 function tentarSincronizarSelects(tentativasRestantes = 10) {
   sincronizarSelects();
+  // Comparar os dois tamanhos (rst vs topo) não serve de gatilho: os dois
+  // começam EMPATADOS em 1 (só o placeholder "Todos/Todas" de cada um),
+  // então essa comparação já nasce "pronta" — e nunca reagenda a próxima
+  // tentativa. O que precisa checar é só o TOPO: continua tentando enquanto
+  // ele ainda não tiver nada além do próprio placeholder.
   const topoProduto = $('sel-produto');
-  const rstProduto = $('rst-sel-produto');
-  const pronto = !topoProduto || !rstProduto || rstProduto.options.length >= topoProduto.options.length;
-  if (!pronto && tentativasRestantes > 0) {
+  const aindaSemCatalogo = topoProduto && topoProduto.options.length <= 1;
+  if (aindaSemCatalogo && tentativasRestantes > 0) {
     setTimeout(() => tentarSincronizarSelects(tentativasRestantes - 1), 1500);
   }
 }
