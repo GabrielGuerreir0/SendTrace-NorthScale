@@ -39,7 +39,7 @@ async function coletarVisaoGeral(dias) {
     produtosProblema,
     aberturaRegua, ondeGeraContato,
     reincidentes, sentimentoNegativoPeriodo,
-    coberturaProduto,
+    coberturaProduto, rastreioFunil,
   ] = await Promise.all([
     // ── números críticos ──
     query(`
@@ -246,6 +246,20 @@ async function coletarVisaoGeral(dias) {
                  SELECT 1 FROM produto_readmes r WHERE r.produto = p.nome AND r.ativo = true
                ))::int AS com_ficha
       FROM produtos p WHERE p.ativo = true`),
+
+    // ── rastreio de pedidos (linha do tempo da Home) ──
+    // Snapshot do estado atual, sem janela de dias — mesma lógica de
+    // "casos escalados pendentes" acima: é sobre ONDE cada pedido está
+    // agora, não sobre quantos mudaram de status no período.
+    query(`
+      SELECT
+        count(*) FILTER (WHERE status_interno = 'pendente_consulta')::int AS pendente_consulta,
+        count(*) FILTER (WHERE status_interno = 'nao_encontrado')::int    AS nao_encontrado,
+        count(*) FILTER (WHERE status_interno = 'pending')::int           AS pending,
+        count(*) FILTER (WHERE status_interno = 'shipped')::int           AS shipped,
+        count(*) FILTER (WHERE status_interno = 'delivered')::int         AS delivered,
+        count(*) FILTER (WHERE status_interno = 'cancelled')::int         AS cancelled
+      FROM rastreio_pedidos`),
   ]);
 
   const t = ticketsStatus.rows[0];
@@ -313,6 +327,7 @@ async function coletarVisaoGeral(dias) {
       sentimento_negativo_periodo: sentimentoNegativoPeriodo.rows[0].total,
     },
     cobertura_produto: cobertura,
+    rastreio: rastreioFunil.rows[0],
   };
 }
 

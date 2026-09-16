@@ -348,6 +348,19 @@ function carregarTudo() {
 
 /* ═══════════════════════════════════  filtros  ═════════════════════════════ */
 
+/**
+ * Ponto de entrada pra "ir direto pra esta etapa" — chamado pela linha do
+ * tempo da Home (ver visaoGeral.js). Sobrescreve o filtro de status atual
+ * e recarrega só a lista (KPIs/Saúde continuam mostrando tudo, sem filtro
+ * de status — mesmo padrão de abrirNaTabela em emailTickets.js).
+ */
+export async function abrirRastreioComStatus(status) {
+  estado.status = status;
+  $('rst-sel-status').value = status;
+  estado.pagina = 1;
+  await carregarLista();
+}
+
 $('rst-busca').addEventListener('input', debounce((e) => {
   estado.busca = e.target.value.trim();
   estado.pagina = 1;

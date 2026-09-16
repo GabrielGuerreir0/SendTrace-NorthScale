@@ -16,6 +16,7 @@ import {
 } from './emailComum.js';
 import { n, duracaoH } from './format.js';
 import { desenharColunas } from './charts.js';
+import { abrirRastreioComStatus } from './rastreio.js';
 
 const pct = (v) => (v === null || v === undefined ? '—' : `${Math.round(v * 1000) / 10}%`);
 const pct0 = (v) => (v === null || v === undefined ? '—' : `${Math.round(v * 100)}%`);
@@ -402,6 +403,61 @@ function renderCobertura(s) {
   }
 }
 
+/* ══════════════════════════  rastreio: linha do tempo  ═════════════════════
+ * Onde os pedidos estão AGORA na jornada de entrega (snapshot, sem janela de
+ * dias — mesma lógica de "casos escalados pendentes" acima). As 4 etapas
+ * sequenciais (consultando → recebido → a caminho → entregue) vêm primeiro;
+ * "não encontrado" e "cancelado" são desvios da jornada normal, não um passo
+ * a mais, e por isso ficam à parte visualmente (ver .vg-rastreio-desvio).
+ * Clicar em qualquer uma leva pra aba Rastreio já filtrada por aquele status
+ * (abrirRastreioComStatus, importado de rastreio.js). */
+
+const ETAPAS_RASTREIO = [
+  { status: 'pendente_consulta', rotulo: 'Consultando fornecedor', icone: '◐' },
+  { status: 'pending', rotulo: 'Pedido recebido', icone: '●' },
+  { status: 'shipped', rotulo: 'A caminho', icone: '➤' },
+  { status: 'delivered', rotulo: 'Entregue', icone: '✓' },
+];
+const DESVIOS_RASTREIO = [
+  { status: 'nao_encontrado', rotulo: 'Não encontrado na Red Rock', icone: '○' },
+  { status: 'cancelled', rotulo: 'Cancelado', icone: '✕' },
+];
+
+function irParaRastreio(status) {
+  $('aba-btn-rastreio')?.click();
+  abrirRastreioComStatus(status);
+}
+
+function itemLinhaRastreio(etapa, valor, { desvio = false } = {}) {
+  const li = document.createElement('li');
+  li.className = `vg-rastreio-etapa${desvio ? ' vg-rastreio-desvio' : ''}`;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.addEventListener('click', () => irParaRastreio(etapa.status));
+  const ponto = document.createElement('span');
+  ponto.className = 'vg-rastreio-ponto';
+  ponto.setAttribute('aria-hidden', 'true');
+  ponto.textContent = etapa.icone;
+  const valorEl = document.createElement('strong');
+  valorEl.textContent = n(valor);
+  const rotuloEl = document.createElement('span');
+  rotuloEl.className = 'vg-rastreio-rotulo';
+  rotuloEl.textContent = etapa.rotulo;
+  btn.append(ponto, valorEl, rotuloEl);
+  li.append(btn);
+  return li;
+}
+
+function renderRastreioLinha(s) {
+  const container = $('vg-rastreio-linha');
+  if (!container) return;
+  const r = s.rastreio;
+  container.replaceChildren(
+    ...ETAPAS_RASTREIO.map((e) => itemLinhaRastreio(e, r[e.status])),
+    ...DESVIOS_RASTREIO.map((e) => itemLinhaRastreio(e, r[e.status], { desvio: true })),
+  );
+}
+
 /* ══════════════════════════  navegação pras outras abas  ═══════════════════ */
 
 // Estático de propósito: não depende de nenhum dado da rota, só troca de aba
@@ -469,6 +525,7 @@ export async function carregarVisaoGeral() {
   renderJornadaContato(s);
   renderRisco(s);
   renderCobertura(s);
+  renderRastreioLinha(s);
 }
 
 // Primeira carga — mesma mecânica das outras abas: todas ficam no DOM, só
