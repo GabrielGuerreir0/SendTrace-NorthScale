@@ -1485,6 +1485,18 @@ export async function rastreioDetalhe(transacaoId) {
   return obter(`/api/rastreio/${encodeURIComponent(transacaoId)}/`);
 }
 
-export async function rastreioSaude() {
-  return obter('/api/metricas/rastreio/saude/');
+export async function rastreioSaude(params = {}) {
+  return obter('/api/metricas/rastreio/saude/', params);
+}
+
+/** Drill-down (clique numa linha) e série diária (gráfico "Evolução no
+ * tempo") — mesmo thin proxy, `metrica` e o resto dos filtros já vêm prontos
+ * de server/index.js. */
+export async function rastreioSaudeDetalhe(params = {}) {
+  const dados = await obter('/api/metricas/rastreio/saude/detalhe/', params);
+  return { total: dados.count ?? 0, pedidos: dados.results ?? [] };
+}
+
+export async function rastreioSaudeSerie(params = {}) {
+  return obter('/api/metricas/rastreio/saude/serie/', params);
 }

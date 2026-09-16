@@ -316,9 +316,9 @@ async function carregarDetalheSaude() {
     $('rst-detalhe-pag').replaceChildren();
     return;
   }
-  renderTabela($('rst-detalhe-corpo'), d.results, colunasDetalhe(), { vazio: 'Nenhum pedido encontrado com este recorte.' });
-  const totalPaginas = Math.max(1, Math.ceil(d.count / DETALHE_POR_PAGINA));
-  montarPaginacao($('rst-detalhe-pag'), { pagina: detalhePagina, totalPaginas, total: d.count, rotuloItem: 'pedido' }, (p) => {
+  renderTabela($('rst-detalhe-corpo'), d.pedidos, colunasDetalhe(), { vazio: 'Nenhum pedido encontrado com este recorte.' });
+  const totalPaginas = Math.max(1, Math.ceil(d.total / DETALHE_POR_PAGINA));
+  montarPaginacao($('rst-detalhe-pag'), { pagina: detalhePagina, totalPaginas, total: d.total, rotuloItem: 'pedido' }, (p) => {
     detalhePagina = p;
     carregarDetalheSaude();
   });

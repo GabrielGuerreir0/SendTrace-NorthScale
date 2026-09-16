@@ -17,7 +17,7 @@ import {
   etapasTempos, salvarTempoEtapa,
   produtosDaFila, plataformasDaFila, fonteDados, suporteResumo, suporteConversas,
   catalogoProdutos, reguaInsights, visaoGeralResumo,
-  rastreioResumo, rastreioLista, rastreioDetalhe, rastreioSaude,
+  rastreioResumo, rastreioLista, rastreioDetalhe, rastreioSaude, rastreioSaudeDetalhe, rastreioSaudeSerie,
 } from './dados.js';
 import {
   apiConfigurada, enderecoApi, saude as saudeApi, ErroApi,
@@ -1702,14 +1702,56 @@ async function atender(req, res, url, sessao) {
   }
 
   if (url.pathname === '/api/metricas/rastreio') {
+    const q = url.searchParams;
+    // dias/data_de/data_ate faltavam aqui — o filtro de período da aba nunca
+    // chegava na API pra esta rota (nem pra /saude abaixo), então os KPIs
+    // ignoravam silenciosamente o período escolhido. Corrigido junto com as
+    // 2 rotas novas de drill-down/série porque são o mesmo bug de origem:
+    // este proxy manual exige um `if` por rota, e cada rota nova na API
+    // (ou parâmetro novo numa rota existente) precisa ser replicada aqui à
+    // mão — não tem catch-all.
     return json(res, 200, await rastreioResumo({
-      produto: textoOuNulo(url.searchParams.get('produto')),
-      plataforma: textoOuNulo(url.searchParams.get('plataforma')),
+      produto: textoOuNulo(q.get('produto')),
+      plataforma: textoOuNulo(q.get('plataforma')),
+      dias: q.get('dias'), data_de: q.get('data_de'), data_ate: q.get('data_ate'),
     }));
   }
 
   if (url.pathname === '/api/metricas/rastreio/saude') {
-    return json(res, 200, await rastreioSaude());
+    const q = url.searchParams;
+    return json(res, 200, await rastreioSaude({
+      produto: textoOuNulo(q.get('produto')),
+      plataforma: textoOuNulo(q.get('plataforma')),
+      dias: q.get('dias'), data_de: q.get('data_de'), data_ate: q.get('data_ate'),
+    }));
+  }
+
+  // Drill-down (clique numa linha de Saúde do rastreio) e a série diária do
+  // gráfico "Evolução no tempo" — thin proxy pras 2 rotas que api/rotas/
+  // rastreio.js já expõe, espelhando os mesmos parâmetros do schema Fastify.
+  if (url.pathname === '/api/metricas/rastreio/saude/detalhe') {
+    const q = url.searchParams;
+    return json(res, 200, await rastreioSaudeDetalhe({
+      produto: textoOuNulo(q.get('produto')),
+      plataforma: textoOuNulo(q.get('plataforma')),
+      dias: q.get('dias'), data_de: q.get('data_de'), data_ate: q.get('data_ate'),
+      metrica: q.get('metrica'),
+      status_anterior: q.get('status_anterior'), status_novo: q.get('status_novo'),
+      status_interno: q.get('status_interno'), provedor: q.get('provedor'),
+      sem_codigo: q.get('sem_codigo'),
+      page: q.get('page') ?? undefined, page_size: q.get('page_size') ?? undefined,
+    }));
+  }
+
+  if (url.pathname === '/api/metricas/rastreio/saude/serie') {
+    const q = url.searchParams;
+    return json(res, 200, await rastreioSaudeSerie({
+      produto: textoOuNulo(q.get('produto')),
+      plataforma: textoOuNulo(q.get('plataforma')),
+      dias: q.get('dias'), data_de: q.get('data_de'), data_ate: q.get('data_ate'),
+      metrica: q.get('metrica'),
+      status_anterior: q.get('status_anterior'), status_novo: q.get('status_novo'),
+    }));
   }
 
   if (url.pathname.startsWith('/api/rastreio/')) {
