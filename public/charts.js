@@ -177,6 +177,119 @@ export function desenharColunas(container, data, opts = {}) {
 }
 
 
+/* ───────────────────────────  GRÁFICO DE LINHA  ────────────────────────── */
+
+/**
+ * Multi-série sobre o mesmo eixo X categórico (tipicamente um dia por
+ * posição). Todas as séries em `series` precisam ter `pontos.length ===
+ * dias.length` — um ponto `null` não vira zero, abre um vão na linha (dia
+ * sem amostra não é o mesmo que dia com valor zero).
+ *
+ * dias: [string] — rótulo/chave de cada posição no eixo X, na ordem.
+ * series: [{ chave, rotulo, cor?, pontos: [number|null] }] — `cor` é o
+ * índice 1-8 da paleta categórica (`--serie-N`); default é a ordem em
+ * `series`.
+ */
+export function desenharLinha(container, dias, series, opts = {}) {
+  const {
+    altura = 220,
+    margem = { topo: 22, dir: 14, base: 30, esq: 46 },
+    rotuloEixoX = (dia) => dia,
+    tooltip = null,
+    unidade = '',
+    formatarValor = (v) => n(v),
+    aoClicarPonto = null,
+    textoVazio = 'Sem dados neste período.',
+  } = opts;
+
+  limpar(container);
+  const w = Math.max(container.clientWidth || 640, 320);
+
+  const todosValores = series.flatMap((s) => s.pontos.filter((v) => v !== null && v !== undefined));
+  if (!dias.length || !todosValores.length) {
+    const svgVazio = svgEl('svg', { class: 'gr', width: w, height: altura, viewBox: `0 0 ${w} ${altura}` }, container);
+    svgEl('text', { class: 'gr-vazio', x: w / 2, y: altura / 2, 'text-anchor': 'middle', text: textoVazio }, svgVazio);
+    return;
+  }
+
+  const svg = svgEl('svg', { class: 'gr', width: w, height: altura, viewBox: `0 0 ${w} ${altura}`, role: 'img' }, container);
+  const plotW = w - margem.esq - margem.dir;
+  const plotH = altura - margem.topo - margem.base;
+
+  const max = Math.max(...todosValores, 0);
+  const { topo, ticks } = escalaTopo(max);
+  const y = (v) => margem.topo + plotH - (v / topo) * plotH;
+  const slot = dias.length > 1 ? plotW / (dias.length - 1) : 0;
+  const x = (i) => margem.esq + i * slot + (dias.length > 1 ? 0 : plotW / 2);
+
+  const gGrade = svgEl('g', { class: 'gr-grade' }, svg);
+  for (const t of ticks) {
+    svgEl('line', { x1: margem.esq, y1: y(t), x2: margem.esq + plotW, y2: y(t) }, gGrade);
+    svgEl('text', { class: 'gr-tick', x: margem.esq - 8, y: y(t) + 3.5, 'text-anchor': 'end', text: nc(t) }, svg);
+  }
+
+  series.forEach((serie, si) => {
+    const corIdx = ((serie.cor ?? si) % 8) + 1;
+    let caminho = '';
+    let aberto = false;
+    serie.pontos.forEach((v, i) => {
+      if (v === null || v === undefined) { aberto = false; return; }
+      caminho += `${aberto ? 'L' : 'M'}${x(i)},${y(v)} `;
+      aberto = true;
+    });
+    if (caminho) svgEl('path', { class: `gr-linha gr-linha-${corIdx}`, d: caminho.trim() }, svg);
+  });
+
+  // Pontos por cima de todas as linhas, pra nenhuma série tapar o hover/clique de outra.
+  series.forEach((serie, si) => {
+    const corIdx = ((serie.cor ?? si) % 8) + 1;
+    const gPontos = svgEl('g', { class: 'gr-pontos' }, svg);
+    serie.pontos.forEach((v, i) => {
+      if (v === null || v === undefined) return;
+      const c = svgEl('circle', {
+        class: `gr-ponto gr-ponto-${corIdx}`, cx: x(i), cy: y(v), r: 3,
+        tabindex: aoClicarPonto ? 0 : null, role: aoClicarPonto ? 'button' : null,
+        'aria-label': aoClicarPonto ? `${serie.rotulo}, ${rotuloEixoX(dias[i], i)}: ${formatarValor(v)}` : null,
+      }, gPontos);
+      if (tooltip) {
+        const mostrar = (ev) => tooltip.mostrar(
+          `<strong>${serie.rotulo}</strong><span class="tt-sub">${rotuloEixoX(dias[i], i)}</span>`
+          + `<span class="tt-linha"><span class="tt-chave">${unidade}</span><b>${formatarValor(v)}</b></span>`,
+          ev.clientX, ev.clientY,
+        );
+        c.addEventListener('pointerenter', mostrar);
+        c.addEventListener('pointermove', mostrar);
+        c.addEventListener('pointerleave', () => tooltip.esconder());
+      }
+      if (aoClicarPonto) {
+        c.addEventListener('click', () => aoClicarPonto(serie.chave, dias[i]));
+        c.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') aoClicarPonto(serie.chave, dias[i]); });
+      }
+    });
+  });
+
+  const eixoY = margem.topo + plotH;
+  svgEl('line', { class: 'gr-base', x1: margem.esq, y1: eixoY, x2: margem.esq + plotW, y2: eixoY }, svg);
+  const passo = Math.max(1, Math.ceil(dias.length / 8));
+  dias.forEach((dia, i) => {
+    if (i % passo !== 0 && i !== dias.length - 1) return;
+    svgEl('text', { class: 'gr-tick', x: x(i), y: eixoY + 15, 'text-anchor': 'middle', text: rotuloEixoX(dia, i) }, svg);
+  });
+
+  const legenda = document.createElement('ul');
+  legenda.className = 'linha-legenda';
+  series.forEach((serie, si) => {
+    const corIdx = ((serie.cor ?? si) % 8) + 1;
+    const li = document.createElement('li');
+    const cor = document.createElement('span'); cor.className = `linha-legenda-cor gr-ponto-${corIdx}`;
+    const rot = document.createElement('span'); rot.textContent = serie.rotulo;
+    li.append(cor, rot);
+    legenda.append(li);
+  });
+  container.append(legenda);
+}
+
+
 /* ────────────────────────────  GRÁFICO DE PIZZA  ──────────────────────── */
 
 const polar = (cx, cy, r, anguloDeg) => {

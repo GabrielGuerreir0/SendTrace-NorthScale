@@ -555,6 +555,26 @@ export const RastreioDetalheLinha = {
   },
 };
 
+export const SerieSaudeRastreio = {
+  $id: 'SerieSaudeRastreio',
+  type: 'object',
+  description: 'Série diária de uma métrica de tempo (deteccao/transporte/total/transicao), '
+    + 'por plataforma — insumo do gráfico de linha em Evolução no tempo.',
+  properties: {
+    pontos: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          dia: { type: 'string', description: 'YYYY-MM-DD.' },
+          plataforma: texto(60), amostras: { type: 'integer' },
+          media_horas: { type: ['number', 'null'] }, mediana_horas: { type: ['number', 'null'] },
+        },
+      },
+    },
+  },
+};
+
 export const RastreioPublico = {
   $id: 'RastreioPublico',
   type: 'object',
@@ -733,7 +753,8 @@ export const TODOS = [
   PainelLinhaMensagens, PainelLinhaHistorico, ConfigDisparo, PainelUsuario,
   Credenciais, ParTokens, PedidoRefresh, Erro,
   ContagemPorEstado, ResumoEtapa, Produto, Balde, EntradaDia, ContagemStatus,
-  RastreioPedido, RastreioEvento, RastreioDetalhe, ResumoRastreio, SaudeRastreio, RastreioDetalheLinha, RastreioPublico,
+  RastreioPedido, RastreioEvento, RastreioDetalhe, ResumoRastreio, SaudeRastreio, RastreioDetalheLinha,
+  SerieSaudeRastreio, RastreioPublico,
 ];
 
 /**

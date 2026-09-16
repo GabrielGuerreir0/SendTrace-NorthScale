@@ -14,9 +14,20 @@
  */
 import {
   $, api, debounce, kpiCard, montarPaginacao, renderTabela, chipRastreio,
-  rotularStatusRastreio, rotularPlataforma, abrirFicha, seloProvedor,
+  rotularStatusRastreio, rotularPlataforma, abrirFicha, seloProvedor, tooltip,
 } from './emailComum.js';
 import { n, dataHora, dia, duracaoH } from './format.js';
+import { desenharLinha } from './charts.js';
+
+/** dia (col. `date` do Postgres, "AAAA-MM-DD" sem hora/fuso) → "DD/MM" sem
+ * passar por `new Date()`: um `date` puro seria lido como meia-noite UTC e o
+ * fuso do navegador (ex.: -03:00) empurraria pro dia anterior. */
+const rotuloDia = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+
+/** Cor fixa por plataforma na paleta categórica (`--serie-N`) — as 3
+ * conhecidas sempre com a mesma cor entre uma troca de métrica e outra;
+ * qualquer plataforma nova cai nas posições seguintes. */
+const COR_PLATAFORMA = { JVZoo: 0, BuyGoods: 1, DigiStore24: 2 };
 
 const POR_PAGINA = 25;
 const estado = {
@@ -288,6 +299,11 @@ async function carregarDetalheSaude() {
   const meu = ++detalheGeracao;
   const params = paramsFiltro();
   for (const [chave, valor] of Object.entries(detalheExtra)) {
+    // Um clique no gráfico de linha manda dias:'' pra travar num dia exato
+    // (data_de=data_ate=aquele dia) — sem isto, o filtro de período do topo
+    // da aba (ex.: "últimos 30 dias") continuaria valendo e ignoraria o dia
+    // clicado, porque `dias` tem prioridade sobre data_de/data_ate no backend.
+    if (chave === 'dias' && valor === '') { params.delete('dias'); continue; }
     if (valor !== undefined && valor !== null && valor !== '') params.set(chave, valor);
   }
   params.set('page', String(detalhePagina));
@@ -433,6 +449,79 @@ function renderSaudeTotal(linhas) {
   renderTabela($('rst-saude-total'), linhas, colunas, { vazio: 'Nenhum pedido entregue ainda.' });
 }
 
+/* ═════════════  Evolução no tempo (gráfico de linha, por plataforma)  ══════════
+ * Um select só, com uma opção por métrica de tempo que Saúde do rastreio já
+ * conhece: as 3 fixas (deteccao/transporte/total) mais UMA por transição de
+ * status real (transicoes_status é dinâmico — nasce só quando a transição
+ * acontece de verdade, então "Pedido recebido → A caminho" só aparece se já
+ * tiver amostra). O valor da opção codifica tudo que a rota /saude/serie/
+ * precisa: `metrica`, e pra transição, `status_anterior|status_novo` juntos
+ * (status_anterior vazio = null = primeiro evento, mesma convenção do drill-down). */
+function popularSelectSerie(transicoes) {
+  const sel = $('rst-serie-metrica');
+  if (!sel) return;
+  const valorAtual = sel.value;
+  const opcoes = [
+    { valor: 'deteccao', rotulo: 'Tempo até aparecer na Red Rock (compra → 1º registro)' },
+    ...transicoes.map((t) => ({
+      valor: `transicao|${t.status_anterior ?? ''}|${t.status_novo}`,
+      rotulo: `${rotularStatusRastreio(t.status_anterior)} → ${rotularStatusRastreio(t.status_novo)}`,
+    })),
+    { valor: 'transporte', rotulo: 'Tempo de transporte (a caminho → entregue)' },
+    { valor: 'total', rotulo: 'Tempo total (compra → entregue)' },
+  ];
+  sel.replaceChildren(...opcoes.map(({ valor, rotulo }) => {
+    const opt = document.createElement('option');
+    opt.value = valor; opt.textContent = rotulo;
+    return opt;
+  }));
+  sel.value = opcoes.some((o) => o.valor === valorAtual) ? valorAtual : opcoes[0].valor;
+}
+
+async function carregarSerie() {
+  const sel = $('rst-serie-metrica');
+  const container = $('rst-serie-grafico');
+  if (!sel || !container || !sel.value) return;
+  const [tipo, statusAnterior, statusNovo] = sel.value.split('|');
+
+  const params = paramsFiltro();
+  params.set('metrica', tipo);
+  if (tipo === 'transicao') {
+    params.set('status_anterior', statusAnterior);
+    params.set('status_novo', statusNovo);
+  }
+
+  const { ok, dados: s } = await api(`/api/metricas/rastreio/saude/serie?${params}`);
+  if (!ok || !s.pontos.length) {
+    desenharLinha(container, [], [], { textoVazio: 'Sem dados suficientes pra esse recorte ainda.' });
+    return;
+  }
+
+  const dias = [...new Set(s.pontos.map((p) => p.dia))].sort();
+  const plataformas = [...new Set(s.pontos.map((p) => p.plataforma))]
+    .sort((a, b) => (COR_PLATAFORMA[a] ?? 99) - (COR_PLATAFORMA[b] ?? 99));
+  const series = plataformas.map((plat, idx) => ({
+    chave: plat,
+    rotulo: rotularPlataforma(plat),
+    cor: COR_PLATAFORMA[plat] ?? idx,
+    pontos: dias.map((d) => s.pontos.find((p) => p.dia === d && p.plataforma === plat)?.media_horas ?? null),
+  }));
+
+  const rotuloMetrica = sel.options[sel.selectedIndex]?.textContent ?? '';
+  desenharLinha(container, dias, series, {
+    tooltip, unidade: 'tempo médio', formatarValor: duracaoH, rotuloEixoX: rotuloDia,
+    aoClicarPonto: (plataforma, diaClicado) => abrirDetalheSaude(
+      rotuloMetrica, `${rotularPlataforma(plataforma)} · ${rotuloDia(diaClicado)} — do mais lento pro mais rápido`,
+      {
+        metrica: tipo, plataforma, status_anterior: statusAnterior, status_novo: statusNovo,
+        dias: '', data_de: diaClicado, data_ate: diaClicado,
+      },
+    ),
+  });
+}
+
+$('rst-serie-metrica')?.addEventListener('change', carregarSerie);
+
 async function carregarSaude() {
   const params = paramsFiltro();
   const { ok, dados: s } = await api(`/api/metricas/rastreio/saude?${params}`);
@@ -445,6 +534,8 @@ async function carregarSaude() {
   renderSaudeProvedores(s.provedores);
   renderSaudeTransporte(s.tempo_transporte);
   renderSaudeTotal(s.tempo_total);
+  popularSelectSerie(s.transicoes_status);
+  carregarSerie();
 }
 
 async function carregarResumo() {

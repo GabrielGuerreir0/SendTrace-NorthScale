@@ -125,6 +125,63 @@ function extrairIp(req) {
   return req.socket?.remoteAddress || 'desconhecido';
 }
 
+/**
+ * As 4 formas de "duração de um pedido" que Saúde do rastreio conhece —
+ * compartilhada entre o drill-down (`/saude/detalhe/`) e a série diária
+ * (`/saude/serie/`), que precisam do MESMO cálculo, só que um devolve linha
+ * a linha e o outro agrega por dia. `duracaoExpr` é a expressão crua em
+ * horas (sem round/alias) — cada chamador decide o que fazer com ela.
+ */
+function resolverMetricaTempo(req, f) {
+  const valores = [...f.valores];
+  let i = valores.length + 1;
+  const extra = [];
+  let duracaoExpr;
+  let de = `FROM rastreio_pedidos r JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id`;
+
+  if (req.query.metrica === 'deteccao') {
+    duracaoExpr = `extract(epoch FROM (pe.detectado_em - d.criado_em)) / 3600`;
+    de = `FROM (
+            SELECT DISTINCT ON (transacao_id) transacao_id, detectado_em, fonte
+            FROM rastreio_eventos WHERE status_anterior IS NULL
+            ORDER BY transacao_id, detectado_em ASC
+          ) pe
+          JOIN disparos_pos_venda d ON d.transacao_id = pe.transacao_id
+          JOIN rastreio_pedidos r ON r.transacao_id = pe.transacao_id`;
+    extra.push(`pe.fonte <> 'backfill-email'`);
+  } else if (req.query.metrica === 'transporte') {
+    duracaoExpr = `extract(epoch FROM (r.delivered_at - r.shipped_at)) / 3600`;
+    extra.push(`r.status_interno = 'delivered'`, `r.shipped_at IS NOT NULL`, `r.delivered_at IS NOT NULL`);
+  } else if (req.query.metrica === 'total') {
+    duracaoExpr = `extract(epoch FROM (r.delivered_at - d.criado_em)) / 3600`;
+    extra.push(`r.status_interno = 'delivered'`, `r.delivered_at IS NOT NULL`);
+  } else if (req.query.metrica === 'transicao') {
+    if (!req.query.status_novo) throw new ErroHttp(400, 'status_novo é obrigatório quando metrica=transicao.');
+    duracaoExpr = `extract(epoch FROM (ev.detectado_em - ev.entrou_em)) / 3600`;
+    de = `FROM (
+            SELECT transacao_id, status_anterior, status_novo, detectado_em,
+              LAG(detectado_em) OVER (PARTITION BY transacao_id ORDER BY detectado_em) AS entrou_em
+            FROM rastreio_eventos WHERE fonte <> 'backfill-email'
+          ) ev
+          JOIN disparos_pos_venda d ON d.transacao_id = ev.transacao_id
+          JOIN rastreio_pedidos r ON r.transacao_id = ev.transacao_id`;
+    extra.push(`ev.entrou_em IS NOT NULL`, `coalesce(ev.status_anterior, '') = $${i}`, `ev.status_novo = $${i + 1}`);
+    valores.push(String(req.query.status_anterior ?? ''), String(req.query.status_novo));
+    i += 2;
+  } else {
+    duracaoExpr = null;
+    de = `FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id`;
+    if (req.query.status_interno) { extra.push(`r.status_interno = $${i}`); valores.push(String(req.query.status_interno)); i += 1; }
+    if (req.query.provedor) { extra.push(`coalesce(r.provedor, 'nenhum') = $${i}`); valores.push(String(req.query.provedor)); i += 1; }
+    // Espelha o WHERE extra da linha "sem_codigo_rastreio" em /saude/ — sem
+    // isso o drill-down mostraria todo mundo naquele status/plataforma, não
+    // só quem realmente está sem tracking_number (o que a linha representa).
+    if (req.query.sem_codigo === '1') extra.push(`r.provedor IS NOT NULL`, `r.tracking_number IS NULL`);
+  }
+
+  return { de, extra, duracaoExpr, valores, i };
+}
+
 export default async function rotasRastreio(app) {
   /* ═══════════════════════════  internas (painel)  ═══════════════════════ */
 
@@ -441,60 +498,12 @@ export default async function rotasRastreio(app) {
     },
   }, async (req) => {
     const f = filtroCompra(req.query);
-    const valores = [...f.valores];
-    let i = valores.length + 1;
-    const extra = [];
+    const { de, extra, duracaoExpr, valores } = resolverMetricaTempo(req, f);
 
     const COLUNAS_BASE = `r.transacao_id, d.nome, d.produto, btrim(d.plataforma) AS plataforma,
       r.status_interno, r.tracking_number, d.criado_em, r.shipped_at, r.delivered_at`;
-
-    let duracaoSql = 'NULL::float8';
-    let de = `FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id`;
-    let ordem = 'r.atualizado_em DESC';
-
-    if (req.query.metrica === 'deteccao') {
-      duracaoSql = `round(extract(epoch FROM (pe.detectado_em - d.criado_em)) / 3600::numeric, 1)::float8`;
-      de = `FROM (
-              SELECT DISTINCT ON (transacao_id) transacao_id, detectado_em, fonte
-              FROM rastreio_eventos WHERE status_anterior IS NULL
-              ORDER BY transacao_id, detectado_em ASC
-            ) pe
-            JOIN disparos_pos_venda d ON d.transacao_id = pe.transacao_id
-            JOIN rastreio_pedidos r ON r.transacao_id = pe.transacao_id`;
-      extra.push(`pe.fonte <> 'backfill-email'`);
-      ordem = 'duracao_horas DESC';
-    } else if (req.query.metrica === 'transporte') {
-      duracaoSql = `round(extract(epoch FROM (r.delivered_at - r.shipped_at)) / 3600::numeric, 1)::float8`;
-      de = `FROM rastreio_pedidos r JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id`;
-      extra.push(`r.status_interno = 'delivered'`, `r.shipped_at IS NOT NULL`, `r.delivered_at IS NOT NULL`);
-      ordem = 'duracao_horas DESC';
-    } else if (req.query.metrica === 'total') {
-      duracaoSql = `round(extract(epoch FROM (r.delivered_at - d.criado_em)) / 3600::numeric, 1)::float8`;
-      de = `FROM rastreio_pedidos r JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id`;
-      extra.push(`r.status_interno = 'delivered'`, `r.delivered_at IS NOT NULL`);
-      ordem = 'duracao_horas DESC';
-    } else if (req.query.metrica === 'transicao') {
-      if (!req.query.status_novo) throw new ErroHttp(400, 'status_novo é obrigatório quando metrica=transicao.');
-      duracaoSql = `round(extract(epoch FROM (ev.detectado_em - ev.entrou_em)) / 3600::numeric, 1)::float8`;
-      de = `FROM (
-              SELECT transacao_id, status_anterior, status_novo, detectado_em,
-                LAG(detectado_em) OVER (PARTITION BY transacao_id ORDER BY detectado_em) AS entrou_em
-              FROM rastreio_eventos WHERE fonte <> 'backfill-email'
-            ) ev
-            JOIN disparos_pos_venda d ON d.transacao_id = ev.transacao_id
-            JOIN rastreio_pedidos r ON r.transacao_id = ev.transacao_id`;
-      extra.push(`ev.entrou_em IS NOT NULL`, `coalesce(ev.status_anterior, '') = $${i}`, `ev.status_novo = $${i + 1}`);
-      valores.push(String(req.query.status_anterior ?? ''), String(req.query.status_novo));
-      i += 2;
-      ordem = 'duracao_horas DESC';
-    } else {
-      if (req.query.status_interno) { extra.push(`r.status_interno = $${i}`); valores.push(String(req.query.status_interno)); i += 1; }
-      if (req.query.provedor) { extra.push(`coalesce(r.provedor, 'nenhum') = $${i}`); valores.push(String(req.query.provedor)); i += 1; }
-      // Espelha o WHERE extra da linha "sem_codigo_rastreio" em /saude/ — sem
-      // isso o drill-down mostraria todo mundo naquele status/plataforma, não
-      // só quem realmente está sem tracking_number (o que a linha representa).
-      if (req.query.sem_codigo === '1') extra.push(`r.provedor IS NOT NULL`, `r.tracking_number IS NULL`);
-    }
+    const duracaoSql = duracaoExpr ? `round((${duracaoExpr})::numeric, 1)::float8` : 'NULL::float8';
+    const ordem = duracaoExpr ? 'duracao_horas DESC' : 'r.atualizado_em DESC';
 
     const onde = [f.sql, ...extra].join(' AND ');
     const base = `${de} WHERE ${onde}`;
@@ -507,6 +516,57 @@ export default async function rotasRastreio(app) {
       [...valores, limit, offset],
     );
     return envelope(rows);
+  });
+
+  /**
+   * Série diária (por plataforma) da mesma duração que `/saude/detalhe/`
+   * calcula pedido a pedido — insumo do gráfico de linha "Evolução no
+   * tempo". Não aceita metrica=lista (não tem duração pra agregar por dia).
+   */
+  app.get('/api/metricas/rastreio/saude/serie/', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Métricas'],
+      summary: 'Série diária de tempo de Saúde do rastreio, por plataforma',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        required: ['metrica'],
+        properties: {
+          produto: { type: 'string' },
+          plataforma: { type: 'string' },
+          metrica: { type: 'string', enum: ['deteccao', 'transporte', 'total', 'transicao'] },
+          status_anterior: { type: 'string', description: 'Obrigatório quando metrica=transicao (vazio representa null, primeiro evento).' },
+          status_novo: { type: 'string', description: 'Obrigatório quando metrica=transicao.' },
+          ...PERIODO_QS,
+        },
+      },
+      response: { 200: { $ref: 'SerieSaudeRastreio#' } },
+    },
+  }, async (req) => {
+    const f = filtroCompra(req.query);
+    const { de, extra, duracaoExpr, valores } = resolverMetricaTempo(req, f);
+    if (!duracaoExpr) throw new ErroHttp(400, 'metrica precisa ser deteccao, transporte, total ou transicao.');
+
+    // Dia de referência do ponto: quando a duração "aconteceu" — a data de
+    // entrega pra transporte/total (não a da compra), o dia do evento pras
+    // outras duas. Mesmo raciocínio de agrupar por status_anterior/novo em
+    // vez de por compra: queremos achar QUANDO a operação ficou lenta, não
+    // quando o pedido entrou.
+    const diaExpr = req.query.metrica === 'transporte' || req.query.metrica === 'total'
+      ? 'r.delivered_at' : req.query.metrica === 'deteccao' ? 'pe.detectado_em' : 'ev.detectado_em';
+
+    const onde = [f.sql, ...extra].join(' AND ');
+    const { rows } = await query(`
+      SELECT (${diaExpr})::date AS dia, btrim(d.plataforma) AS plataforma,
+        count(*)::int AS amostras,
+        round(avg(${duracaoExpr})::numeric, 1)::float8 AS media_horas,
+        round(percentile_cont(0.5) WITHIN GROUP (ORDER BY ${duracaoExpr})::numeric, 1)::float8 AS mediana_horas
+      ${de} WHERE ${onde}
+      GROUP BY 1, 2 ORDER BY 1, 2
+    `, valores);
+
+    return { pontos: rows };
   });
 
   /* ═══════════════════════════  pública (lead)  ═══════════════════════ */
