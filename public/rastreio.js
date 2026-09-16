@@ -259,6 +259,66 @@ async function carregarLista() {
  * recortes de produto/plataforma/período (paramsFiltro), não é mais uma
  * visão geral sem filtro nenhum. */
 
+/* ═══════════  drill-down: pedidos por trás de uma linha de Saúde  ══════════
+ * Um modal só (rst-detalhe-modal), reaproveitado pelas 8 tabelas — cada
+ * `aoClicarLinha` abaixo monta os parâmetros extra que identificam a linha
+ * (a mesma dimensão que a query agregada usou) e chama abrirDetalheSaude.
+ * O filtro produto/plataforma/período do topo da aba continua valendo
+ * (paramsFiltro()), então o drill-down nunca mostra pedido fora do recorte
+ * que já estava em tela. */
+const DETALHE_POR_PAGINA = 25;
+let detalheGeracao = 0;
+let detalheExtra = null;
+let detalhePagina = 1;
+
+function colunasDetalhe() {
+  return [
+    { classe: 'cel-mono', render: (l) => l.transacao_id },
+    { render: (l) => l.nome || '—' },
+    { render: (l) => l.produto || '—' },
+    { render: (l) => rotularPlataforma(l.plataforma) },
+    { render: (l) => chipRastreio(l.status_interno) },
+    { classe: 'cel-mono', render: (l) => l.tracking_number || '—' },
+    { classe: 'cel-mono', render: (l) => (l.criado_em ? dataHora(l.criado_em) : '—') },
+    { render: (l) => duracaoH(l.duracao_horas) },
+  ];
+}
+
+async function carregarDetalheSaude() {
+  const meu = ++detalheGeracao;
+  const params = paramsFiltro();
+  for (const [chave, valor] of Object.entries(detalheExtra)) {
+    if (valor !== undefined && valor !== null && valor !== '') params.set(chave, valor);
+  }
+  params.set('page', String(detalhePagina));
+  params.set('page_size', String(DETALHE_POR_PAGINA));
+
+  const { ok, dados: d } = await api(`/api/metricas/rastreio/saude/detalhe?${params}`);
+  if (meu !== detalheGeracao) return;
+  if (!ok) {
+    renderTabela($('rst-detalhe-corpo'), [], colunasDetalhe(), { vazio: 'Não consegui carregar estes pedidos.' });
+    $('rst-detalhe-pag').replaceChildren();
+    return;
+  }
+  renderTabela($('rst-detalhe-corpo'), d.results, colunasDetalhe(), { vazio: 'Nenhum pedido encontrado com este recorte.' });
+  const totalPaginas = Math.max(1, Math.ceil(d.count / DETALHE_POR_PAGINA));
+  montarPaginacao($('rst-detalhe-pag'), { pagina: detalhePagina, totalPaginas, total: d.count, rotuloItem: 'pedido' }, (p) => {
+    detalhePagina = p;
+    carregarDetalheSaude();
+  });
+}
+
+function abrirDetalheSaude(titulo, subtitulo, extra) {
+  $('rst-detalhe-titulo').textContent = titulo;
+  $('rst-detalhe-sub').textContent = subtitulo;
+  detalheExtra = extra;
+  detalhePagina = 1;
+  $('rst-detalhe-modal').showModal();
+  carregarDetalheSaude();
+}
+
+$('rst-detalhe-fechar')?.addEventListener('click', () => $('rst-detalhe-modal').close());
+
 function renderSaudeTempo(linhas) {
   const colunas = [
     { render: (l) => rotularPlataforma(l.plataforma) },
@@ -266,6 +326,10 @@ function renderSaudeTempo(linhas) {
     { render: (l) => duracaoH(l.media_horas) },
     { render: (l) => duracaoH(l.mediana_horas) },
   ];
+  colunas.aoClicarLinha = (l) => abrirDetalheSaude(
+    'Tempo até aparecer na Red Rock', rotularPlataforma(l.plataforma),
+    { metrica: 'deteccao', plataforma: l.plataforma },
+  );
   renderTabela($('rst-saude-tempo'), linhas, colunas, { vazio: 'Sem detecção orgânica registrada ainda.' });
 }
 
@@ -276,6 +340,10 @@ function renderSaudeNaoEncontrado(linhas) {
     { render: (l) => (l.media_dias_desde_compra ?? '—') },
     { render: (l) => (l.compra_mais_antiga ? dia(l.compra_mais_antiga) : '—') },
   ];
+  colunas.aoClicarLinha = (l) => abrirDetalheSaude(
+    'Não encontrados na Red Rock', rotularPlataforma(l.plataforma),
+    { metrica: 'lista', plataforma: l.plataforma, status_interno: 'nao_encontrado' },
+  );
   renderTabela($('rst-saude-naoencontrado'), linhas, colunas, { vazio: 'Nenhum pedido sem correlação com a Red Rock.' });
 }
 
@@ -287,6 +355,10 @@ function renderSaudeTransicoes(linhas) {
     { render: (l) => duracaoH(l.media_horas) },
     { render: (l) => duracaoH(l.mediana_horas) },
   ];
+  colunas.aoClicarLinha = (l) => abrirDetalheSaude(
+    `${rotularStatusRastreio(l.status_anterior)} → ${rotularStatusRastreio(l.status_novo)}`, 'tempo por pedido',
+    { metrica: 'transicao', status_anterior: l.status_anterior ?? '', status_novo: l.status_novo },
+  );
   renderTabela($('rst-saude-transicoes'), linhas, colunas, { vazio: 'Ainda sem transições de status suficientes.' });
 }
 
@@ -296,6 +368,10 @@ function renderSaudeSemCodigo(linhas) {
     { render: (l) => rotularPlataforma(l.plataforma) },
     { render: (l) => n(l.total) },
   ];
+  colunas.aoClicarLinha = (l) => abrirDetalheSaude(
+    'Sem código de rastreio', `${rotularStatusRastreio(l.status_interno)} · ${rotularPlataforma(l.plataforma)}`,
+    { metrica: 'lista', plataforma: l.plataforma, status_interno: l.status_interno, sem_codigo: '1' },
+  );
   renderTabela($('rst-saude-semcodigo'), linhas, colunas, { vazio: 'Todo pedido encontrado já tem código de rastreio.' });
 }
 
@@ -310,6 +386,10 @@ function renderSaudeFunil(linhas) {
     { render: (l) => n(l.delivered) },
     { render: (l) => n(l.cancelled) },
   ];
+  colunas.aoClicarLinha = (l) => abrirDetalheSaude(
+    'Funil por plataforma', rotularPlataforma(l.plataforma),
+    { metrica: 'lista', plataforma: l.plataforma },
+  );
   renderTabela($('rst-saude-funil'), linhas, colunas, { vazio: 'Nenhum pedido consultado ainda.' });
 }
 
@@ -318,7 +398,39 @@ function renderSaudeProvedores(linhas) {
     { render: (l) => seloProvedor(l.provedor === 'nenhum' ? null : l.provedor) },
     { render: (l) => n(l.total) },
   ];
+  colunas.aoClicarLinha = (l) => abrirDetalheSaude(
+    'Provedor de rastreio', l.provedor,
+    { metrica: 'lista', provedor: l.provedor },
+  );
   renderTabela($('rst-saude-provedores'), linhas, colunas, { vazio: 'Nenhum pedido consultado ainda.' });
+}
+
+function renderSaudeTransporte(linhas) {
+  const colunas = [
+    { render: (l) => rotularPlataforma(l.plataforma) },
+    { render: (l) => n(l.amostras) },
+    { render: (l) => duracaoH(l.media_horas) },
+    { render: (l) => duracaoH(l.mediana_horas) },
+  ];
+  colunas.aoClicarLinha = (l) => abrirDetalheSaude(
+    'Tempo de transporte', rotularPlataforma(l.plataforma),
+    { metrica: 'transporte', plataforma: l.plataforma },
+  );
+  renderTabela($('rst-saude-transporte'), linhas, colunas, { vazio: 'Nenhum pedido entregue com despacho registrado ainda.' });
+}
+
+function renderSaudeTotal(linhas) {
+  const colunas = [
+    { render: (l) => rotularPlataforma(l.plataforma) },
+    { render: (l) => n(l.amostras) },
+    { render: (l) => duracaoH(l.media_horas) },
+    { render: (l) => duracaoH(l.mediana_horas) },
+  ];
+  colunas.aoClicarLinha = (l) => abrirDetalheSaude(
+    'Tempo total: compra → entrega', rotularPlataforma(l.plataforma),
+    { metrica: 'total', plataforma: l.plataforma },
+  );
+  renderTabela($('rst-saude-total'), linhas, colunas, { vazio: 'Nenhum pedido entregue ainda.' });
 }
 
 async function carregarSaude() {
@@ -331,6 +443,8 @@ async function carregarSaude() {
   renderSaudeSemCodigo(s.sem_codigo_rastreio);
   renderSaudeFunil(s.funil_por_plataforma);
   renderSaudeProvedores(s.provedores);
+  renderSaudeTransporte(s.tempo_transporte);
+  renderSaudeTotal(s.tempo_total);
 }
 
 async function carregarResumo() {

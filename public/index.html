@@ -1796,6 +1796,31 @@
   </div>
 </dialog>
 
+<!-- ── drill-down de Saúde do rastreio: pedidos por trás de UMA linha de
+     qualquer uma das 8 tabelas de cruzamento (clique na linha) ── -->
+<dialog class="janela janela--larga" id="rst-detalhe-modal" aria-labelledby="rst-detalhe-titulo">
+  <header class="janela-cabeca">
+    <div>
+      <h2 id="rst-detalhe-titulo">Pedidos</h2>
+      <p class="cartao-sub" id="rst-detalhe-sub"></p>
+    </div>
+    <button class="btn btn-icone" id="rst-detalhe-fechar" type="button" aria-label="Fechar">✕</button>
+  </header>
+  <div class="janela-corpo">
+    <div class="tabela-envolve">
+      <table class="tabela">
+        <thead>
+          <tr><th scope="col">Pedido</th><th scope="col">Nome</th><th scope="col">Produto</th>
+            <th scope="col">Plataforma</th><th scope="col">Status</th><th scope="col">Rastreio</th>
+            <th scope="col">Criado em</th><th scope="col">Duração</th></tr>
+        </thead>
+        <tbody id="rst-detalhe-corpo"><tr><td colspan="8" class="vazio-suave">carregando…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="paginacao" id="rst-detalhe-pag"></div>
+  </div>
+</dialog>
+
 <!-- ── modal genérico de ficha: registro simples, sem lista vinculada
      (conversa de suporte, e-mail de "últimos") — ver abrirFicha em
      emailComum.js. Único no documento, reaproveitado por qualquer aba. ── -->
@@ -2148,9 +2173,12 @@
       <div>
         <h2>Saúde do rastreio</h2>
         <p class="cartao-sub">
-          Velocidade de detecção, cobertura por plataforma e transições de status. As médias
-          abaixo nunca incluem o backfill retroativo por e-mail (15/09) — só detecção orgânica,
-          pra não inflar os números com pedidos antigos "achados" só agora.
+          Velocidade de detecção, cobertura por plataforma, tempo de entrega e transições de
+          status. Clique numa linha pra ver os pedidos por trás daquele número. As médias
+          de detecção/transição nunca incluem o backfill retroativo por e-mail (15/09) — só
+          detecção orgânica, pra não inflar os números com pedidos antigos "achados" só agora;
+          as de tempo de transporte/total usam os timestamps da própria Red Rock, então não
+          têm essa limitação.
         </p>
       </div>
     </header>
@@ -2193,6 +2221,34 @@
               <th scope="col">Média</th><th scope="col">Mediana</th>
             </tr></thead>
             <tbody id="rst-saude-transicoes"><tr><td colspan="5" class="vazio-suave">carregando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="rst-saude-bloco">
+        <h3>Tempo de transporte</h3>
+        <p class="cartao-sub">Do despacho (a caminho) até a entrega, por plataforma — direto dos timestamps da Red Rock.</p>
+        <div class="tabela-envolve">
+          <table class="tabela tabela--compacta">
+            <thead><tr>
+              <th scope="col">Plataforma</th><th scope="col">Amostras</th>
+              <th scope="col">Média</th><th scope="col">Mediana</th>
+            </tr></thead>
+            <tbody id="rst-saude-transporte"><tr><td colspan="4" class="vazio-suave">carregando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="rst-saude-bloco">
+        <h3>Tempo total: compra → entrega</h3>
+        <p class="cartao-sub">Ciclo completo, por plataforma — inclui o tempo de preparação antes do despacho.</p>
+        <div class="tabela-envolve">
+          <table class="tabela tabela--compacta">
+            <thead><tr>
+              <th scope="col">Plataforma</th><th scope="col">Amostras</th>
+              <th scope="col">Média</th><th scope="col">Mediana</th>
+            </tr></thead>
+            <tbody id="rst-saude-total"><tr><td colspan="4" class="vazio-suave">carregando…</td></tr></tbody>
           </table>
         </div>
       </div>

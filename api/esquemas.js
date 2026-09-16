@@ -457,11 +457,42 @@ export const SaudeRastreio = {
     transicoes_status: {
       type: 'array',
       description: 'Quanto tempo um pedido fica num status antes de passar pro próximo '
-        + '(ex.: pending → shipped). Cada linha é uma transição observada de verdade.',
+        + '(ex.: pending → shipped). Cada linha é uma transição observada de verdade — só '
+        + 'aparece aqui depois que o pedido faz essa transição enquanto o polling está de olho '
+        + 'nele, então uma transição rara (ex.: shipped → delivered) pode demorar a acumular '
+        + 'amostra mesmo já havendo pedidos entregues (ver tempo_transporte/tempo_total, que não '
+        + 'dependem de captura ao vivo).',
       items: {
         type: 'object',
         properties: {
           status_anterior: texto(60), status_novo: texto(60), amostras: { type: 'integer' },
+          media_horas: { type: ['number', 'null'] }, mediana_horas: { type: ['number', 'null'] },
+        },
+      },
+    },
+    tempo_transporte: {
+      type: 'array',
+      description: 'Horas entre despacho (shipped_at) e entrega (delivered_at), por plataforma — '
+        + 'calculado direto dos timestamps que a Red Rock devolve, não depende de termos '
+        + 'capturado a transição ao vivo (por isso tem amostra bem maior que a linha '
+        + 'shipped→delivered de transicoes_status).',
+      items: {
+        type: 'object',
+        properties: {
+          plataforma: texto(60), amostras: { type: 'integer' },
+          media_horas: { type: ['number', 'null'] }, mediana_horas: { type: ['number', 'null'] },
+        },
+      },
+    },
+    tempo_total: {
+      type: 'array',
+      description: 'Horas entre a compra (disparos_pos_venda.criado_em) e a entrega '
+        + '(delivered_at), por plataforma — ciclo completo, inclui o tempo de preparação antes '
+        + 'do despacho, não só o transporte.',
+      items: {
+        type: 'object',
+        properties: {
+          plataforma: texto(60), amostras: { type: 'integer' },
           media_horas: { type: ['number', 'null'] }, mediana_horas: { type: ['number', 'null'] },
         },
       },
@@ -497,6 +528,29 @@ export const SaudeRastreio = {
         type: 'object',
         properties: { provedor: texto(60), total: { type: 'integer' } },
       },
+    },
+  },
+};
+
+export const RastreioDetalheLinha = {
+  $id: 'RastreioDetalheLinha',
+  type: 'object',
+  description: 'Um pedido por trás de uma linha agregada de Saúde do rastreio — usado no '
+    + 'drill-down ao clicar numa linha de qualquer uma das tabelas de cruzamento.',
+  properties: {
+    transacao_id: { type: 'string', maxLength: 120 },
+    nome: texto(200),
+    produto: texto(300),
+    plataforma: texto(60),
+    status_interno: texto(60),
+    tracking_number: texto(120),
+    criado_em: { ...dataHora, readOnly: true },
+    shipped_at: { type: ['string', 'null'], format: 'date-time' },
+    delivered_at: { type: ['string', 'null'], format: 'date-time' },
+    duracao_horas: {
+      type: ['number', 'null'],
+      description: 'Só presente quando a métrica clicada é de tempo (deteccao/transporte/'
+        + 'total/transicao) — null nas tabelas que são só contagem (ex.: provedores).',
     },
   },
 };
@@ -679,7 +733,7 @@ export const TODOS = [
   PainelLinhaMensagens, PainelLinhaHistorico, ConfigDisparo, PainelUsuario,
   Credenciais, ParTokens, PedidoRefresh, Erro,
   ContagemPorEstado, ResumoEtapa, Produto, Balde, EntradaDia, ContagemStatus,
-  RastreioPedido, RastreioEvento, RastreioDetalhe, ResumoRastreio, SaudeRastreio, RastreioPublico,
+  RastreioPedido, RastreioEvento, RastreioDetalhe, ResumoRastreio, SaudeRastreio, RastreioDetalheLinha, RastreioPublico,
 ];
 
 /**

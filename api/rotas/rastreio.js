@@ -289,7 +289,10 @@ export default async function rotasRastreio(app) {
     // sub-consultas — cada `query()` é independente, então os placeholders
     // $1/$2/... recomeçam certos em cada uma sem precisar recalcular nada.
     const f = filtroCompra(req.query);
-    const [tempoParaEncontrar, naoEncontrados, transicoesStatus, semCodigoRastreio, funilPorPlataforma, provedores] = await Promise.all([
+    const [
+      tempoParaEncontrar, naoEncontrados, transicoesStatus, semCodigoRastreio, funilPorPlataforma, provedores,
+      tempoTransporte, tempoTotal,
+    ] = await Promise.all([
       query(`
         WITH primeiro_evento AS (
           SELECT DISTINCT ON (transacao_id) transacao_id, detectado_em, fonte
@@ -360,6 +363,35 @@ export default async function rotasRastreio(app) {
         WHERE ${f.sql}
         GROUP BY 1 ORDER BY total DESC
       `, f.valores),
+      // tempo_transporte/tempo_total: calculados direto de shipped_at/delivered_at/
+      // d.criado_em (timestamps que a própria Red Rock devolve), não de
+      // rastreio_eventos — por isso já têm massa de dado agora (pedidos antigos
+      // "achados" só hoje já chegam com essas colunas preenchidas), diferente de
+      // transicoes_status (que só ganha amostra quando o polling PEGA a mudança
+      // acontecendo ao vivo). Não precisa excluir fonte='backfill-email' porque
+      // não depende de rastreio_eventos nenhum.
+      query(`
+        SELECT btrim(d.plataforma) AS plataforma,
+          count(*)::int AS amostras,
+          round(avg(extract(epoch FROM (r.delivered_at - r.shipped_at)) / 3600)::numeric, 1)::float8 AS media_horas,
+          round(percentile_cont(0.5) WITHIN GROUP (
+            ORDER BY extract(epoch FROM (r.delivered_at - r.shipped_at)) / 3600
+          )::numeric, 1)::float8 AS mediana_horas
+        FROM rastreio_pedidos r JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+        WHERE r.status_interno = 'delivered' AND r.shipped_at IS NOT NULL AND r.delivered_at IS NOT NULL AND ${f.sql}
+        GROUP BY 1 ORDER BY amostras DESC
+      `, f.valores),
+      query(`
+        SELECT btrim(d.plataforma) AS plataforma,
+          count(*)::int AS amostras,
+          round(avg(extract(epoch FROM (r.delivered_at - d.criado_em)) / 3600)::numeric, 1)::float8 AS media_horas,
+          round(percentile_cont(0.5) WITHIN GROUP (
+            ORDER BY extract(epoch FROM (r.delivered_at - d.criado_em)) / 3600
+          )::numeric, 1)::float8 AS mediana_horas
+        FROM rastreio_pedidos r JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+        WHERE r.status_interno = 'delivered' AND r.delivered_at IS NOT NULL AND ${f.sql}
+        GROUP BY 1 ORDER BY amostras DESC
+      `, f.valores),
     ]);
 
     return {
@@ -369,7 +401,112 @@ export default async function rotasRastreio(app) {
       sem_codigo_rastreio: semCodigoRastreio.rows,
       funil_por_plataforma: funilPorPlataforma.rows,
       provedores: provedores.rows,
+      tempo_transporte: tempoTransporte.rows,
+      tempo_total: tempoTotal.rows,
     };
+  });
+
+  /**
+   * Drill-down: os pedidos por trás de UMA linha de qualquer tabela de
+   * Saúde do rastreio (mesmo filtro produto/plataforma/período da linha,
+   * mais a dimensão específica que a linha representa). `metrica` decide
+   * qual duração (se alguma) calcular por pedido — os nomes espelham as 4
+   * consultas de tempo de `/saude/` mais um modo `lista` sem duração, pras
+   * tabelas que são só contagem (nao_encontrados, sem_codigo_rastreio,
+   * funil_por_plataforma, provedores).
+   */
+  app.get('/api/metricas/rastreio/saude/detalhe/', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Métricas'],
+      summary: 'Drill-down: pedidos por trás de uma linha de Saúde do rastreio',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        required: ['metrica'],
+        properties: {
+          ...paginacaoParams,
+          produto: { type: 'string' },
+          plataforma: { type: 'string' },
+          metrica: { type: 'string', enum: ['deteccao', 'transporte', 'total', 'transicao', 'lista'] },
+          status_anterior: { type: 'string', description: 'Obrigatório quando metrica=transicao (vazio representa null, primeiro evento).' },
+          status_novo: { type: 'string', description: 'Obrigatório quando metrica=transicao.' },
+          status_interno: { type: 'string', description: 'Filtro extra pra metrica=lista (ex.: linha de funil_por_plataforma ou sem_codigo_rastreio).' },
+          provedor: { type: 'string', description: 'Filtro extra pra metrica=lista (linha de provedores).' },
+          sem_codigo: { type: 'string', enum: ['1'], description: "Filtro extra pra metrica=lista (linha de sem_codigo_rastreio) — restringe a 'provedor IS NOT NULL AND tracking_number IS NULL'." },
+          ...PERIODO_QS,
+        },
+      },
+      response: { 200: paginado('RastreioDetalheLinha') },
+    },
+  }, async (req) => {
+    const f = filtroCompra(req.query);
+    const valores = [...f.valores];
+    let i = valores.length + 1;
+    const extra = [];
+
+    const COLUNAS_BASE = `r.transacao_id, d.nome, d.produto, btrim(d.plataforma) AS plataforma,
+      r.status_interno, r.tracking_number, d.criado_em, r.shipped_at, r.delivered_at`;
+
+    let duracaoSql = 'NULL::float8';
+    let de = `FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id`;
+    let ordem = 'r.atualizado_em DESC';
+
+    if (req.query.metrica === 'deteccao') {
+      duracaoSql = `round(extract(epoch FROM (pe.detectado_em - d.criado_em)) / 3600::numeric, 1)::float8`;
+      de = `FROM (
+              SELECT DISTINCT ON (transacao_id) transacao_id, detectado_em, fonte
+              FROM rastreio_eventos WHERE status_anterior IS NULL
+              ORDER BY transacao_id, detectado_em ASC
+            ) pe
+            JOIN disparos_pos_venda d ON d.transacao_id = pe.transacao_id
+            JOIN rastreio_pedidos r ON r.transacao_id = pe.transacao_id`;
+      extra.push(`pe.fonte <> 'backfill-email'`);
+      ordem = 'duracao_horas DESC';
+    } else if (req.query.metrica === 'transporte') {
+      duracaoSql = `round(extract(epoch FROM (r.delivered_at - r.shipped_at)) / 3600::numeric, 1)::float8`;
+      de = `FROM rastreio_pedidos r JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id`;
+      extra.push(`r.status_interno = 'delivered'`, `r.shipped_at IS NOT NULL`, `r.delivered_at IS NOT NULL`);
+      ordem = 'duracao_horas DESC';
+    } else if (req.query.metrica === 'total') {
+      duracaoSql = `round(extract(epoch FROM (r.delivered_at - d.criado_em)) / 3600::numeric, 1)::float8`;
+      de = `FROM rastreio_pedidos r JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id`;
+      extra.push(`r.status_interno = 'delivered'`, `r.delivered_at IS NOT NULL`);
+      ordem = 'duracao_horas DESC';
+    } else if (req.query.metrica === 'transicao') {
+      if (!req.query.status_novo) throw new ErroHttp(400, 'status_novo é obrigatório quando metrica=transicao.');
+      duracaoSql = `round(extract(epoch FROM (ev.detectado_em - ev.entrou_em)) / 3600::numeric, 1)::float8`;
+      de = `FROM (
+              SELECT transacao_id, status_anterior, status_novo, detectado_em,
+                LAG(detectado_em) OVER (PARTITION BY transacao_id ORDER BY detectado_em) AS entrou_em
+              FROM rastreio_eventos WHERE fonte <> 'backfill-email'
+            ) ev
+            JOIN disparos_pos_venda d ON d.transacao_id = ev.transacao_id
+            JOIN rastreio_pedidos r ON r.transacao_id = ev.transacao_id`;
+      extra.push(`ev.entrou_em IS NOT NULL`, `coalesce(ev.status_anterior, '') = $${i}`, `ev.status_novo = $${i + 1}`);
+      valores.push(String(req.query.status_anterior ?? ''), String(req.query.status_novo));
+      i += 2;
+      ordem = 'duracao_horas DESC';
+    } else {
+      if (req.query.status_interno) { extra.push(`r.status_interno = $${i}`); valores.push(String(req.query.status_interno)); i += 1; }
+      if (req.query.provedor) { extra.push(`coalesce(r.provedor, 'nenhum') = $${i}`); valores.push(String(req.query.provedor)); i += 1; }
+      // Espelha o WHERE extra da linha "sem_codigo_rastreio" em /saude/ — sem
+      // isso o drill-down mostraria todo mundo naquele status/plataforma, não
+      // só quem realmente está sem tracking_number (o que a linha representa).
+      if (req.query.sem_codigo === '1') extra.push(`r.provedor IS NOT NULL`, `r.tracking_number IS NULL`);
+    }
+
+    const onde = [f.sql, ...extra].join(' AND ');
+    const base = `${de} WHERE ${onde}`;
+
+    const cont = await query(`SELECT count(*)::int AS n ${base}`, valores);
+    const { limit, offset, envelope } = fatiar(req, cont.rows[0].n);
+    const { rows } = await query(
+      `SELECT ${COLUNAS_BASE}, ${duracaoSql} AS duracao_horas ${base}
+       ORDER BY ${ordem} LIMIT $${valores.length + 1} OFFSET $${valores.length + 2}`,
+      [...valores, limit, offset],
+    );
+    return envelope(rows);
   });
 
   /* ═══════════════════════════  pública (lead)  ═══════════════════════ */
