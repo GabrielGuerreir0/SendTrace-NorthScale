@@ -497,6 +497,20 @@ export const SaudeRastreio = {
         },
       },
     },
+    distribuicao_entrega: {
+      type: 'array',
+      description: 'Quantos pedidos entregues caem em cada faixa de tempo total (compra → '
+        + 'entrega), por plataforma — faixas fixas, pra responder "quantos pedidos demoraram '
+        + 'muito", não só a média/mediana de tempo_total.',
+      items: {
+        type: 'object',
+        properties: {
+          plataforma: texto(60), ordem: { type: 'integer' }, faixa: texto(60),
+          faixa_min_dias: { type: 'integer' }, faixa_max_dias: { type: ['integer', 'null'] },
+          total: { type: 'integer' },
+        },
+      },
+    },
     sem_codigo_rastreio: {
       type: 'array',
       description: 'Já encontrado num provedor (pending/shipped/delivered/cancelled) mas ainda '

@@ -110,6 +110,13 @@ const DIC = {
   tabTransporteSub: { en: "From dispatch (on its way) to delivery, by platform — straight from Red Rock's timestamps.", pt: 'Do despacho (a caminho) até a entrega, por plataforma — direto dos timestamps da Red Rock.' },
   tabTotalTit: { en: 'Total time: purchase → delivery', pt: 'Tempo total: compra → entrega' },
   tabTotalSub: { en: 'Full cycle, by platform — includes prep time before dispatch.', pt: 'Ciclo completo, por plataforma — inclui o tempo de preparação antes do despacho.' },
+  tabDistribTit: { en: 'Delivery time breakdown', pt: 'Distribuição do tempo de entrega' },
+  tabDistribSub: { en: 'How many delivered orders fall in each time range, by platform.', pt: 'Quantos pedidos entregues caem em cada faixa de tempo, por plataforma.' },
+  colFaixa: { en: 'Time range', pt: 'Faixa' },
+  colQuantidade: { en: 'Count', pt: 'Quantidade' },
+  faixaAte: { en: 'Up to {max} days', pt: 'Até {max} dias' },
+  faixaEntre: { en: '{min} to {max} days', pt: '{min} a {max} dias' },
+  faixaMais: { en: '{min}+ days', pt: '{min}+ dias' },
   tabSemCodigoTit: { en: 'Found but missing tracking code', pt: 'Encontrados sem código de rastreio' },
   tabSemCodigoSub: { en: 'Already has a status at Red Rock, but still no tracking_number.', pt: 'Já tem status na Red Rock, mas ainda sem tracking_number.' },
   tabFunilTit: { en: 'Funnel by platform', pt: 'Funil por plataforma' },
@@ -650,6 +657,31 @@ function renderSaudeTotal(linhas) {
   renderTabela($('rst-saude-total'), linhas, colunas, { vazio: t('vazioEntregue') });
 }
 
+/** Rótulo da faixa construído no cliente (min/max numéricos que o backend manda),
+ * nunca o texto `faixa` cru que a query devolve — esse vem sempre em português,
+ * ver o padrão desta aba de nunca mostrar string fixa vinda do servidor. */
+function rotuloFaixa(l) {
+  if (l.faixa_max_dias === null || l.faixa_max_dias === undefined) return t('faixaMais', { min: l.faixa_min_dias });
+  if (l.faixa_min_dias === 0) return t('faixaAte', { max: l.faixa_max_dias });
+  return t('faixaEntre', { min: l.faixa_min_dias, max: l.faixa_max_dias });
+}
+
+function renderSaudeDistrib(linhas) {
+  const colunas = [
+    { render: (l) => rotularPlataforma(l.plataforma) },
+    { render: rotuloFaixa },
+    { render: (l) => n(l.total) },
+  ];
+  colunas.aoClicarLinha = (l) => abrirDetalheSaude(
+    `${t('tabDistribTit')} — ${rotularPlataforma(l.plataforma)}`, rotuloFaixa(l),
+    {
+      metrica: 'total', plataforma: l.plataforma,
+      duracao_dias_min: l.faixa_min_dias, duracao_dias_max: l.faixa_max_dias ?? '',
+    },
+  );
+  renderTabela($('rst-saude-distrib'), linhas, colunas, { vazio: t('vazioEntregue') });
+}
+
 /* ═════════════  Evolução no tempo (gráfico de linha, por plataforma)  ══════════
  * Um select só, com uma opção por métrica de tempo que Saúde do rastreio já
  * conhece: as 3 fixas (deteccao/transporte/total) mais UMA por transição de
@@ -738,6 +770,7 @@ async function carregarSaude() {
   renderSaudeProvedores(s.provedores);
   renderSaudeTransporte(s.tempo_transporte);
   renderSaudeTotal(s.tempo_total);
+  renderSaudeDistrib(s.distribuicao_entrega);
   popularSelectSerie(s.transicoes_status);
   carregarSerie();
 }

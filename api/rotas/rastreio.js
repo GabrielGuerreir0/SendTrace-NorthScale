@@ -198,6 +198,23 @@ function resolverMetricaTempo(req, f) {
     i += 1;
   }
 
+  // Clique numa faixa da tabela "Distribuição do tempo de entrega" — mesma
+  // duracaoExpr que a métrica já calcula (transporte/total), só recorta por
+  // intervalo em vez de igualar um dia. min/max em DIAS (a tabela mostra em
+  // dias, não horas) — duracaoExpr já está em horas, por isso o *24.
+  if (duracaoExpr && (req.query.duracao_dias_min || req.query.duracao_dias_max)) {
+    if (req.query.duracao_dias_min) {
+      extra.push(`(${duracaoExpr}) >= $${i}::numeric * 24`);
+      valores.push(String(req.query.duracao_dias_min));
+      i += 1;
+    }
+    if (req.query.duracao_dias_max) {
+      extra.push(`(${duracaoExpr}) < $${i}::numeric * 24`);
+      valores.push(String(req.query.duracao_dias_max));
+      i += 1;
+    }
+  }
+
   return { de, extra, duracaoExpr, valores, i };
 }
 
@@ -367,7 +384,7 @@ export default async function rotasRastreio(app) {
     const f = filtroCompra(req.query);
     const [
       tempoParaEncontrar, naoEncontrados, transicoesStatus, semCodigoRastreio, funilPorPlataforma, provedores,
-      tempoTransporte, tempoTotal,
+      tempoTransporte, tempoTotal, distribuicaoEntrega,
     ] = await Promise.all([
       query(`
         WITH primeiro_evento AS (
@@ -468,6 +485,42 @@ export default async function rotasRastreio(app) {
         WHERE r.status_interno = 'delivered' AND r.delivered_at IS NOT NULL AND ${f.sql}
         GROUP BY 1 ORDER BY amostras DESC
       `, f.valores),
+      // Distribuição do tempo total (compra → entrega) em faixas de dias, por
+      // plataforma — pergunta que os números médios/medianos de tempo_total
+      // não respondem sozinhos: "quantos pedidos demoraram MUITO", não só
+      // "qual a média". Faixas fixas (não configuráveis) de propósito: é um
+      // quadro pra escanear rápido, não mais um filtro pra configurar.
+      query(`
+        SELECT btrim(d.plataforma) AS plataforma,
+          CASE
+            WHEN extract(epoch FROM (r.delivered_at - d.criado_em)) / 86400 < 3 THEN 1
+            WHEN extract(epoch FROM (r.delivered_at - d.criado_em)) / 86400 < 7 THEN 2
+            WHEN extract(epoch FROM (r.delivered_at - d.criado_em)) / 86400 < 15 THEN 3
+            ELSE 4
+          END AS ordem,
+          CASE
+            WHEN extract(epoch FROM (r.delivered_at - d.criado_em)) / 86400 < 3 THEN 'Até 3 dias'
+            WHEN extract(epoch FROM (r.delivered_at - d.criado_em)) / 86400 < 7 THEN '3 a 7 dias'
+            WHEN extract(epoch FROM (r.delivered_at - d.criado_em)) / 86400 < 15 THEN '7 a 15 dias'
+            ELSE '15 dias ou mais'
+          END AS faixa,
+          CASE
+            WHEN extract(epoch FROM (r.delivered_at - d.criado_em)) / 86400 < 3 THEN 0
+            WHEN extract(epoch FROM (r.delivered_at - d.criado_em)) / 86400 < 7 THEN 3
+            WHEN extract(epoch FROM (r.delivered_at - d.criado_em)) / 86400 < 15 THEN 7
+            ELSE 15
+          END AS faixa_min_dias,
+          CASE
+            WHEN extract(epoch FROM (r.delivered_at - d.criado_em)) / 86400 < 3 THEN 3
+            WHEN extract(epoch FROM (r.delivered_at - d.criado_em)) / 86400 < 7 THEN 7
+            WHEN extract(epoch FROM (r.delivered_at - d.criado_em)) / 86400 < 15 THEN 15
+            ELSE NULL
+          END AS faixa_max_dias,
+          count(*)::int AS total
+        FROM rastreio_pedidos r JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+        WHERE r.status_interno = 'delivered' AND r.delivered_at IS NOT NULL AND ${f.sql}
+        GROUP BY 1, 2, 3, 4, 5 ORDER BY 1, 2
+      `, f.valores),
     ]);
 
     return {
@@ -479,6 +532,7 @@ export default async function rotasRastreio(app) {
       provedores: provedores.rows,
       tempo_transporte: tempoTransporte.rows,
       tempo_total: tempoTotal.rows,
+      distribuicao_entrega: distribuicaoEntrega.rows,
     };
   });
 
@@ -516,6 +570,8 @@ export default async function rotasRastreio(app) {
               + 'REFERÊNCIA da métrica (entrega pra transporte/total, evento pras outras), não pela '
               + 'data da compra. Independente de dias/data_de/data_ate (não usar os dois juntos).',
           },
+          duracao_dias_min: { type: 'string', description: 'Clique numa faixa de "Distribuição do tempo de entrega" — só com metrica=transporte ou metrica=total.' },
+          duracao_dias_max: { type: 'string', description: 'Exclusivo (< , não <=) — junto com duracao_dias_min forma a faixa clicada.' },
           ...PERIODO_QS,
         },
       },
