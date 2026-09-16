@@ -243,10 +243,10 @@ export default async function rotasRastreio(app) {
         )
         SELECT btrim(d.plataforma) AS plataforma,
           count(*)::int AS amostras,
-          round(avg(extract(epoch FROM (pe.detectado_em - d.criado_em)) / 3600)::numeric, 1) AS media_horas,
+          round(avg(extract(epoch FROM (pe.detectado_em - d.criado_em)) / 3600)::numeric, 1)::float8 AS media_horas,
           round(percentile_cont(0.5) WITHIN GROUP (
             ORDER BY extract(epoch FROM (pe.detectado_em - d.criado_em)) / 3600
-          )::numeric, 1) AS mediana_horas
+          )::numeric, 1)::float8 AS mediana_horas
         FROM primeiro_evento pe
         JOIN disparos_pos_venda d ON d.transacao_id = pe.transacao_id
         WHERE pe.fonte <> 'backfill-email'
@@ -255,7 +255,7 @@ export default async function rotasRastreio(app) {
       query(`
         SELECT btrim(d.plataforma) AS plataforma,
           count(*)::int AS total,
-          round(avg(extract(epoch FROM (now() - d.criado_em)) / 86400)::numeric, 1) AS media_dias_desde_compra,
+          round(avg(extract(epoch FROM (now() - d.criado_em)) / 86400)::numeric, 1)::float8 AS media_dias_desde_compra,
           min(d.criado_em) AS compra_mais_antiga,
           max(d.criado_em) AS compra_mais_recente
         FROM rastreio_pedidos r JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
@@ -270,10 +270,10 @@ export default async function rotasRastreio(app) {
         )
         SELECT status_anterior, status_novo,
           count(*)::int AS amostras,
-          round(avg(extract(epoch FROM (detectado_em - entrou_em)) / 3600)::numeric, 1) AS media_horas,
+          round(avg(extract(epoch FROM (detectado_em - entrou_em)) / 3600)::numeric, 1)::float8 AS media_horas,
           round(percentile_cont(0.5) WITHIN GROUP (
             ORDER BY extract(epoch FROM (detectado_em - entrou_em)) / 3600
-          )::numeric, 1) AS mediana_horas
+          )::numeric, 1)::float8 AS mediana_horas
         FROM eventos WHERE entrou_em IS NOT NULL
         GROUP BY 1, 2 ORDER BY amostras DESC
       `),
