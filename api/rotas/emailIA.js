@@ -180,19 +180,24 @@ public.disparos_pos_venda (vendas na régua de pós-venda):
   transacao_id, nome, email, telefone, produto, produto_slug, plataforma,
   status (ativo | concluido | cancelado | falhou), criado_em, chat_resumo,
   reembolsado_em, chargeback_em (ambas NULL = nem um nem outro aconteceu; datam o evento, não são
-  bool), id_rastreio (identificador usado pra consultar a Red Rock — ver rastreio_pedidos abaixo;
-  NULL = ainda não calculado/recebido, não necessariamente "sem rastreio nenhum").
+  bool), id_rastreio (identificador usado pra consultar a Red Rock (paykey do JVZoo, composto do
+  BuyGoods) — ver rastreio_pedidos abaixo; NULL = ainda não calculado/recebido, não
+  necessariamente "sem rastreio nenhum". Não confundir com o order_id_global que a FullStack usa
+  pra BuyGoods — esse não passa por aqui, é resolvido direto pelo script de rastreio.).
 
-public.rastreio_pedidos (16/09/2026 — status de entrega via Red Rock, 1 linha por transacao_id já
-  consultado ao menos uma vez; pedido nunca consultado NÃO aparece aqui, não confunda com "não
-  encontrado"):
-  transacao_id (= disparos_pos_venda.transacao_id), provedor ('redrock' ou NULL = nenhum provedor
-  encontrou ainda), status_interno (pendente_consulta | nao_encontrado | pending | shipped |
-  delivered | cancelled | exception | desconhecido — 'nao_encontrado' NÃO é erro, é só outro
-  fulfillment center ainda sem integração, comum em JVZoo/BuyGoods), status_bruto (valor cru da
-  Red Rock), order_number, order_created_at, total, currency, fully_fulfilled (bool),
-  fully_fulfilled_at, tracking_number, carrier_code, tracking_url, tracking_status, shipped_at,
-  delivered_at, ultima_consulta_em, ultimo_erro, criado_em, atualizado_em.
+public.rastreio_pedidos (atualizado 18/09/2026 — status de entrega via Red Rock OU FullStack/3PL
+  Central, 1 linha por transacao_id já consultado ao menos uma vez; pedido nunca consultado NÃO
+  aparece aqui, não confunda com "não encontrado"):
+  transacao_id (= disparos_pos_venda.transacao_id pra Red Rock; pra FullStack, pode ser o
+  order_id_global da BuyGoods direto quando não tem correspondência em disparos_pos_venda — ex.:
+  upsell, que não entra na régua de propósito), provedor ('redrock', 'fullstack' ou NULL = nenhum
+  provedor encontrou ainda), status_interno (pendente_consulta | nao_encontrado | pending | shipped
+  | delivered | cancelled | exception | desconhecido — 'nao_encontrado' NÃO é erro, é só pedido que
+  nenhum dos dois provedores tem ainda — paykey do JVZoo nunca capturado, ou pedido genuinamente
+  não despachado), status_bruto (valor cru do provedor — Red Rock ou FullStack), order_number,
+  order_created_at, total, currency, fully_fulfilled (bool), fully_fulfilled_at, tracking_number,
+  carrier_code, tracking_url, tracking_status, shipped_at, delivered_at, ultima_consulta_em,
+  ultimo_erro, criado_em, atualizado_em.
   "Pedido X já foi entregue?" / "quanto tempo demorou pra entregar?" / "esse reembolso foi antes ou
   depois da entrega?" (cruzando com disparos_pos_venda.reembolsado_em) — tudo isso vem daqui.
 

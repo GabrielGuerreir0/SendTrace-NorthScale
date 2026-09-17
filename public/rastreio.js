@@ -1,16 +1,19 @@
 /**
- * Aba "Rastreio de Pedidos" — Red Rock (fulfillment). Só leitura: quem
- * escreve em `rastreio_pedidos`/`rastreio_eventos` é o script
- * `server/rastreio/consultar_redrock.py`, nunca este painel (ver
- * api/rotas/rastreio.js). Mesmo padrão de visaoGeral.js/relatorioMetricas.js:
- * sem entrar no polling automático do painel — um pedido de fulfillment não
- * muda a cada poucos segundos, e a consulta de verdade já roda por fora.
+ * Aba "Rastreio de Pedidos" — Red Rock + FullStack (fulfillment). Só
+ * leitura: quem escreve em `rastreio_pedidos`/`rastreio_eventos` são os
+ * scripts standalone na VPS (`/root/rastreio_redrock/rastreio_redrock.py` e,
+ * desde 18/09/2026, `/root/rastreio_fullstack/rastreio_fullstack.py`), nunca
+ * este painel (ver api/rotas/rastreio.js). Mesmo padrão de
+ * visaoGeral.js/relatorioMetricas.js: sem entrar no polling automático do
+ * painel — um pedido de fulfillment não muda a cada poucos segundos, e a
+ * consulta de verdade já roda por fora.
  *
- * `nao_encontrado` NÃO é erro: cobre a maioria dos pedidos JVZoo/BuyGoods
- * hoje, porque só o fulfillment center da Red Rock está integrado (ver
- * PLANO.md, "Rastreamento de Disparo", seção 3). Só `exception` (falha real
- * de consulta) usa estilo de alarme — em todo o resto (KPI, pílula da
- * tabela, ficha) isso é respeitado de propósito.
+ * `nao_encontrado` NÃO é erro: mesmo com dois fulfillment centers
+ * integrados (Red Rock + FullStack), ainda cobre pedido que nenhum dos dois
+ * tem — paykey do JVZoo nunca capturado, ou pedido genuinamente ainda não
+ * despachado (ver PLANO.md, "Rastreamento de Disparo", seção 3). Só
+ * `exception` (falha real de consulta) usa estilo de alarme — em todo o
+ * resto (KPI, pílula da tabela, ficha) isso é respeitado de propósito.
  *
  * i18n (16/09/2026): única aba do painel com tradução — os textos ESTÁTICOS
  * do HTML usam `data-t="chave"` (ver aplicarTraducoesEstaticas) e os

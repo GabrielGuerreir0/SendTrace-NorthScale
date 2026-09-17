@@ -311,7 +311,7 @@ export const RastreioPedido = {
     nome: texto(200),
     produto: texto(300),
     plataforma: texto(60),
-    provedor: { type: ['string', 'null'], description: "'redrock' quando encontrado; nulo enquanto não achado em nenhum provedor." },
+    provedor: { type: ['string', 'null'], description: "'redrock' ou 'fullstack' quando encontrado; nulo enquanto não achado em nenhum provedor." },
     status_interno: {
       type: 'string',
       enum: ['pendente_consulta', 'nao_encontrado', 'pending', 'shipped', 'delivered', 'cancelled', 'exception', 'desconhecido'],
@@ -536,8 +536,8 @@ export const SaudeRastreio = {
     },
     provedores: {
       type: 'array',
-      description: "Quantos pedidos cada provedor de rastreio já cobre — hoje é sempre "
-        + "'redrock', mas o campo já existe pra quando entrar um segundo (ex.: Fulstack).",
+      description: "Quantos pedidos cada provedor de rastreio já cobre — hoje pode ser "
+        + "'redrock' ou 'fullstack' (desde 18/09/2026).",
       items: {
         type: 'object',
         properties: { provedor: texto(60), total: { type: 'integer' } },

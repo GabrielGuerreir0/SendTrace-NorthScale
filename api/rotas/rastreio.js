@@ -1,10 +1,13 @@
 /**
- * Rastreamento de pedidos (Red Rock) — leitura de `rastreio_pedidos`/
- * `rastreio_eventos`.
+ * Rastreamento de pedidos (Red Rock + FullStack) — leitura de
+ * `rastreio_pedidos`/`rastreio_eventos`.
  *
- * Escrita é só do script `server/rastreio/consultar_redrock.py` (acesso
- * direto ao Postgres) — esta API nunca fala com a Red Rock. Ver o plano
- * completo em `arquivo/Rastreamento de Disparo (plano nao implementado)/PLANO.md`.
+ * Escrita é só dos scripts standalone na VPS (`/root/rastreio_redrock/` e,
+ * desde 18/09/2026, `/root/rastreio_fullstack/`, acesso direto ao Postgres)
+ * — esta API nunca fala com a Red Rock nem com a FullStack diretamente. A
+ * coluna `provedor` já distingue as duas (e qualquer futura terceira) sem
+ * precisar de mudança de schema. Ver o plano completo em `arquivo/
+ * Rastreamento de Disparo (plano nao implementado)/PLANO.md`.
  *
  * Duas famílias de rota aqui: as internas (`/api/rastreio/...`, exigem
  * sessão, mesmo padrão do resto da API) e UMA pública (`/rastrear/:id`,

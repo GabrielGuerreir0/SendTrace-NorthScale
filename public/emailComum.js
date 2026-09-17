@@ -216,11 +216,12 @@ export const chipSituacaoPedido = (v) => chip(`sit-${v}`, ROT_SITUACAO_PEDIDO[v]
 export const chipRastreio = (v) => chip(`rst-${v}`, LABEL_STATUS_RASTREIO[v] ?? v ?? '—');
 
 /* ══════════════════════════  selo de provedor de rastreio  ═════════════════
-   Hoje só existe a Red Rock — mas o dia que entrar um segundo fulfillment
-   center (ex.: Fulstack), quem olhar a tabela/ficha precisa saber de cara
-   qual pedido veio de qual. Por isso este selo já vai em TODO lugar que
-   mostra dado de rastreio, mesmo enquanto só há um provedor. */
-const ROTULO_PROVEDOR = { redrock: 'Red Rock' };
+   Dois fulfillment centers integrados desde 18/09/2026: Red Rock (cobre
+   parte de JVZoo/BuyGoods/Digistore24) e FullStack/3PL Central (cobre
+   principalmente BuyGoods). Quem olhar a tabela/ficha precisa saber de cara
+   qual pedido veio de qual — por isso este selo vai em TODO lugar que
+   mostra dado de rastreio. */
+const ROTULO_PROVEDOR = { redrock: 'Red Rock', fullstack: 'FullStack' };
 export function seloProvedor(v) {
   const span = document.createElement('span');
   span.className = 'selo-etapa selo-provedor';
