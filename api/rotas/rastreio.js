@@ -423,6 +423,7 @@ export default async function rotasRastreio(app) {
           )::numeric, 1)::float8 AS mediana_horas
         FROM primeiro_evento pe
         JOIN disparos_pos_venda d ON d.transacao_id = pe.transacao_id
+        JOIN rastreio_pedidos r ON r.transacao_id = pe.transacao_id
         WHERE pe.fonte <> 'backfill-email' AND ${f.sql}
         GROUP BY 1 ORDER BY amostras DESC
       `, f.valores),
@@ -449,6 +450,7 @@ export default async function rotasRastreio(app) {
             ORDER BY extract(epoch FROM (detectado_em - entrou_em)) / 3600
           )::numeric, 1)::float8 AS mediana_horas
         FROM eventos ev JOIN disparos_pos_venda d ON d.transacao_id = ev.transacao_id
+        JOIN rastreio_pedidos r ON r.transacao_id = ev.transacao_id
         WHERE ev.entrou_em IS NOT NULL AND ${f.sql}
         GROUP BY 1, 2 ORDER BY amostras DESC
       `, f.valores),
