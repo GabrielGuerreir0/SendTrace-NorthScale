@@ -2144,7 +2144,7 @@
 
 </main>
 
-<!-- ═══════════════════  Rastreio de Pedidos (Red Rock)  ═══════════════════ -->
+<!-- ═══════════════  Rastreio de Pedidos (Red Rock + FullStack)  ═══════════════ -->
 <main class="conteudo" id="aba-rastreio" hidden>
 
   <section class="cartao">
@@ -2152,10 +2152,9 @@
       <div>
         <h2 data-t="titRastreio">Order Tracking</h2>
         <p class="cartao-sub" data-t="subRastreio">
-          Checked against Red Rock by a separate script (never real-time). Today it only covers
-          the fulfillment center already integrated — most JVZoo/BuyGoods orders show up as
-          "not found at Red Rock", which is expected, not an error: it's another fulfillment
-          center, not integrated yet.
+          Checked against Red Rock and FullStack by separate scripts (never real-time). An order
+          can still show up as "not found on either platform" — expected for a checkout/platform
+          combination neither fulfillment center covers yet, not an error.
         </p>
       </div>
       <div style="display:flex; align-items:center; gap:10px;">
@@ -2165,6 +2164,11 @@
         </button>
       </div>
     </header>
+    <div class="subabas" role="tablist" aria-label="Provedor de rastreio">
+      <button class="subaba-btn" id="rst-subaba-btn-todos" type="button" role="tab" aria-selected="true" data-t="subabaTodos">All</button>
+      <button class="subaba-btn" id="rst-subaba-btn-redrock" type="button" role="tab" aria-selected="false">Red Rock</button>
+      <button class="subaba-btn" id="rst-subaba-btn-fullstack" type="button" role="tab" aria-selected="false">FullStack</button>
+    </div>
   </section>
 
   <section class="kpis kpis--suporte" id="rst-kpis"></section>
@@ -2179,14 +2183,14 @@
           Detection speed, coverage by platform, delivery time and status transitions. Click a
           row to see the orders behind that number. Detection/transition averages never include
           the retroactive email backfill (09/15) — organic detection only, so old orders "found"
-          only now don't inflate the numbers; transport/total time use Red Rock's own
+          only now don't inflate the numbers; transport/total time use the provider's own
           timestamps, so they don't have that limitation.
         </p>
       </div>
     </header>
     <div class="rst-saude-grade">
       <div class="rst-saude-bloco">
-        <h3 data-t="tabTempoTit">Time to appear at Red Rock</h3>
+        <h3 data-t="tabTempoTit">Time to appear in tracking</h3>
         <p class="cartao-sub" data-t="tabTempoSub">From purchase to first tracking record, by platform.</p>
         <div class="tabela-envolve">
           <table class="tabela tabela--compacta">
@@ -2199,8 +2203,8 @@
         </div>
       </div>
 
-      <div class="rst-saude-bloco">
-        <h3 data-t="tabNaoEncTit">Not found at Red Rock</h3>
+      <div class="rst-saude-bloco" id="rst-bloco-naoencontrado">
+        <h3 data-t="tabNaoEncTit">Not found on either platform</h3>
         <p class="cartao-sub" data-t="tabNaoEncSub">By platform — and how long since the purchase was made.</p>
         <div class="tabela-envolve">
           <table class="tabela tabela--compacta">
@@ -2229,7 +2233,7 @@
 
       <div class="rst-saude-bloco">
         <h3 data-t="tabTransporteTit">Transit time</h3>
-        <p class="cartao-sub" data-t="tabTransporteSub">From dispatch (on its way) to delivery, by platform — straight from Red Rock's timestamps.</p>
+        <p class="cartao-sub" data-t="tabTransporteSub">From dispatch (on its way) to delivery, by platform — straight from the provider's timestamps.</p>
         <div class="tabela-envolve">
           <table class="tabela tabela--compacta">
             <thead><tr>
@@ -2271,7 +2275,7 @@
 
       <div class="rst-saude-bloco">
         <h3 data-t="tabSemCodigoTit">Found but missing tracking code</h3>
-        <p class="cartao-sub" data-t="tabSemCodigoSub">Already has a status at Red Rock, but still no tracking_number.</p>
+        <p class="cartao-sub" data-t="tabSemCodigoSub">Already has a status with the provider, but still no tracking_number.</p>
         <div class="tabela-envolve">
           <table class="tabela tabela--compacta">
             <thead><tr>
@@ -2297,7 +2301,7 @@
         </div>
       </div>
 
-      <div class="rst-saude-bloco">
+      <div class="rst-saude-bloco" id="rst-bloco-provedores">
         <h3 data-t="tabProvedoresTit">Tracking providers</h3>
         <p class="cartao-sub" data-t="tabProvedoresSub">How many orders each provider already covers.</p>
         <div class="tabela-envolve">
@@ -2344,7 +2348,7 @@
           <select id="rst-sel-status">
             <option value="" data-t="statusTodos">All</option>
             <option value="pendente_consulta" data-t="statusPendenteConsulta">Checking with provider</option>
-            <option value="nao_encontrado" data-t="statusNaoEncontrado">Not found at Red Rock</option>
+            <option value="nao_encontrado" data-t="statusNaoEncontrado">Not found on either platform</option>
             <option value="pending" data-t="statusPending">Order received</option>
             <option value="shipped" data-t="statusShipped">On its way</option>
             <option value="delivered" data-t="statusDelivered">Delivered</option>

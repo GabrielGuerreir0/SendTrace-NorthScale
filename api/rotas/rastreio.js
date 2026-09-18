@@ -28,11 +28,15 @@ const PERIODO_QS = {
 };
 
 /**
- * Produto/plataforma/período sobre `disparos_pos_venda d` — os 3 recortes
- * que a aba de Rastreio já mostra no filtro (produto e plataforma) mais o
- * período (07/09/2026, pedido do usuário) — usado igual nas 6 sub-consultas
- * de `/api/metricas/rastreio/saude/`, cada uma com sua própria contagem de
- * placeholders (por isso sempre começa em $1 e devolve um `valores` próprio).
+ * Produto/plataforma/provedor/período sobre `rastreio_pedidos r JOIN
+ * disparos_pos_venda d` — os 4 recortes que a aba de Rastreio já mostra no
+ * filtro (produto, plataforma e a sub-aba Red Rock/FullStack) mais o
+ * período (07/09/2026, pedido do usuário; provedor, 18/09/2026, pra dividir
+ * a aba em sub-abas por provedor) — usado igual nas sub-consultas de
+ * `/api/metricas/rastreio/saude/`, cada uma com sua própria contagem de
+ * placeholders (por isso sempre começa em $1 e devolve um `valores`
+ * próprio). Toda query que usa `f.sql` precisa ter `r` no FROM/JOIN — as que
+ * hoje chamam esta função sempre têm.
  */
 function filtroCompra(qs, colunaData = 'd.criado_em') {
   const condicoes = [];
@@ -40,6 +44,10 @@ function filtroCompra(qs, colunaData = 'd.criado_em') {
   let i = 1;
   if (qs.produto) { condicoes.push(`d.produto = $${i}`); valores.push(String(qs.produto)); i += 1; }
   if (qs.plataforma) { condicoes.push(`btrim(d.plataforma) = $${i}`); valores.push(String(qs.plataforma)); i += 1; }
+  // coalesce pro mesmo 'nenhum' que a tabela "Provedores" de /saude/ usa —
+  // sem isto, provedor=nenhum (drill-down daquela linha) não bateria com
+  // nada (a coluna é NULL, nunca a string 'nenhum').
+  if (qs.provedor) { condicoes.push(`coalesce(r.provedor, 'nenhum') = $${i}`); valores.push(String(qs.provedor)); i += 1; }
   condicaoPeriodo(qs, colunaData, condicoes, valores, i);
   return { sql: condicoes.length ? condicoes.join(' AND ') : '1=1', valores };
 }
@@ -175,7 +183,7 @@ function resolverMetricaTempo(req, f) {
     duracaoExpr = null;
     de = `FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id`;
     if (req.query.status_interno) { extra.push(`r.status_interno = $${i}`); valores.push(String(req.query.status_interno)); i += 1; }
-    if (req.query.provedor) { extra.push(`coalesce(r.provedor, 'nenhum') = $${i}`); valores.push(String(req.query.provedor)); i += 1; }
+    // provedor já entra via f.sql (filtroCompra) — não repetir aqui.
     // Espelha o WHERE extra da linha "sem_codigo_rastreio" em /saude/ — sem
     // isso o drill-down mostraria todo mundo naquele status/plataforma, não
     // só quem realmente está sem tracking_number (o que a linha representa).
@@ -332,14 +340,22 @@ export default async function rotasRastreio(app) {
       security: [{ bearerAuth: [] }],
       querystring: {
         type: 'object',
-        properties: { produto: { type: 'string' }, plataforma: { type: 'string' }, ...PERIODO_QS },
+        properties: {
+          produto: { type: 'string' }, plataforma: { type: 'string' },
+          provedor: { type: 'string', description: "'redrock', 'fullstack' ou 'nenhum' (sem provedor ainda) — sub-aba ativa da aba Rastreio." },
+          ...PERIODO_QS,
+        },
       },
       response: { 200: { $ref: 'ResumoRastreio#' } },
     },
   }, async (req) => {
     const condicoes = [];
     const valores = [null, null];
-    condicaoPeriodo(req.query, 'd.criado_em', condicoes, valores, 3);
+    if (req.query.provedor) {
+      valores.push(req.query.provedor);
+      condicoes.push(`coalesce(r.provedor, 'nenhum') = $${valores.length}`);
+    }
+    condicaoPeriodo(req.query, 'd.criado_em', condicoes, valores, valores.length + 1);
     const filtroPeriodo = condicoes.length ? `AND ${condicoes.join(' AND ')}` : '';
     const { rows } = await query(
       `SELECT
@@ -372,16 +388,20 @@ export default async function rotasRastreio(app) {
       description: 'Todas as médias/medianas excluem `fonte = \'backfill-email\'` (o backfill '
         + 'retroativo por e-mail, rodado uma vez em 15/09/2026) — sem isso, um pedido antigo '
         + '"achado" só hoje entraria como se tivesse levado meses pra ser detectado. Aceita os '
-        + 'mesmos recortes de produto/plataforma/período da lista de pedidos.',
+        + 'mesmos recortes de produto/plataforma/provedor/período da lista de pedidos.',
       security: [{ bearerAuth: [] }],
       querystring: {
         type: 'object',
-        properties: { produto: { type: 'string' }, plataforma: { type: 'string' }, ...PERIODO_QS },
+        properties: {
+          produto: { type: 'string' }, plataforma: { type: 'string' },
+          provedor: { type: 'string', description: "'redrock', 'fullstack' ou 'nenhum' — sub-aba ativa da aba Rastreio." },
+          ...PERIODO_QS,
+        },
       },
       response: { 200: { $ref: 'SaudeRastreio#' } },
     },
   }, async (req) => {
-    // Mesmo filtro (produto/plataforma/período), reaproveitado nas 6
+    // Mesmo filtro (produto/plataforma/provedor/período), reaproveitado nas 9
     // sub-consultas — cada `query()` é independente, então os placeholders
     // $1/$2/... recomeçam certos em cada uma sem precisar recalcular nada.
     const f = filtroCompra(req.query);
@@ -565,7 +585,7 @@ export default async function rotasRastreio(app) {
           status_anterior: { type: 'string', description: 'Obrigatório quando metrica=transicao (vazio representa null, primeiro evento).' },
           status_novo: { type: 'string', description: 'Obrigatório quando metrica=transicao.' },
           status_interno: { type: 'string', description: 'Filtro extra pra metrica=lista (ex.: linha de funil_por_plataforma ou sem_codigo_rastreio).' },
-          provedor: { type: 'string', description: 'Filtro extra pra metrica=lista (linha de provedores).' },
+          provedor: { type: 'string', description: "'redrock', 'fullstack' ou 'nenhum' — sub-aba ativa da aba Rastreio (vale pra qualquer metrica, não só lista)." },
           sem_codigo: { type: 'string', enum: ['1'], description: "Filtro extra pra metrica=lista (linha de sem_codigo_rastreio) — restringe a 'provedor IS NOT NULL AND tracking_number IS NULL'." },
           dia: {
             type: 'string',
@@ -619,6 +639,7 @@ export default async function rotasRastreio(app) {
         properties: {
           produto: { type: 'string' },
           plataforma: { type: 'string' },
+          provedor: { type: 'string', description: "'redrock', 'fullstack' ou 'nenhum' — sub-aba ativa da aba Rastreio." },
           metrica: { type: 'string', enum: ['deteccao', 'transporte', 'total', 'transicao'] },
           status_anterior: { type: 'string', description: 'Obrigatório quando metrica=transicao (vazio representa null, primeiro evento).' },
           status_novo: { type: 'string', description: 'Obrigatório quando metrica=transicao.' },
@@ -661,8 +682,9 @@ export default async function rotasRastreio(app) {
       summary: 'Rastreio público de um pedido (sem login)',
       description: 'Pro lead consultar o próprio pedido pelo transacao_id. Nunca devolve '
         + 'endereço, e-mail ou telefone. `encontrado: false` cobre 3 situações diferentes '
-        + '(pedido inexistente, ainda não consultado, ou não encontrado na Red Rock) de '
-        + 'propósito — a resposta não diz qual, pra não virar oráculo de que IDs existem.',
+        + '(pedido inexistente, ainda não consultado, ou não encontrado em nenhuma plataforma, '
+        + 'Red Rock ou FullStack) de propósito — a resposta não diz qual, pra não virar oráculo '
+        + 'de que IDs existem.',
       params: { type: 'object', properties: { transacao_id: { type: 'string' } }, required: ['transacao_id'] },
       response: { 200: { $ref: 'RastreioPublico#' }, 429: { $ref: 'Erro#' } },
     },

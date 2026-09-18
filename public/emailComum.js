@@ -141,15 +141,16 @@ export const LABEL_ETAPA_AUTOMACAO = {
   erro_ia: 'Erro na IA', erro_envio: 'Erro no envio',
 };
 // Mesmos rótulos que api/rotas/rastreio.js usa no `status_rotulo` público —
-// aqui só um pouco mais específicos (ex.: "não encontrado" nomeia a Red Rock)
-// porque a aba interna, ao contrário da pública, pode mostrar o motivo real.
+// aqui só um pouco mais específicos (ex.: "não encontrado" diz que não bateu
+// com nenhum dos provedores, Red Rock ou FullStack) porque a aba interna, ao
+// contrário da pública, pode mostrar o motivo real.
 // Bilíngue (só esta tabela — usada exclusivamente por rastreio.js, ver
 // rotularStatusRastreio/chipRastreio abaixo): o resto do painel continua só
 // em português, então não tem risco de vazar inglês pra outra aba.
 const LABEL_STATUS_RASTREIO_POR_IDIOMA = {
   en: {
     pendente_consulta: 'Checking with provider',
-    nao_encontrado: 'Not found at Red Rock',
+    nao_encontrado: 'Not found on either platform',
     pending: 'Order received',
     shipped: 'On its way',
     delivered: 'Delivered',
@@ -159,7 +160,7 @@ const LABEL_STATUS_RASTREIO_POR_IDIOMA = {
   },
   pt: {
     pendente_consulta: 'Consultando fornecedor',
-    nao_encontrado: 'Não encontrado na Red Rock',
+    nao_encontrado: 'Não encontrado em nenhuma plataforma',
     pending: 'Pedido recebido',
     shipped: 'A caminho',
     delivered: 'Entregue',

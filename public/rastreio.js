@@ -43,7 +43,7 @@ const COR_PLATAFORMA = { JVZoo: 0, BuyGoods: 1, DigiStore24: 2 };
 
 const POR_PAGINA = 25;
 const estado = {
-  busca: '', status: '', produto: '', plataforma: '', pagina: 1,
+  busca: '', status: '', produto: '', plataforma: '', provedor: '', pagina: 1,
   periodo: '', dataDe: '', dataAte: '',
 };
 
@@ -53,28 +53,28 @@ const DIC = {
   // cabeçalho da aba
   titRastreio: { en: 'Order Tracking', pt: 'Rastreio de Pedidos' },
   subRastreio: {
-    en: 'Checked against Red Rock by a separate script (never real-time). Today it only covers '
-      + 'the fulfillment center already integrated — most JVZoo/BuyGoods orders show up as '
-      + '"not found at Red Rock", which is expected, not an error: it\'s another fulfillment '
-      + "center, not integrated yet.",
-    pt: 'Consulta contra a Red Rock, feita por um script à parte (nunca em tempo real). Hoje só '
-      + 'cobre o fulfillment center já integrado — a maioria dos pedidos JVZoo/BuyGoods aparece '
-      + 'como "não encontrado na Red Rock", o que é esperado, não erro: é outro fulfillment '
-      + 'center, ainda sem integração própria.',
+    en: 'Checked against Red Rock and FullStack by separate scripts (never real-time). An order '
+      + 'can still show up as "not found on either platform" — expected for a checkout/platform '
+      + "combination neither fulfillment center covers yet, not an error.",
+    pt: 'Consulta contra a Red Rock e a FullStack, feita por scripts à parte (nunca em tempo '
+      + 'real). Um pedido ainda pode aparecer como "não encontrado em nenhuma plataforma" — '
+      + 'esperado pra uma combinação de checkout/plataforma que nenhum dos dois fulfillment '
+      + 'centers cobre ainda, não é erro.',
   },
   atualizarAgora: { en: 'Refresh now', pt: 'Atualizar agora' },
+  subabaTodos: { en: 'All', pt: 'Todos' },
 
   // KPIs
   kpiTotal: { en: 'Total orders', pt: 'Total de pedidos' },
-  kpiTotalNota: { en: 'checked at Red Rock at least once', pt: 'já consultados na Red Rock ao menos uma vez' },
+  kpiTotalNota: { en: 'checked with a provider at least once', pt: 'já consultados com um provedor ao menos uma vez' },
   kpiTaxaEntrega: { en: 'Delivery rate', pt: 'Taxa de entrega' },
   kpiTaxaEntregaNota: { en: 'delivered ÷ (on its way + delivered)', pt: 'entregues ÷ (a caminho + entregues)' },
   kpiErroConsulta: { en: 'Query error', pt: 'Erro na consulta' },
   kpiErroConsultaNota: { en: 'real API/network failure — the only status treated as an alarm here', pt: 'falha real de API/rede — o único status tratado como alarme aqui' },
-  kpiNaoEncontrado: { en: 'Not found at Red Rock', pt: 'Não encontrado na Red Rock' },
-  kpiNaoEncontradoNota: { en: 'another fulfillment center, not integrated yet — expected for JVZoo/BuyGoods', pt: 'outro fulfillment center, ainda não integrado — esperado pra JVZoo/BuyGoods' },
+  kpiNaoEncontrado: { en: 'Not found on either platform', pt: 'Não encontrado em nenhuma plataforma' },
+  kpiNaoEncontradoNota: { en: 'not covered by Red Rock or FullStack yet — expected for some checkout/platform combinations', pt: 'ainda não coberto pela Red Rock nem pela FullStack — esperado pra algumas combinações de checkout/plataforma' },
   kpiConsultando: { en: 'Checking with provider', pt: 'Consultando fornecedor' },
-  kpiConsultandoNota: { en: 'orders being checked at Red Rock for the first time right now', pt: 'pedidos sendo consultados na Red Rock pela primeira vez agora' },
+  kpiConsultandoNota: { en: 'orders being checked with a provider for the first time right now', pt: 'pedidos sendo consultados com um provedor pela primeira vez agora' },
   kpiRecebido: { en: 'Order received', pt: 'Pedido recebido' },
   kpiRecebidoNota: { en: 'orders fulfillment received from the platforms and hasn\'t shipped yet', pt: 'pedidos que a fulfillment recebeu das plataformas e ainda não foi enviado' },
   kpiACaminho: { en: 'On its way', pt: 'A caminho' },
@@ -84,7 +84,7 @@ const DIC = {
   kpiCancelado: { en: 'Cancelled', pt: 'Cancelado' },
   kpiCanceladoNota: { en: 'orders that were cancelled', pt: 'pedidos que foram cancelados' },
   kpiStatusNaoMapeado: { en: 'Unmapped status', pt: 'Status não mapeado' },
-  kpiStatusNaoMapeadoNota: { en: 'Red Rock returned a status we don\'t recognize yet', pt: 'a Red Rock devolveu um status que ainda não reconhecemos' },
+  kpiStatusNaoMapeadoNota: { en: 'the provider returned a status we don\'t recognize yet', pt: 'o provedor devolveu um status que ainda não reconhecemos' },
   kpiSemCodigo: { en: 'Missing tracking code', pt: 'Sem código de rastreio' },
   kpiSemCodigoNota: { en: 'in fulfillment (received, shipped, delivered or cancelled) but still no tracking_number', pt: 'na fulfillment (recebido, a caminho, entregue ou cancelado) mas ainda sem tracking_number' },
 
@@ -94,23 +94,23 @@ const DIC = {
     en: 'Detection speed, coverage by platform, delivery time and status transitions. Click a row '
       + 'to see the orders behind that number. Detection/transition averages never include the '
       + 'retroactive email backfill (09/15) — organic detection only, so old orders "found" only '
-      + 'now don\'t inflate the numbers; transport/total time use Red Rock\'s own timestamps, so '
-      + "they don't have that limitation.",
+      + "now don't inflate the numbers; transport/total time use the provider's own timestamps, "
+      + "so they don't have that limitation.",
     pt: 'Velocidade de detecção, cobertura por plataforma, tempo de entrega e transições de '
       + 'status. Clique numa linha pra ver os pedidos por trás daquele número. As médias '
       + 'de detecção/transição nunca incluem o backfill retroativo por e-mail (15/09) — só '
       + 'detecção orgânica, pra não inflar os números com pedidos antigos "achados" só agora; '
-      + 'as de tempo de transporte/total usam os timestamps da própria Red Rock, então não '
+      + 'as de tempo de transporte/total usam os timestamps do próprio provedor, então não '
       + 'têm essa limitação.',
   },
-  tabTempoTit: { en: 'Time to appear at Red Rock', pt: 'Tempo até aparecer na Red Rock' },
+  tabTempoTit: { en: 'Time to appear in tracking', pt: 'Tempo até aparecer no rastreio' },
   tabTempoSub: { en: 'From purchase to first tracking record, by platform.', pt: 'Da compra até o primeiro registro de rastreio, por plataforma.' },
-  tabNaoEncTit: { en: 'Not found at Red Rock', pt: 'Não encontrados na Red Rock' },
+  tabNaoEncTit: { en: 'Not found on either platform', pt: 'Não encontrados em nenhuma plataforma' },
   tabNaoEncSub: { en: 'By platform — and how long since the purchase was made.', pt: 'Por plataforma — e há quanto tempo a compra foi feita.' },
   tabTransicoesTit: { en: 'Time between status changes', pt: 'Tempo entre mudanças de status' },
   tabTransicoesSub: { en: 'How long an order takes from one status to the next.', pt: 'Quanto tempo um pedido leva de um status pro próximo.' },
   tabTransporteTit: { en: 'Transit time', pt: 'Tempo de transporte' },
-  tabTransporteSub: { en: "From dispatch (on its way) to delivery, by platform — straight from Red Rock's timestamps.", pt: 'Do despacho (a caminho) até a entrega, por plataforma — direto dos timestamps da Red Rock.' },
+  tabTransporteSub: { en: "From dispatch (on its way) to delivery, by platform — straight from the provider's timestamps.", pt: 'Do despacho (a caminho) até a entrega, por plataforma — direto dos timestamps do provedor.' },
   tabTotalTit: { en: 'Total time: purchase → delivery', pt: 'Tempo total: compra → entrega' },
   tabTotalSub: { en: 'Full cycle, by platform — includes prep time before dispatch.', pt: 'Ciclo completo, por plataforma — inclui o tempo de preparação antes do despacho.' },
   tabDistribTit: { en: 'Delivery time breakdown', pt: 'Distribuição do tempo de entrega' },
@@ -121,7 +121,7 @@ const DIC = {
   faixaEntre: { en: '{min} to {max} days', pt: '{min} a {max} dias' },
   faixaMais: { en: '{min}+ days', pt: '{min}+ dias' },
   tabSemCodigoTit: { en: 'Found but missing tracking code', pt: 'Encontrados sem código de rastreio' },
-  tabSemCodigoSub: { en: 'Already has a status at Red Rock, but still no tracking_number.', pt: 'Já tem status na Red Rock, mas ainda sem tracking_number.' },
+  tabSemCodigoSub: { en: 'Already has a status with the provider, but still no tracking_number.', pt: 'Já tem status com o provedor, mas ainda sem tracking_number.' },
   tabFunilTit: { en: 'Funnel by platform', pt: 'Funil por plataforma' },
   tabFunilSub: { en: 'The same breakdown as the KPIs above, split by platform.', pt: 'O mesmo corte dos KPIs acima, quebrado por plataforma.' },
   tabProvedoresTit: { en: 'Tracking providers', pt: 'Provedores de rastreio' },
@@ -167,7 +167,7 @@ const DIC = {
       + 'Clique num ponto pra ver os pedidos daquele dia, do mais lento pro mais rápido.',
   },
   labelMetrica: { en: 'Metric', pt: 'Métrica' },
-  metricaDeteccao: { en: 'Time to appear at Red Rock (purchase → 1st record)', pt: 'Tempo até aparecer na Red Rock (compra → 1º registro)' },
+  metricaDeteccao: { en: 'Time to appear in tracking (purchase → 1st record)', pt: 'Tempo até aparecer no rastreio (compra → 1º registro)' },
   metricaTransporte: { en: 'Transit time (on its way → delivered)', pt: 'Tempo de transporte (a caminho → entregue)' },
   metricaTotal: { en: 'Total time (purchase → delivered)', pt: 'Tempo total (compra → entregue)' },
   tempoMedioUnidade: { en: 'average time', pt: 'tempo médio' },
@@ -181,7 +181,7 @@ const DIC = {
   buscaPlaceholder: { en: 'Search transaction, customer or tracking code…', pt: 'Buscar transação, cliente ou código de rastreio…' },
   statusTodos: { en: 'All', pt: 'Todos' },
   statusPendenteConsulta: { en: 'Checking with provider', pt: 'Consultando fornecedor' },
-  statusNaoEncontrado: { en: 'Not found at Red Rock', pt: 'Não encontrado na Red Rock' },
+  statusNaoEncontrado: { en: 'Not found on either platform', pt: 'Não encontrado em nenhuma plataforma' },
   statusPending: { en: 'Order received', pt: 'Pedido recebido' },
   statusShipped: { en: 'On its way', pt: 'A caminho' },
   statusDelivered: { en: 'Delivered', pt: 'Entregue' },
@@ -204,7 +204,7 @@ const DIC = {
 
   // empty states / erros
   vazioTempo: { en: 'No organic detection recorded yet.', pt: 'Sem detecção orgânica registrada ainda.' },
-  vazioNaoEnc: { en: 'No order without a Red Rock match.', pt: 'Nenhum pedido sem correlação com a Red Rock.' },
+  vazioNaoEnc: { en: 'No order without a match on either platform.', pt: 'Nenhum pedido sem correlação em nenhuma plataforma.' },
   vazioTransicoes: { en: 'Not enough status transitions yet.', pt: 'Ainda sem transições de status suficientes.' },
   vazioSemCodigo: { en: 'Every order found already has a tracking code.', pt: 'Todo pedido encontrado já tem código de rastreio.' },
   vazioConsultado: { en: 'No order checked yet.', pt: 'Nenhum pedido consultado ainda.' },
@@ -217,7 +217,7 @@ const DIC = {
   erroCarregarFicha: { en: "Couldn't load this order's details.", pt: 'Não consegui carregar os detalhes deste pedido.' },
 
   // drill-down (títulos abertos ao clicar numa linha)
-  detalheNaoEncontrados: { en: 'Not found at Red Rock', pt: 'Não encontrados na Red Rock' },
+  detalheNaoEncontrados: { en: 'Not found on either platform', pt: 'Não encontrados em nenhuma plataforma' },
   detalheSemCodigo: { en: 'Missing tracking code', pt: 'Sem código de rastreio' },
   detalheFunil: { en: 'Funnel by platform', pt: 'Funil por plataforma' },
   detalheProvedor: { en: 'Tracking provider', pt: 'Provedor de rastreio' },
@@ -242,7 +242,7 @@ const DIC = {
   fichaLinkRastreio: { en: 'Tracking link', pt: 'Link de rastreio' },
   fichaEnviadoEm: { en: 'Shipped at', pt: 'Enviado em' },
   fichaEntregueEm: { en: 'Delivered at', pt: 'Entregue em' },
-  fichaUltimaConsulta: { en: 'Last check at Red Rock', pt: 'Última consulta à Red Rock' },
+  fichaUltimaConsulta: { en: 'Last check with provider', pt: 'Última consulta ao provedor' },
   fichaLinhaTempo: { en: 'Timeline', pt: 'Linha do tempo' },
   linhaTempoVazia: { en: 'No status change recorded yet.', pt: 'Nenhuma mudança de status registrada ainda.' },
   primeiroRegistro: { en: 'First record — {status}', pt: 'Primeiro registro — {status}' },
@@ -277,6 +277,7 @@ function paramsFiltro() {
   const p = new URLSearchParams();
   if (estado.produto) p.set('produto', estado.produto);
   if (estado.plataforma) p.set('plataforma', estado.plataforma);
+  if (estado.provedor) p.set('provedor', estado.provedor);
   if (estado.periodo) {
     p.set('dias', estado.periodo);
   } else {
@@ -326,7 +327,10 @@ function renderKpis(r) {
     kpiCard({ icone: '◍', tom: 'neutro', rotulo: t('kpiTotal'), valor: n(r.total), nota: t('kpiTotalNota') }),
     kpiCard({ icone: '✓', tom: tomTaxa(r.taxa_entrega), rotulo: t('kpiTaxaEntrega'), valor: pct(r.taxa_entrega), nota: t('kpiTaxaEntregaNota') }),
     kpiCard({ icone: '⚠', tom: r.exception > 0 ? 'ruim' : 'neutro', rotulo: t('kpiErroConsulta'), valor: n(r.exception), nota: t('kpiErroConsultaNota') }),
-    kpiCard({ icone: '○', tom: 'neutro', rotulo: t('kpiNaoEncontrado'), valor: n(r.nao_encontrado), nota: t('kpiNaoEncontradoNota') }),
+    // Pedido "não encontrado" nunca tem provedor gravado — dentro de uma
+    // sub-aba Red Rock/FullStack esse card ficaria sempre zerado, então some
+    // fora da sub-aba "Todos" (ver aplicarVisibilidadeProvedor).
+    ...(estado.provedor ? [] : [kpiCard({ icone: '○', tom: 'neutro', rotulo: t('kpiNaoEncontrado'), valor: n(r.nao_encontrado), nota: t('kpiNaoEncontradoNota') })]),
   );
   $('rst-kpis-status').replaceChildren(
     kpiCard({ icone: '◐', tom: 'neutro', rotulo: t('kpiConsultando'), valor: n(r.pendente_consulta), nota: t('kpiConsultandoNota') }),
@@ -839,6 +843,52 @@ $('rst-sel-plataforma').addEventListener('change', (e) => {
   estado.pagina = 1;
   carregarTudo();
 });
+
+/* ══════════════  sub-abas: Todos / Red Rock / FullStack  ═══════════════════
+ * Mesmo provedor (`r.provedor`) que já aparece como coluna/pílula na lista de
+ * pedidos — aqui vira um recorte que se aplica a TUDO na aba (KPIs, Saúde,
+ * gráfico e lista), igual produto/plataforma/período. Pedido "não encontrado
+ * em nenhuma plataforma" nunca tem provedor gravado (a coluna só é
+ * preenchida quando um dos dois scripts acha o pedido) — por isso o card de
+ * KPI e as duas tabelas de Saúde que não fazem sentido filtradas por um só
+ * provedor (Não encontrados, sempre vazia; Provedores, sempre uma linha só)
+ * ficam escondidas fora da sub-aba "Todos", em vez de mostrar um vazio
+ * confuso. Lembra a última escolha por navegador, mesmo padrão das subabas
+ * do Suporte Escalado (ver emailSuporteEscalado.js).
+ */
+const SUBABAS_PROVEDOR = { todos: '', redrock: 'redrock', fullstack: 'fullstack' };
+
+function aplicarVisibilidadeProvedor() {
+  const combinado = estado.provedor === '';
+  const blocoNaoEnc = $('rst-bloco-naoencontrado');
+  const blocoProvedores = $('rst-bloco-provedores');
+  if (blocoNaoEnc) blocoNaoEnc.hidden = !combinado;
+  if (blocoProvedores) blocoProvedores.hidden = !combinado;
+}
+
+function mudarSubabaProvedor(nome) {
+  estado.provedor = SUBABAS_PROVEDOR[nome];
+  for (const chave of Object.keys(SUBABAS_PROVEDOR)) {
+    $(`rst-subaba-btn-${chave}`)?.setAttribute('aria-selected', String(chave === nome));
+  }
+  localStorage.setItem('rstSubabaProvedor', nome);
+  aplicarVisibilidadeProvedor();
+  estado.pagina = 1;
+  carregarTudo();
+}
+
+for (const nome of Object.keys(SUBABAS_PROVEDOR)) {
+  $(`rst-subaba-btn-${nome}`)?.addEventListener('click', () => mudarSubabaProvedor(nome));
+}
+{
+  const salva = localStorage.getItem('rstSubabaProvedor');
+  const inicial = SUBABAS_PROVEDOR[salva] !== undefined ? salva : 'todos';
+  estado.provedor = SUBABAS_PROVEDOR[inicial];
+  for (const chave of Object.keys(SUBABAS_PROVEDOR)) {
+    $(`rst-subaba-btn-${chave}`)?.setAttribute('aria-selected', String(chave === inicial));
+  }
+  aplicarVisibilidadeProvedor();
+}
 
 /**
  * "Escolher datas…" é um valor de vitrine no <select> — ao escolhê-lo, só

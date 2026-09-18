@@ -419,7 +419,7 @@ const ETAPAS_RASTREIO = [
   { status: 'delivered', rotulo: 'Entregue', icone: '✓' },
 ];
 const DESVIOS_RASTREIO = [
-  { status: 'nao_encontrado', rotulo: 'Não encontrado na Red Rock', icone: '○' },
+  { status: 'nao_encontrado', rotulo: 'Não encontrado em nenhuma plataforma', icone: '○' },
   { status: 'cancelled', rotulo: 'Cancelado', icone: '✕' },
 ];
 
