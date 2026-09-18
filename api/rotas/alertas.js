@@ -21,6 +21,15 @@ import { enviarAlertas, emailConfigurado } from '../email.js';
 const TIPOS = ['foto_defeito', 'email_urgente', 'caso_escalado', 'chargeback', 'reembolso'];
 
 /**
+ * Alertas por e-mail DESATIVADOS por padrão (18/09/2026). Motivo: ao configurar o SMTP do painel no
+ * Postmark, o checador voltou a rodar e mandou uma enxurrada de alertas (o que se acumulou desde
+ * 11/09) — e-mails que também gastam a cota mensal do plano. Só liga com ALERTAS_EMAIL_ATIVO=true no
+ * `.env` de produção. ANTES de religar: marcar o backlog atual como "já enviado" em
+ * `painel_alertas_enviados` (igual à pré-carga da migração 028), senão a 1ª checagem manda tudo de uma vez.
+ */
+export const alertasAtivos = process.env.ALERTAS_EMAIL_ATIVO === 'true';
+
+/**
  * Uma consulta por tipo, todas com a MESMA forma de saída: `chave` (texto,
  * único por tipo), `titulo`, `subtitulo`. `LIMIT` é rede de segurança — em
  * operação normal (checagem a cada 5 min) nunca deveria chegar perto disso.
@@ -178,7 +187,7 @@ function montarDetalhe(tipo, item) {
  * limitação já documentada é aceita aqui, igual ao resto do painel).
  */
 export async function verificarEEnviarAlertas() {
-  if (!emailConfigurado) return;
+  if (!alertasAtivos || !emailConfigurado) return;
 
   try {
     const { rows: prefs } = await query(`
@@ -250,6 +259,7 @@ export default async function rotasAlertas(app) {
     return {
       preferencias: TIPOS.map((tipo) => ({ tipo, ativo: ativos.get(tipo) ?? false })),
       emailConfigurado,
+      alertasDesativados: !alertasAtivos,
     };
   });
 
@@ -272,6 +282,7 @@ export default async function rotasAlertas(app) {
     },
     onRequest: [app.exigirSessao],
   }, async (req) => {
+    if (!alertasAtivos) throw new ErroHttp(423, 'Os alertas por e-mail estão desativados por um tempo.');
     const entradas = Object.entries(req.body.preferencias || {})
       .filter(([tipo]) => TIPOS.includes(tipo));
     if (entradas.length === 0) throw new ErroHttp(400, 'Nenhum tipo de alerta reconhecido no corpo.');

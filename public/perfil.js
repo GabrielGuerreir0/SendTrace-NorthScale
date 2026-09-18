@@ -86,8 +86,13 @@ async function abrirPerfil() {
   }
 
   if (alertasResp.ok) {
+    // Alertas desativados pelo servidor: some com as opções e explica (18/09/2026).
+    const desativados = alertasResp.dados.alertasDesativados === true;
+    $('perfil-alertas-desativados').hidden = !desativados;
+    $('lista-perfil-alertas').hidden = desativados;
+    $('perfil-acoes-alertas').hidden = desativados;
     renderAlertas(alertasResp.dados.preferencias ?? []);
-    $('perfil-sem-smtp').hidden = alertasResp.dados.emailConfigurado !== false;
+    $('perfil-sem-smtp').hidden = desativados || alertasResp.dados.emailConfigurado !== false;
   } else {
     msgPerfil('Não deu para carregar suas preferências de alerta.');
   }
