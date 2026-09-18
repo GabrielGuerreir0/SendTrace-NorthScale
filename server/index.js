@@ -1709,10 +1709,16 @@ async function atender(req, res, url, sessao) {
     // 2 rotas novas de drill-down/série porque são o mesmo bug de origem:
     // este proxy manual exige um `if` por rota, e cada rota nova na API
     // (ou parâmetro novo numa rota existente) precisa ser replicada aqui à
-    // mão — não tem catch-all.
+    // mão — não tem catch-all. `provedor` (18/09/2026, sub-abas Todos/Red
+    // Rock/FullStack) caiu na MESMA armadilha: só tinha sido adicionado em
+    // /saude/detalhe, faltava aqui, em /saude e em /saude/serie — os 3
+    // ficaram sempre mostrando a mistura de todos os provedores, mesmo com
+    // a sub-aba certa selecionada. Ao adicionar QUALQUER parâmetro novo numa
+    // rota de rastreio na API, sempre conferir TODOS os `if`s aqui embaixo.
     return json(res, 200, await rastreioResumo({
       produto: textoOuNulo(q.get('produto')),
       plataforma: textoOuNulo(q.get('plataforma')),
+      provedor: textoOuNulo(q.get('provedor')),
       dias: q.get('dias'), data_de: q.get('data_de'), data_ate: q.get('data_ate'),
     }));
   }
@@ -1722,6 +1728,7 @@ async function atender(req, res, url, sessao) {
     return json(res, 200, await rastreioSaude({
       produto: textoOuNulo(q.get('produto')),
       plataforma: textoOuNulo(q.get('plataforma')),
+      provedor: textoOuNulo(q.get('provedor')),
       dias: q.get('dias'), data_de: q.get('data_de'), data_ate: q.get('data_ate'),
     }));
   }
@@ -1749,6 +1756,7 @@ async function atender(req, res, url, sessao) {
     return json(res, 200, await rastreioSaudeSerie({
       produto: textoOuNulo(q.get('produto')),
       plataforma: textoOuNulo(q.get('plataforma')),
+      provedor: textoOuNulo(q.get('provedor')),
       dias: q.get('dias'), data_de: q.get('data_de'), data_ate: q.get('data_ate'),
       metrica: q.get('metrica'),
       status_anterior: q.get('status_anterior'), status_novo: q.get('status_novo'),
