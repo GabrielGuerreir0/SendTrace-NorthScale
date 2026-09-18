@@ -464,11 +464,17 @@ export default async function rotasAtendimentos(app) {
       summary: 'Os motivos de contato já registrados, do mais comum ao mais raro',
       description: 'O vocabulário vivo: o bot reutiliza estes nomes ao classificar '
         + 'conversas de assunto igual ou próximo, e só cria nome novo quando o '
-        + 'assunto é realmente diferente.',
+        + 'assunto é realmente diferente. Aceita `produto` (slug) ou `linha` (família '
+        + 'de copy) pra recortar o ranking só pros atendimentos daquele produto/família '
+        + '— cruza por `transacao_id` com `disparos_pos_venda.produto_slug`.',
       security: [{ bearerAuth: [] }],
       querystring: {
         type: 'object',
-        properties: { limite: { type: 'integer', default: 60, maximum: 200 } },
+        properties: {
+          limite: { type: 'integer', default: 60, maximum: 200 },
+          produto: { type: 'string', description: 'Slug do produto — recorta o ranking só pra ele.' },
+          linha: { type: 'string', description: 'Linha/família de copy — recorta o ranking pra todos os produtos dessa família.' },
+        },
       },
       response: {
         200: {
@@ -485,12 +491,32 @@ export default async function rotasAtendimentos(app) {
     },
     onRequest: [app.exigirSessao],
   }, async (req) => {
+    const condicoes = ['a.motivo IS NOT NULL'];
+    const valores = [];
+    let i = 1;
+    let join = '';
+    if (req.query.produto || req.query.linha) {
+      join = `JOIN disparos_pos_venda d ON d.transacao_id = a.transacao_id`;
+      if (req.query.produto) {
+        condicoes.push(`d.produto_slug = $${i}`);
+        valores.push(String(req.query.produto));
+        i += 1;
+      }
+      if (req.query.linha) {
+        join += ` JOIN produtos p ON p.slug = d.produto_slug`;
+        condicoes.push(`p.linha = $${i}`);
+        valores.push(String(req.query.linha));
+        i += 1;
+      }
+    }
+    valores.push(Math.min(200, Number(req.query.limite) || 60));
     const { rows } = await query(
-      `SELECT motivo, count(*)::int AS total
-       FROM chat_atendimentos
-       WHERE motivo IS NOT NULL
-       GROUP BY motivo ORDER BY total DESC, motivo LIMIT $1`,
-      [Math.min(200, Number(req.query.limite) || 60)],
+      `SELECT a.motivo, count(*)::int AS total
+       FROM chat_atendimentos a
+       ${join}
+       WHERE ${condicoes.join(' AND ')}
+       GROUP BY a.motivo ORDER BY total DESC, a.motivo LIMIT $${i}`,
+      valores,
     );
     return rows;
   });
