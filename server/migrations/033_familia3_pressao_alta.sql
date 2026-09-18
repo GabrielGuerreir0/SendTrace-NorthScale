@@ -143,14 +143,9 @@ BEGIN
     RAISE EXCEPTION 'Linha 10 herdou % mensagem(ns) com texto de Diabetes voltado ao cliente — nada foi aplicado.', n;
   END IF;
 
-  SELECT count(*) INTO n FROM mensagens_regua WHERE linha = '10' AND ativo;
-  IF n <> 7 THEN RAISE EXCEPTION 'Esperava 7 mensagens na linha 10, achei % — nada foi aplicado.', n; END IF;
-
-  SELECT count(*) INTO n FROM etapas_regua WHERE linha = '10' AND ativo;
-  IF n <> 7 THEN RAISE EXCEPTION 'Esperava 7 etapas na linha 10, achei % — nada foi aplicado.', n; END IF;
-
-  SELECT count(*) INTO n FROM produtos WHERE linha = '10';
-  IF n <> 3 THEN RAISE EXCEPTION 'Esperava 3 produtos na linha 10, achei % — nada foi aplicado.', n; END IF;
+  -- (18/09/2026) As contagens de "7 mensagens/7 etapas ativas/3 produtos" foram tiradas: dependiam do
+  -- estado do banco e quebravam o `npm run setup` do deploy depois de a régua ser encurtada pra 3
+  -- etapas (migração 036) e do FlushPril entrar na linha 10 (035). Ficam só as travas de conteúdo.
 
   -- os termos da revisão jurídica não podem existir em mensagens_regua
   SELECT count(*) INTO n FROM mensagens_regua m

@@ -58,26 +58,9 @@ BEGIN
 END;
 $function$;
 
--- ── trava: confere o que a função vai enxergar, sem inserir nada ────────────
+-- (18/09/2026) A trava que conferia "1ª etapa ativa de cada linha" foi tirada: dependia do estado
+-- das etapas e podia quebrar o `npm run setup` do deploy se alguém desativasse o D0 de uma linha.
 
-DO $$
-DECLARE
-  n integer;
-BEGIN
-  -- Diabetes (glycoeden, linha 6) deve começar na 30; Pressão Alta (honeyflush, linha 10) na 70;
-  -- NeuroMind Pro (linha 4) na 10; produto genérico '*' (linha 1) na 0.
-  SELECT min(e.etapa) INTO n FROM etapas_regua e WHERE e.ativo AND e.linha = (SELECT linha FROM produtos WHERE slug = 'glycoeden');
-  IF n IS DISTINCT FROM 30 THEN RAISE EXCEPTION 'glycoeden deveria começar na 30, achei % — nada foi aplicado.', n; END IF;
-
-  SELECT min(e.etapa) INTO n FROM etapas_regua e WHERE e.ativo AND e.linha = (SELECT linha FROM produtos WHERE slug = 'honeyflush');
-  IF n IS DISTINCT FROM 70 THEN RAISE EXCEPTION 'honeyflush deveria começar na 70, achei % — nada foi aplicado.', n; END IF;
-
-  SELECT min(e.etapa) INTO n FROM etapas_regua e WHERE e.ativo AND e.linha = (SELECT linha FROM produtos WHERE slug = 'neuromindpro');
-  IF n IS DISTINCT FROM 10 THEN RAISE EXCEPTION 'neuromindpro deveria começar na 10, achei % — nada foi aplicado.', n; END IF;
-
-  SELECT min(e.etapa) INTO n FROM etapas_regua e WHERE e.ativo AND e.linha = (SELECT linha FROM produtos WHERE slug = '*');
-  IF n IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'produto genérico deveria começar na 0, achei % — nada foi aplicado.', n; END IF;
-END $$;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 --  NÃO RODAR AGORA — decisão de backlog (só quando for religar o Processador)
