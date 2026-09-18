@@ -2470,3 +2470,8 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 @media (max-width: 480px) {
   #r-tracking-url { align-self: stretch; }
 }
+
+/* Canais laterais da régua (900 Área VIP, 901 recibo completo) — bloco à parte, sem conectores */
+.rg-laterais { margin-top: 20px; padding: 0 4px; }
+.rg-laterais-tit { margin: 0 0 8px; font-size: 12px; color: var(--tinta-fraca); }
+.rg-laterais .rg-fita { gap: 16px; }

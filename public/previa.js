@@ -32,9 +32,23 @@ const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
+/* Canais laterais (18/09/2026, fora da régua numerada). O n8n monta estes dois
+   e-mails com dados que o painel não tem na mão, então a prévia usa amostras. */
+const ETAPA_AREA_VIP = 900;
+const ETAPA_RESUMO = 901;
+const LINK_VIP_AMOSTRA = 'https://seu-produto.com/area-vip/';
+
+/** Lista de exemplo do recibo completo: o n8n troca `{itens}` por um bloco por produto comprado. */
+function itensAmostra(produto) {
+  const bloco = (nome) => `<div style="background:${MARCA.cinzaBg};border:1px solid #e5e7eb;border-radius:8px;`
+    + `padding:14px 18px;margin:10px 0"><b>${esc(nome)}</b><br>`
+    + `<span style="font-size:14px;color:${MARCA.cinza}">Included in your order and on its way to you.</span></div>`;
+  return bloco(produto) + bloco('Add-on do mesmo pedido (exemplo)');
+}
+
 /** Reproduz a moldura() do n8n. `marca` traz o e-book/suporte do produto. */
-function moldar(corpo, botao, destino, produto, email, telefone, marca = MARCA) {
-  const link = destino === 'EBOOK' ? marca.ebook : `mailto:${marca.suporte}`;
+function moldar(corpo, botao, destino, produto, email, telefone, marca = MARCA, linkBotao = null) {
+  const link = linkBotao ?? (destino === 'EBOOK' ? marca.ebook : `mailto:${marca.suporte}`);
   // O n8n sempre desenha o botão: mensagem sem rótulo sai com o padrão dele.
   const rotulo = botao || 'Questions? Talk to us →';
   const cta = `<p style="margin:28px 0"><a href="${esc(link)}" style="display:inline-block;padding:14px 26px;`
@@ -125,11 +139,16 @@ export function criarPrevia({
 
     if (rascunho.canal === 'sms') return molarSms(preencher(rascunho.texto));
     if (!rascunho.corpo_html) return '';
+    const etapaNum = Number(contexto?.etapa?.etapa);
+    const produtoAmostra = contexto?.amostra?.produto ?? 'your order';
+    let corpo = preencher(rascunho.corpo_html);
+    if (etapaNum === ETAPA_RESUMO) corpo = corpo.split('{itens}').join(itensAmostra(produtoAmostra));
     return moldar(
-      preencher(rascunho.corpo_html), preencher(rascunho.botao), rascunho.destino,
-      contexto?.amostra?.produto ?? 'your order',
+      corpo, preencher(rascunho.botao), rascunho.destino,
+      produtoAmostra,
       'cliente@exemplo.com', '+1 555 000 0000',
       marcaAtiva,
+      etapaNum === ETAPA_AREA_VIP ? LINK_VIP_AMOSTRA : null,
     );
   }
 
@@ -206,7 +225,9 @@ export function criarPrevia({
     nota.hidden = false;
     nota.textContent = `Marcadores preenchidos com "${amostra?.nome ?? '—'}" e `
       + `"${amostra?.produto ?? '—'}" — o pior caso de tamanho da sua fila. `
-      + (eEmail ? 'Botão, bloco de suporte e rodapé são montados como o robô faz.' : '');
+      + (eEmail ? 'Botão, bloco de suporte e rodapé são montados como o robô faz.' : '')
+      + (etapa.etapa === ETAPA_AREA_VIP ? ' O botão leva ao link de Área VIP do produto (produtos.area_vip_url) — aqui é um link de exemplo.' : '')
+      + (etapa.etapa === ETAPA_RESUMO ? ' A lista de itens é de exemplo: o robô lista o produto comprado e cada upsell/downsell aceito.' : '');
 
     modos.hidden = false;
     if (editor) {

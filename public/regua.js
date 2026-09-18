@@ -98,12 +98,22 @@ function nivelFluxo(prestes) {
 }
 
 /**
+ * Canais laterais (18/09/2026): e-mails que saem DIRETO dos fluxos Reporting
+ * do n8n, logo depois da venda, fora da fila por tempo da régua — 900 = Área
+ * VIP, 901 = recibo completo (migrações 030 e 032). Existem em `etapas_regua`
+ * só porque a FK de `mensagens_regua` exige, com `ativo: false` de propósito
+ * (nunca entram na conta de "linha completa" nem no avanço automático). Não
+ * são etapas da régua: ficam fora da fita e não levam o visual "desativada".
+ */
+const LATERAIS = new Set([900, 901]);
+
+/**
  * A etapa -1 (o recibo) é `ativo: false` no banco de propósito — é a âncora
  * fixa que fica fora da régua, não uma etapa desligada por alguém. Ela não
  * deve levar o visual "desativada": as outras usam essa marca para dizer
  * "o robô pula isto", o que não é verdade para o recibo.
  */
-const desativadaMesmo = (d) => d.ativo === false && d.etapa !== -1;
+const desativadaMesmo = (d) => d.ativo === false && d.etapa !== -1 && !LATERAIS.has(d.etapa);
 
 /**
  * A linha de destaque da etapa. Mostra UMA coisa: a mais urgente. Um número em
@@ -111,6 +121,7 @@ const desativadaMesmo = (d) => d.ativo === false && d.etapa !== -1;
  * tooltip, na legenda e na tabela lá embaixo.
  */
 function linhaAlerta(d) {
+  if (LATERAIS.has(d.etapa)) return { icone: '↗', txt: 'canal lateral — sai direto da venda', tom: 'neutro' };
   if (desativadaMesmo(d)) return { icone: '○', txt: 'etapa desativada na régua', tom: 'neutro' };
   if (d.travado > 0) return { icone: '■', txt: `${n(d.travado)} travado${d.travado > 1 ? 's' : ''}`, tom: 'travado' };
   if (d.atrasado > 0) return { icone: '▲', txt: `${n(d.atrasado)} atrasado${d.atrasado > 1 ? 's' : ''}`, tom: 'atrasado' };
@@ -546,7 +557,12 @@ export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem,
     // — nó vazio com "+" que ninguém vai preencher. Com pedido de verdade
     // preso, continua aparecendo: é exatamente o caso que esse alerta existe
     // para não esconder.
-    const vivas = (etapas ?? []).filter((e) => !e.terminal && !(e.autoDetectada && !e.na_etapa));
+    const vivas = (etapas ?? []).filter((e) => !e.terminal && !(e.autoDetectada && !e.na_etapa) && !LATERAIS.has(e.etapa));
+    // Canais laterais: só aparecem se ESTA linha tem copy pra eles (a 900, por
+    // exemplo, só existe pros produtos com Área VIP) — cartão sem mensagem
+    // nenhuma seria ruído. Ficam num bloco à parte, sem conectores: não são
+    // uma sequência.
+    const laterais = (etapas ?? []).filter((e) => LATERAIS.has(e.etapa) && (e.mensagens ?? []).length);
     if (!vivas.length) {
       raiz.replaceChildren(el('p', 'vazio-suave', 'Nenhuma etapa cadastrada na régua.'));
       return;
@@ -594,7 +610,16 @@ export function criarRegua(container, { tooltip, aoClicarEtapa, aoAbrirMensagem,
     ligarTooltip(fim, () => ttFim(totais ?? {}, vivas));
     fita.appendChild(fim);
 
-    raiz.replaceChildren(fita);
+    if (!laterais.length) {
+      raiz.replaceChildren(fita);
+      return;
+    }
+    const blocoLaterais = el('div', 'rg-laterais');
+    blocoLaterais.appendChild(el('p', 'rg-laterais-tit', 'Canais laterais — saem direto da venda, fora da régua (só enviam com a chave mestra ligada)'));
+    const fitaLaterais = el('div', 'rg-fita');
+    laterais.forEach((d) => fitaLaterais.appendChild(blocoEtapa(d)));
+    blocoLaterais.appendChild(fitaLaterais);
+    raiz.replaceChildren(fita, blocoLaterais);
   }
 
   return { atualizar };
