@@ -19,6 +19,8 @@ import { abrirModalEmails } from './emailDetalhes.js';
 /* ═══════════════════════════════  estado  ═══════════════════════════════ */
 
 let itens = [];
+// Assinatura da última resposta desenhada: na atualização periódica, se nada mudou não redesenha nada.
+let ultimaAssinatura = null;
 let kpis = {};
 /**
  * Colunas do kanban — vêm do servidor (email_ia.suporte_escalado_colunas),
@@ -1407,7 +1409,7 @@ async function carregarInsightsEscalado() {
   } catch { /* silencioso — não é crítico como o kanban */ }
 }
 
-export async function carregarDados() {
+export async function carregarDados(opcoes = {}) {
   const meu = ++geracao;
   if (!boardId) {
     colunas = [];
@@ -1432,6 +1434,11 @@ export async function carregarDados() {
     const { ok, dados: d } = await api(`/api/suporte-escalado?${p}`);
     if (meu !== geracao) return;
     if (!ok) throw new Error(d?.detail ?? d?.erro ?? 'falha ao carregar');
+    // Atualização periódica sem novidade: não refaz cards, KPIs nem gráficos (era ~1 MB redesenhado a
+    // cada 25 s). Chamadas explícas (mover card, trocar filtro...) sempre redesenham.
+    const assinatura = JSON.stringify(d);
+    if (opcoes?.periodico === true && assinatura === ultimaAssinatura) return;
+    ultimaAssinatura = assinatura;
     colunas = d.colunas ?? [];
     kpis = d.kpis ?? {};
     itens = d.itens ?? [];
@@ -1493,5 +1500,12 @@ ligarArrastoBoard($('esc-board'));
 
 carregarBoards();
 carregarInsightsEscalado();
-setInterval(carregarDados, 25 * 1000);
-setInterval(carregarInsightsEscalado, 60 * 1000);
+// Aba escondida não atualiza (várias abas abertas o dia todo multiplicavam a carga); ao voltar, atualiza na hora.
+setInterval(() => { if (!document.hidden) carregarDados({ periodico: true }); }, 30 * 1000);
+setInterval(() => { if (!document.hidden) carregarInsightsEscalado(); }, 60 * 1000);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    carregarDados({ periodico: true });
+    carregarInsightsEscalado();
+  }
+});

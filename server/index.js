@@ -3,6 +3,7 @@ import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import zlib from 'node:zlib';
 
 import { LOCK_TIMEOUT_MIN, SESSAO_HORAS, CONVITE_DIAS } from './config.js';
 import { CANAIS, DESTINOS, STATUS_LABELS, ESTADOS, REGUA_FALLBACK } from './etapas.config.js';
@@ -216,12 +217,37 @@ function detalharErroApi(err, padrao) {
    `undefined !== null`, que quebra em silêncio se alguém puser um `return`. */
 const ATENDIDO = Symbol('atendido');
 
+/* Arquivos de texto do front servidos em gzip (ver o servidor de estáticos), guardados por ETag. */
+const EXT_COMPRIMIVEIS = new Set(['.js', '.css', '.html', '.json', '.svg', '.txt']);
+const cacheGzip = new Map();
+
+/**
+ * Resposta JSON. Comprime em gzip quando o navegador aceita e o corpo passa de 1 KB (18/09/2026):
+ * a lista do Kanban chega a ~1 MB e não havia compressão em lugar nenhum (o Caddy roda só como
+ * `reverse-proxy`, sem `encode`). JSON de texto comprime ~8x. `zlib.gzip` é assíncrono (não trava o
+ * laço de eventos do processo, que atende todo mundo).
+ */
 function json(res, status, body) {
   const payload = JSON.stringify(body);
-  res.writeHead(status, {
+  const cabecalhos = {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
-  });
+  };
+  const aceita = String(res.req?.headers?.['accept-encoding'] ?? '');
+  if (payload.length > 1024 && /\bgzip\b/.test(aceita)) {
+    zlib.gzip(payload, { level: 5 }, (erro, comprimido) => {
+      if (res.destroyed || res.writableEnded) return;
+      if (erro) {
+        res.writeHead(status, cabecalhos);
+        res.end(payload);
+        return;
+      }
+      res.writeHead(status, { ...cabecalhos, 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' });
+      res.end(comprimido);
+    });
+    return ATENDIDO;
+  }
+  res.writeHead(status, cabecalhos);
   res.end(payload);
   return ATENDIDO;
 }
@@ -476,13 +502,30 @@ async function servirEstatico(req, res, urlPath) {
     }
 
     const conteudo = await fs.readFile(alvo);
-    res.writeHead(200, {
-      'Content-Type': MIME[path.extname(alvo).toLowerCase()] ?? 'application/octet-stream',
+    const extensao = path.extname(alvo).toLowerCase();
+    const cabecalhos = {
+      'Content-Type': MIME[extensao] ?? 'application/octet-stream',
       'Cache-Control': 'no-cache',
       ETag: etag,
       'Last-Modified': info.mtime.toUTCString(),
-    });
-    res.end(conteudo);
+    };
+    // Texto (js/css/html/svg/json) vai em gzip; o resultado fica em memória por ETag, então cada
+    // versão de arquivo é comprimida uma vez só.
+    let corpo = conteudo;
+    if (EXT_COMPRIMIVEIS.has(extensao) && conteudo.length > 1024
+        && /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''))) {
+      let gz = cacheGzip.get(etag);
+      if (!gz) {
+        gz = await new Promise((ok, falha) => zlib.gzip(conteudo, { level: 6 }, (e, r) => (e ? falha(e) : ok(r))));
+        if (cacheGzip.size >= 200) cacheGzip.delete(cacheGzip.keys().next().value);
+        cacheGzip.set(etag, gz);
+      }
+      corpo = gz;
+      cabecalhos['Content-Encoding'] = 'gzip';
+      cabecalhos.Vary = 'Accept-Encoding';
+    }
+    res.writeHead(200, cabecalhos);
+    res.end(corpo);
   } catch {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Não encontrado');
   }

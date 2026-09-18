@@ -821,4 +821,4 @@ aoMudarFiltroCE(carregarDados);
 $('dt-busca').addEventListener('input', debounce((e) => { busca = e.target.value.trim(); carregarDados(); }, 450));
 
 carregarDados();
-setInterval(carregarDados, 30 * 1000);
+setInterval(() => { if (!document.hidden) carregarDados(); }, 30 * 1000);

@@ -389,5 +389,5 @@ $('tk-tabela-status').addEventListener('change', (e) => {
 
 carregarDados();
 carregarAutomacao();
-setInterval(carregarDados, 5 * 60 * 1000);
-setInterval(carregarAutomacao, 8 * 1000);
+setInterval(() => { if (!document.hidden) carregarDados(); }, 5 * 60 * 1000);
+setInterval(() => { if (!document.hidden) carregarAutomacao(); }, 8 * 1000);
