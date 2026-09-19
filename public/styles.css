@@ -2475,3 +2475,34 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 .rg-laterais { margin-top: 20px; padding: 0 4px; }
 .rg-laterais-tit { margin: 0 0 8px; font-size: 12px; color: var(--tinta-fraca); }
 .rg-laterais .rg-fita { gap: 16px; }
+
+/* ── aba Postmark (18/09/2026) ─────────────────────────────────────────── */
+.pm-alertas { display: grid; gap: 8px; margin-top: 12px; }
+.pm-alerta { display: flex; gap: 12px; align-items: flex-start; padding: 10px 14px; border: 1px solid var(--borda); border-radius: 10px; background: var(--superficie); }
+.pm-alerta-ico { font-size: 18px; line-height: 1.2; }
+.pm-alerta-corpo { display: grid; gap: 2px; font-size: 14px; }
+.pm-alerta-corpo span { color: var(--tinta-fraca); font-size: 13px; }
+.pm-alerta[data-nivel="critico"] { border-color: color-mix(in srgb, var(--st-travado) 55%, var(--borda)); }
+.pm-alerta[data-nivel="critico"] .pm-alerta-ico { color: var(--st-travado); }
+.pm-alerta[data-nivel="atencao"] { border-color: color-mix(in srgb, var(--st-atrasado) 55%, var(--borda)); }
+.pm-alerta[data-nivel="atencao"] .pm-alerta-ico { color: var(--st-atrasado); }
+.pm-alerta[data-nivel="info"] .pm-alerta-ico { color: var(--st-em-dia); }
+.pm-alerta[data-nivel="ok"] { border-color: color-mix(in srgb, var(--st-finalizado) 45%, var(--borda)); }
+.pm-alerta[data-nivel="ok"] .pm-alerta-ico { color: var(--st-finalizado); }
+
+.pm-barra { height: 10px; border-radius: 6px; background: var(--borda); overflow: hidden; margin: 6px 0 14px; }
+.pm-barra > span { display: block; height: 100%; background: var(--st-finalizado); border-radius: 6px; }
+.pm-barra[data-tom="medio"] > span { background: var(--st-atrasado); }
+.pm-barra[data-tom="ruim"] > span { background: var(--st-travado); }
+
+.pm-linha { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0; border-bottom: 1px dashed var(--borda); font-size: 14px; }
+.pm-linha:last-child { border-bottom: 0; }
+.pm-linha-rot { color: var(--tinta-fraca); white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.pm-linha-val { font-weight: 600; text-align: right; }
+.pm-linha-val[data-tom="ruim"] { color: var(--st-travado); }
+.pm-linha-val[data-tom="medio"] { color: var(--st-atrasado); }
+.pm-linha-val[data-tom="bom"] { color: var(--st-finalizado); }
+
+.pm-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid var(--borda); }
+.pm-chip[data-tipo="SpamComplaint"] { color: var(--st-travado); border-color: color-mix(in srgb, var(--st-travado) 50%, var(--borda)); }
+.pm-chip[data-tipo="Bounce"] { color: var(--st-atrasado); border-color: color-mix(in srgb, var(--st-atrasado) 50%, var(--borda)); }

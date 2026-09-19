@@ -21,6 +21,7 @@ import './emailSuporteEscalado.js';
 import './relatorioMetricas.js';
 import './visaoGeral.js';
 import './rastreio.js';
+import './postmark.js';
 import './perfil.js';
 
 /* Mesmos traçados usados nos nós do canvas, para o card por canal falar a

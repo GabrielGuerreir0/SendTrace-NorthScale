@@ -164,6 +164,16 @@
       <span class="menu-rotulo">Rastreio de Pedidos</span>
     </button>
 
+    <button class="menu-item" id="aba-btn-postmark" type="button"
+            aria-selected="false" title="Postmark — saúde do envio de e-mail">
+      <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
+           stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2.5" y="4.5" width="15" height="11" rx="2"/>
+        <path d="M3 5.5 L10 11 L17 5.5"/>
+      </svg>
+      <span class="menu-rotulo">Postmark</span>
+    </button>
+
     <!-- ── Central de E-mail IA: 4 abas a mais, mesma mecânica das duas de cima ── -->
     <p class="menu-separador"><span class="menu-rotulo">Central de E-mail IA</span></p>
 
@@ -1907,6 +1917,106 @@
     <div class="gal-chips" id="gl-chips"></div>
     <div class="gal-grade" id="gl-grade"></div>
     <div class="paginacao" id="gl-paginacao"></div>
+  </section>
+</main>
+
+<!-- ═══════════════════  Postmark: saúde do envio de e-mail (18/09/2026)  ═══════════════════ -->
+<main class="conteudo" id="aba-postmark" hidden>
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Postmark — saúde do envio</h2>
+        <p class="cartao-sub">
+          Cota do plano, reclamações de spam, bounces, fila da régua e falhas de envio. Atualiza sozinho
+          a cada minuto enquanto esta aba está aberta. Reclamações de spam acima de ~0,1% fazem o Postmark
+          avisar e pode pausar a conta.
+        </p>
+      </div>
+      <div class="tk-filtros">
+        <label class="campo">
+          <span>Período</span>
+          <select id="pm-dias">
+            <option value="1">Hoje</option>
+            <option value="7" selected>7 dias</option>
+            <option value="14">14 dias</option>
+            <option value="30">30 dias</option>
+          </select>
+        </label>
+        <span class="cartao-sub" id="pm-atualizado"></span>
+      </div>
+    </header>
+    <div class="pm-alertas" id="pm-alertas"></div>
+  </section>
+
+  <section class="kpis kpis--suporte" id="pm-kpis"></section>
+
+  <div class="sup-grade">
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Cota do ciclo</h2>
+          <p class="cartao-sub" id="pm-cota-sub">—</p>
+        </div>
+      </header>
+      <div id="pm-cota"></div>
+    </section>
+
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>E-mails enviados por dia</h2>
+          <p class="cartao-sub">Régua de pós-venda + respostas da IA + boas-vindas. A régua só grava log desde 18/09.</p>
+        </div>
+      </header>
+      <div class="grafico" id="pm-graf"></div>
+    </section>
+  </div>
+
+  <div class="sup-grade">
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Fila e falhas</h2>
+          <p class="cartao-sub">Régua de pós-venda e respostas automáticas da IA.</p>
+        </div>
+      </header>
+      <div id="pm-fila"></div>
+    </section>
+
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Webhook do Postmark</h2>
+          <p class="cartao-sub">Eventos que o Postmark envia ao n8n (entrega, abertura, clique, bounce, spam).</p>
+        </div>
+      </header>
+      <div id="pm-webhook"></div>
+    </section>
+  </div>
+
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Bounces, spam e supressões recentes</h2>
+        <p class="cartao-sub">Os 30 mais recentes. O Postmark já bloqueia esses endereços sozinho, e a sequência deles na régua é cancelada. Não reative no Postmark.</p>
+      </div>
+    </header>
+    <div class="sup-tabela-envolve">
+      <table class="sup-tabela">
+        <thead>
+          <tr>
+            <th scope="col">Quando</th>
+            <th scope="col">Evento</th>
+            <th scope="col">Destinatário</th>
+            <th scope="col">Assunto</th>
+            <th scope="col">Detalhe</th>
+          </tr>
+        </thead>
+        <tbody id="pm-problemas">
+          <tr><td colspan="5" class="vazio-suave">carregando…</td></tr>
+        </tbody>
+      </table>
+    </div>
   </section>
 </main>
 

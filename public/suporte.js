@@ -39,6 +39,7 @@ const ABAS = {
   suporteescalado: 'aba-suporteescalado',
   relatorioia: 'aba-relatorioia',
   rastreio: 'aba-rastreio',
+  postmark: 'aba-postmark',
 };
 
 // Título da aba do navegador por seção — com várias abas do painel abertas
@@ -54,6 +55,7 @@ const TITULOS = {
   suporteescalado: 'Suporte Escalado',
   relatorioia: 'Relatório de Métricas',
   rastreio: 'Rastreio de Pedidos',
+  postmark: 'Postmark',
 };
 
 function mostrarAba(qual) {

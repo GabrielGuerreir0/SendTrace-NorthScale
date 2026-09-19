@@ -1722,6 +1722,13 @@ async function atender(req, res, url, sessao) {
      Números agregados vêm de /api/visao-geral/ (Postgres direto); a faixa de
      status reaproveita os insights que já existem em régua/suporte/tickets/
      suporte escalado — ver visaoGeralResumo em server/dados.js. */
+  /* ── aba "Postmark" (18/09/2026): saúde do envio de e-mail — thin proxy, só leitura ── */
+  if (url.pathname === '/api/postmark') {
+    const dias = inteiroOuNulo(url.searchParams.get('dias'));
+    if (dias === false) return json(res, 400, { erro: 'dias inválido' });
+    return json(res, 200, await obterApi('/api/postmark/resumo/', { dias: dias ?? 7 }));
+  }
+
   if (url.pathname === '/api/visao-geral') {
     const dias = inteiroOuNulo(url.searchParams.get('dias'));
     if (dias === false) return json(res, 400, { erro: 'dias inválido' });
