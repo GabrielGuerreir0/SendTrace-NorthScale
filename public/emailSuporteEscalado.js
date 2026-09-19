@@ -448,28 +448,40 @@ async function moverStatus(id, status) {
  * painel, é o servidor buscando pasta+UID ao vivo via IMAP (ver
  * /api/emails/:id/webmail em emailIACentral.js) e devolvendo a URL exata.
  *
- * SÓ abre a aba depois que a URL chega. A versão anterior pré-abria uma aba
- * em branco para driblar bloqueador de pop-up e trocava o endereço dela
- * depois — mas se a busca no IMAP demorasse ou falhasse, sobrava uma aba
- * `about:blank` travada (alguns navegadores ignoram `.close()` numa aba que
- * o usuário já olhou). Preferível arriscar o pop-up ser bloqueado (o
- * `window.open` ainda roda perto o bastante do clique pra maioria dos
- * navegadores aceitar) do que garantir uma aba fantasma no erro.
+ * A aba é aberta NA HORA DO CLIQUE (com um aviso "abrindo…") e só depois recebe o endereço do webmail. Abrir
+ * depois do `await` fazia o navegador perder o vínculo com o clique e bloquear como pop-up (19/09/2026). Se a busca
+ * falhar, a aba é fechada; se o navegador não deixar fechar, ela mostra o erro em vez de ficar em branco.
  */
 async function abrirNoWebmail(emailId, botao) {
   const original = botao.textContent;
   botao.disabled = true;
   botao.textContent = '…';
+  // síncrono, dentro do clique: é o que o bloqueador de pop-up exige
+  const aba = window.open('about:blank', '_blank');
+  if (aba) {
+    try {
+      aba.opener = null; // o webmail não precisa (e não deve) enxergar o painel
+      aba.document.title = 'Abrindo o webmail…';
+      aba.document.body.textContent = 'Abrindo o e-mail no webmail…';
+    } catch { /* aba já navegou ou é de outra origem: segue */ }
+  }
+  const falhar = (msg) => {
+    if (aba) {
+      try { aba.close(); } catch { /* ignora */ }
+      if (!aba.closed) { try { aba.document.body.textContent = `${msg} Pode fechar esta aba.`; } catch { /* ignora */ } }
+    }
+    window.alert(msg);
+  };
   try {
     const { ok, dados: resp } = await api(`/api/emails/${emailId}/webmail`);
     if (!ok || !resp?.url) {
-      window.alert(resp?.erro ?? resp?.detail ?? 'Não consegui achar este e-mail na caixa.');
+      falhar(resp?.erro ?? resp?.detail ?? 'Não consegui achar este e-mail na caixa.');
       return;
     }
-    const aba = window.open(resp.url, '_blank', 'noopener,noreferrer');
-    if (!aba) window.alert(`Seu navegador bloqueou a aba. Abra manualmente:\n${resp.url}`);
+    if (aba && !aba.closed) aba.location.replace(resp.url);
+    else window.alert(`Seu navegador bloqueou a aba. Abra manualmente:\n${resp.url}`);
   } catch {
-    window.alert('Não consegui achar este e-mail na caixa.');
+    falhar('Não consegui achar este e-mail na caixa.');
   } finally {
     botao.disabled = false;
     botao.textContent = original;
