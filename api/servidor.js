@@ -43,6 +43,7 @@ import rotasAlertas, { verificarEEnviarAlertas } from './rotas/alertas.js';
 import rotasRastreio from './rotas/rastreio.js';
 import rotasPostmark from './rotas/postmark.js';
 import rotasFormularios from './rotas/formularios.js';
+import rotasDescadastro from './rotas/descadastro.js';
 
 const PORTA = Number(process.env.API_PORT) || 4400;
 const HOST = process.env.API_HOST || '127.0.0.1';
@@ -353,6 +354,7 @@ await app.register(rotasAlertas);
 await app.register(rotasRastreio);
 await app.register(rotasPostmark);
 await app.register(rotasFormularios);
+await app.register(rotasDescadastro);
 
 /* ═══════════════════════════════  subida  ══════════════════════════════ */
 

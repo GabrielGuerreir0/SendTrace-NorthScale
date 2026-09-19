@@ -1943,6 +1943,39 @@ const servidor = http.createServer(async (req, res) => {
       }
     }
 
+    /*
+     * Descadastro dos e-mails de pós-venda (link do rodapé e one-click do List-Unsubscribe-Post).
+     * Pública e assinada (api/rotas/descadastro.js); passa por aqui pra sair com HTTPS/domínio de verdade.
+     * O GET só mostra a página; quem descadastra é o POST. ANTES da guarda de sessão.
+     */
+    if (url.pathname === '/descadastrar' && (req.method === 'GET' || req.method === 'POST')) {
+      try {
+        let corpoPost = '';
+        if (req.method === 'POST') { // só o rótulo "List-Unsubscribe=One-Click" interessa; lê no máximo 2 KB
+          for await (const pedaco of req) { if (corpoPost.length < 2048) corpoPost += pedaco; }
+          corpoPost = corpoPost.slice(0, 2048);
+        }
+        const alvo = await fetch(`${enderecoApi}/descadastro/${url.search}`, {
+          method: req.method,
+          signal: AbortSignal.timeout(8000),
+          headers: {
+            'Content-Type': req.method === 'POST' ? 'application/x-www-form-urlencoded' : 'text/html',
+            'X-Forwarded-For': req.headers['x-forwarded-for'] || req.socket.remoteAddress || '',
+          },
+          body: req.method === 'POST' ? corpoPost : undefined,
+        });
+        const corpo = await alvo.text();
+        res.writeHead(alvo.status, {
+          'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex',
+          'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'",
+        });
+        return res.end(corpo);
+      } catch {
+        res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
+        return res.end('Service unavailable. Please try again in a few minutes.');
+      }
+    }
+
     const sessao = lerSessao(lerCookie(req, COOKIE));
 
     // Tudo daqui em diante fala com a API usando o token DESTA pessoa. Sem
