@@ -2084,6 +2084,7 @@
     <div class="subabas" role="tablist" aria-label="Visão do Suporte Escalado">
       <button class="subaba-btn" id="esc-subaba-btn-kanban" type="button" role="tab" aria-selected="true">Kanban</button>
       <button class="subaba-btn" id="esc-subaba-btn-metricas" type="button" role="tab" aria-selected="false">Tempo no kanban</button>
+      <button class="subaba-btn" id="esc-subaba-btn-formularios" type="button" role="tab" aria-selected="false">Respostas dos formulários</button>
     </div>
   </section>
 
@@ -2091,6 +2092,48 @@
   <div id="esc-subaba-kanban">
     <section class="kpis kpis--suporte" id="esc-kpis"></section>
     <div class="esc-board" id="esc-board"></div>
+  </div>
+
+  <!-- ── sub-página: respostas dos formulários (Drive) por perfil ── -->
+  <div id="esc-subaba-formularios" hidden>
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Respostas dos formulários</h2>
+          <p class="cartao-sub">
+            Formulários de reembolso e de devolução (envio) respondidos pelos clientes, agrupados por perfil.
+            Clique num grupo para abrir a tabela com todas as respostas dele. Quem responde cada grupo
+            (a IA sozinha ou o CS) ainda vai ser decidido: a coluna "Sugestão" é só um ponto de partida.
+          </p>
+        </div>
+        <div class="tk-filtros">
+          <label class="campo">
+            <span>Formulário</span>
+            <select id="fm-formulario">
+              <option value="">Todos</option>
+              <option value="reembolso">Reembolso</option>
+              <option value="envio">Devolução (envio)</option>
+            </select>
+          </label>
+          <button class="btn btn-fantasma" id="fm-atualizar" type="button">Atualizar</button>
+        </div>
+      </header>
+      <div class="fm-links">
+        <a class="btn" href="https://docs.google.com/forms/d/e/1FAIpQLSd8fekrElkc-9Tdp2ZbSG2XeuYuH1WsBuWxElIqpX73pv_yeg/viewform" target="_blank" rel="noopener noreferrer">Formulário de reembolso ↗</a>
+        <a class="btn" href="https://docs.google.com/forms/d/e/1FAIpQLSc_pacqqIlcEl9JZwxw0ezp9H7xLlSX6ItY-fCN5qMVkiicNA/viewform?usp=sharing" target="_blank" rel="noopener noreferrer">Formulário de envio (devolução) ↗</a>
+      </div>
+      <p class="cartao-sub" id="fm-status"></p>
+    </section>
+    <section class="kpis kpis--suporte" id="fm-kpis"></section>
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Grupos de perfil</h2>
+          <p class="cartao-sub">Cada resposta cai em um único grupo. Na dúvida, o grupo é o do CS.</p>
+        </div>
+      </header>
+      <div id="fm-grupos"></div>
+    </section>
   </div>
 
   <!-- ── sub-página: métricas de tempo ── -->

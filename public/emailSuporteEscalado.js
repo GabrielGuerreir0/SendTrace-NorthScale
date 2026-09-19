@@ -15,6 +15,7 @@ import { n, relativo, dataHora, duracaoH } from './format.js';
 import { desenharColunas } from './charts.js';
 import { abrirNaTabela } from './emailTickets.js';
 import { abrirModalEmails } from './emailDetalhes.js';
+import { carregarFormularios } from './formulariosEscalado.js';
 
 /* ═══════════════════════════════  estado  ═══════════════════════════════ */
 
@@ -289,7 +290,7 @@ const tomColuna = (indice) => TONS_COLUNA[indice % TONS_COLUNA.length];
    gráfico cai num fallback de 640px que não cabe numa tela estreita.
    Redesenhar no momento em que a sub-página fica visível corrige isso: a
    essa altura o container já tem largura real pra medir. */
-const SUBABAS = { kanban: 'esc-subaba-kanban', metricas: 'esc-subaba-metricas' };
+const SUBABAS = { kanban: 'esc-subaba-kanban', metricas: 'esc-subaba-metricas', formularios: 'esc-subaba-formularios' };
 
 function mostrarSubaba(qual) {
   for (const [nome, id] of Object.entries(SUBABAS)) {
@@ -298,6 +299,7 @@ function mostrarSubaba(qual) {
   }
   localStorage.setItem('escSubaba', qual);
   if (qual === 'metricas') renderGraficosTempo();
+  if (qual === 'formularios') carregarFormularios();
 }
 
 for (const nome of Object.keys(SUBABAS)) {

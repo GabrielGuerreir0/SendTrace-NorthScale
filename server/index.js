@@ -1722,6 +1722,25 @@ async function atender(req, res, url, sessao) {
      Números agregados vêm de /api/visao-geral/ (Postgres direto); a faixa de
      status reaproveita os insights que já existem em régua/suporte/tickets/
      suporte escalado — ver visaoGeralResumo em server/dados.js. */
+  /* ── Suporte Escalado → respostas dos formulários (19/09/2026) — thin proxy, só leitura ── */
+  if (url.pathname === '/api/formularios/grupos') {
+    return json(res, 200, await obterApi('/api/formularios/grupos/', { formulario: textoOuNulo(url.searchParams.get('formulario')) }));
+  }
+  if (url.pathname === '/api/formularios/respostas') {
+    const perfil = textoOuNulo(url.searchParams.get('perfil'));
+    if (!perfil) return json(res, 400, { erro: 'Informe o perfil.' });
+    return json(res, 200, await obterApi('/api/formularios/respostas/', { perfil, formulario: textoOuNulo(url.searchParams.get('formulario')) }));
+  }
+  const rotaFormulario = /^\/api\/formularios\/(\d+)$/.exec(url.pathname);
+  if (rotaFormulario) {
+    try {
+      return json(res, 200, await obterApi(`/api/formularios/${rotaFormulario[1]}/`, {}));
+    } catch (err) {
+      if (err instanceof ErroApi && err.status === 404) return json(res, 404, { erro: 'Resposta não encontrada.' });
+      throw err;
+    }
+  }
+
   /* ── aba "Postmark" (18/09/2026): saúde do envio de e-mail — thin proxy, só leitura ── */
   if (url.pathname === '/api/postmark') {
     const dias = inteiroOuNulo(url.searchParams.get('dias'));

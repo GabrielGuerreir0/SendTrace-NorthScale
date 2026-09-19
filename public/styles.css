@@ -2506,3 +2506,27 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 .pm-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid var(--borda); }
 .pm-chip[data-tipo="SpamComplaint"] { color: var(--st-travado); border-color: color-mix(in srgb, var(--st-travado) 50%, var(--borda)); }
 .pm-chip[data-tipo="Bounce"] { color: var(--st-atrasado); border-color: color-mix(in srgb, var(--st-atrasado) 50%, var(--borda)); }
+
+/* ── Suporte Escalado → respostas dos formulários (19/09/2026) ───────────── */
+.fm-links { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 8px; }
+.fm-grupo { border: 1px solid var(--borda); border-radius: 10px; margin-bottom: 10px; background: var(--superficie); }
+.fm-grupo[open] { border-color: color-mix(in srgb, var(--st-em-dia) 40%, var(--borda)); }
+.fm-grupo-cab { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 14px; align-items: center; padding: 12px 14px; cursor: pointer; list-style: none; }
+.fm-grupo-cab::-webkit-details-marker { display: none; }
+.fm-grupo-cab::before { content: "▸"; color: var(--tinta-fraca); }
+.fm-grupo[open] > .fm-grupo-cab::before { content: "▾"; }
+.fm-grupo-tit { display: grid; gap: 2px; min-width: 0; text-align: left; }
+.fm-grupo-desc { color: var(--tinta-fraca); font-size: 13px; }
+.fm-grupo-nums { display: grid; text-align: right; }
+.fm-num { font-weight: 700; }
+.fm-num-sub { color: var(--tinta-fraca); font-size: 12px; }
+.fm-grupo-sug { display: flex; gap: 6px; }
+.fm-grupo-corpo { padding: 0 14px 14px; }
+.fm-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid var(--borda); white-space: nowrap; }
+.fm-chip[data-form="envio"] { color: var(--st-processando); }
+.fm-chip--sug[data-destino="automatica"] { color: var(--st-em-dia); border-color: color-mix(in srgb, var(--st-em-dia) 45%, var(--borda)); }
+.fm-chip--sug[data-destino="escalada"] { color: var(--st-atrasado); border-color: color-mix(in srgb, var(--st-atrasado) 50%, var(--borda)); }
+@media (max-width: 720px) { .fm-grupo-cab { grid-template-columns: auto minmax(0, 1fr); } .fm-grupo-nums, .fm-grupo-sug { grid-column: 2; text-align: left; } }
+.fm-tabela td { vertical-align: top; }
+.fm-tabela .fm-nowrap { white-space: nowrap; }
+.fm-sub { display: block; margin-top: 3px; color: var(--tinta-fraca); font-size: 12px; }
