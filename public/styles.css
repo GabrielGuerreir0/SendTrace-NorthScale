@@ -2415,6 +2415,27 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
   justify-content: flex-start !important; color: var(--tinta-fraca) !important; line-height: 1.5;
 }
 
+/* ── pedidos relacionados na ficha (front + upsell/downsell da mesma compra,
+   cada um podendo ter caído num provedor diferente — Red Rock/FullStack) ── */
+.rastreio-relacionados {
+  list-style: none; margin: 14px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.rastreio-relacionados li {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
+  padding: 9px 2px; border-bottom: 1px solid var(--borda); font-size: 13px;
+}
+.rastreio-relacionados li:last-child { border-bottom: none; }
+.rastreio-relacionados li span { color: var(--tinta-fraca); }
+.rastreio-relacionados-link {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--st-em-dia); font-weight: 600; font-size: 13px; text-decoration: underline;
+}
+.rastreio-relacionados-link:hover { color: var(--tinta); }
+.rastreio-relacionados-vazio {
+  justify-content: flex-start !important; color: var(--tinta-fraca) !important; line-height: 1.5;
+}
+
 /* ── linha do tempo do rastreio, versão degraus (página pública /rastreio) ──
    Degrau fixo (recebido → enviado → entregue), não um log de eventos: mostra
    onde o pedido ESTÁ na jornada, não só o que já aconteceu — é o que um lead

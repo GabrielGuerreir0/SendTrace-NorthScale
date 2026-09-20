@@ -351,6 +351,32 @@ export const RastreioEvento = {
   required: ['id', 'status_novo', 'fonte', 'detectado_em'],
 };
 
+export const RastreioRelacionado = {
+  $id: 'RastreioRelacionado',
+  type: 'object',
+  description: 'Outro pedido do MESMO cliente (por e-mail), a menos de 1 dia da compra de '
+    + 'referência — front (disparos_pos_venda) e upsell/downsell (compras_upsell_downsell) da '
+    + 'MESMA sessão de checkout resolvem pra transacao_id DIFERENTES (o upsell usa o próprio '
+    + 'order_id_global da FullStack/BuyGoods — ver rastreio_fullstack.py, _buscar_transacao_id), '
+    + 'e cada um pode acabar num provedor diferente (Red Rock/FullStack). Sem isto, a mesma '
+    + 'compra física virava duas fichas isoladas sem nenhuma pista de que são a mesma pessoa.',
+  properties: {
+    transacao_id: { type: 'string', maxLength: 120 },
+    origem: { type: 'string', enum: ['front', 'upsell_downsell'] },
+    produto: texto(300),
+    plataforma: texto(60),
+    criado_em: { type: ['string', 'null'], format: 'date-time' },
+    provedor: { type: ['string', 'null'], description: "'redrock' ou 'fullstack' quando encontrado; nulo se este pedido nunca foi consultado." },
+    status_interno: { type: ['string', 'null'] },
+    tracking_number: texto(120),
+    carrier_code: texto(60),
+    shipped_at: { type: ['string', 'null'], format: 'date-time' },
+    delivered_at: { type: ['string', 'null'], format: 'date-time' },
+    atualizado_em: { type: ['string', 'null'], format: 'date-time' },
+  },
+  required: ['transacao_id', 'origem'],
+};
+
 /** Compartilhado entre RastreioDetalhe e RastreioPublico — ver comentário em api/rotas/rastreio.js. */
 const marcos = {
   type: 'object',
@@ -385,6 +411,13 @@ export const RastreioDetalhe = {
         tracking: { type: ['array', 'null'], description: 'Array tracking[] cru da Red Rock — cobre reenvio/superseded.' },
         cancellation: { type: ['object', 'null'] },
         eventos: { type: 'array', items: { $ref: 'RastreioEvento#' } },
+        relacionados: {
+          type: 'array',
+          items: { $ref: 'RastreioRelacionado#' },
+          description: 'Outros pedidos (front/upsell/downsell) do mesmo cliente dentro de 1 dia '
+            + 'da compra — junta Red Rock e FullStack quando cada um resolveu um pedido diferente '
+            + 'da mesma venda. Ver RastreioRelacionado.',
+        },
         marcos,
         checkpoints_transportadora: checkpointsTransportadora,
         ...parado,
@@ -767,7 +800,7 @@ export const TODOS = [
   PainelLinhaMensagens, PainelLinhaHistorico, ConfigDisparo, PainelUsuario,
   Credenciais, ParTokens, PedidoRefresh, Erro,
   ContagemPorEstado, ResumoEtapa, Produto, Balde, EntradaDia, ContagemStatus,
-  RastreioPedido, RastreioEvento, RastreioDetalhe, ResumoRastreio, SaudeRastreio, RastreioDetalheLinha,
+  RastreioPedido, RastreioEvento, RastreioRelacionado, RastreioDetalhe, ResumoRastreio, SaudeRastreio, RastreioDetalheLinha,
   SerieSaudeRastreio, RastreioPublico,
 ];
 

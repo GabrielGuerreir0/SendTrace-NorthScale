@@ -229,6 +229,52 @@ function resolverMetricaTempo(req, f) {
   return { de, extra, duracaoExpr, valores, i };
 }
 
+/**
+ * Front (disparos_pos_venda) e upsell/downsell (compras_upsell_downsell) da
+ * MESMA compra resolvem pra transacao_id DIFERENTES — o upsell usa o próprio
+ * order_id_global da FullStack/BuyGoods (ver rastreio_fullstack.py,
+ * _buscar_transacao_id) — então cada um vira uma linha própria em
+ * `rastreio_pedidos`, às vezes num provedor diferente (Red Rock/FullStack),
+ * mesmo sendo a MESMA pessoa/pedido físico. Junta os dois pelo e-mail do
+ * cliente, restrito a 1 dia da compra de referência: front e upsell
+ * acontecem na mesma sessão de checkout, a janela é só folga pra atraso de
+ * import/fuso — não pra pegar uma recompra futura do mesmo cliente.
+ */
+async function buscarRelacionados(transacaoId, emailFront, compraCriadoEm) {
+  let email = emailFront;
+  let referenciaEm = compraCriadoEm;
+  if (!email) {
+    // transacaoId não bateu em disparos_pos_venda (d veio tudo NULL no LEFT
+    // JOIN) — é um upsell/downsell resolvido pelo próprio order_id_global.
+    const upsell = await query(
+      'SELECT email, criado_em FROM compras_upsell_downsell WHERE transacao_id = $1 LIMIT 1',
+      [transacaoId],
+    );
+    email = upsell.rows[0]?.email ?? null;
+    referenciaEm = upsell.rows[0]?.criado_em ?? null;
+  }
+  if (!email || !referenciaEm) return [];
+
+  const { rows } = await query(
+    `SELECT todos.transacao_id, todos.origem, todos.produto, todos.plataforma, todos.criado_em,
+            r2.provedor, r2.status_interno, r2.tracking_number, r2.carrier_code,
+            r2.shipped_at, r2.delivered_at, r2.atualizado_em
+     FROM (
+       SELECT transacao_id, 'front' AS origem, produto, btrim(plataforma) AS plataforma, criado_em
+       FROM disparos_pos_venda WHERE lower(email) = lower($1)
+       UNION ALL
+       SELECT transacao_id, 'upsell_downsell' AS origem, produto, btrim(plataforma) AS plataforma, criado_em
+       FROM compras_upsell_downsell WHERE lower(email) = lower($1)
+     ) todos
+     LEFT JOIN rastreio_pedidos r2 ON r2.transacao_id = todos.transacao_id
+     WHERE todos.transacao_id <> $2
+       AND abs(extract(epoch FROM (todos.criado_em - $3::timestamptz))) <= 86400
+     ORDER BY todos.criado_em ASC`,
+    [email, transacaoId, referenciaEm],
+  );
+  return rows;
+}
+
 export default async function rotasRastreio(app) {
   /* ═══════════════════════════  internas (painel)  ═══════════════════════ */
 
@@ -306,7 +352,7 @@ export default async function rotasRastreio(app) {
     },
   }, async (req) => {
     const { rows } = await query(
-      `SELECT ${COLUNAS_LISTA}, r.tracking, r.cancellation
+      `SELECT ${COLUNAS_LISTA}, r.tracking, r.cancellation, d.email, d.criado_em AS compra_criado_em
        FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
        WHERE r.transacao_id = $1`,
       [req.params.transacao_id],
@@ -319,9 +365,13 @@ export default async function rotasRastreio(app) {
        ORDER BY detectado_em DESC LIMIT 100`,
       [req.params.transacao_id],
     );
+    // email/compra_criado_em não fazem parte do schema RastreioDetalhe — o
+    // serializador do Fastify (fast-json-stringify) já os descarta sozinho
+    // por não estarem declarados, não precisa apagar do objeto na mão.
     return {
       ...rows[0],
       eventos: eventos.rows,
+      relacionados: await buscarRelacionados(req.params.transacao_id, rows[0].email, rows[0].compra_criado_em),
       marcos: {
         criado_em: rows[0].order_created_at,
         enviado_em: rows[0].shipped_at,

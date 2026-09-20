@@ -246,6 +246,12 @@ const DIC = {
   fichaLinhaTempo: { en: 'Timeline', pt: 'Linha do tempo' },
   linhaTempoVazia: { en: 'No status change recorded yet.', pt: 'Nenhuma mudança de status registrada ainda.' },
   primeiroRegistro: { en: 'First record — {status}', pt: 'Primeiro registro — {status}' },
+
+  // relacionados (front + upsell/downsell da mesma compra, cada um podendo ter caído num provedor diferente)
+  fichaRelacionados: { en: 'Related orders (same customer)', pt: 'Pedidos relacionados (mesmo cliente)' },
+  relacionadosVazio: { en: 'No other order from this customer within 1 day of this purchase.', pt: 'Nenhum outro pedido desse cliente a menos de 1 dia desta compra.' },
+  origemFront: { en: 'Front', pt: 'Front' },
+  origemUpsellDownsell: { en: 'Upsell/Downsell', pt: 'Upsell/Downsell' },
 };
 const t = criarTradutor(DIC);
 
@@ -387,6 +393,51 @@ function renderLinhaTempo(eventos) {
   return ul;
 }
 
+/** Front e upsell/downsell da mesma compra caem em transacao_id diferentes
+ * (ver comentário em api/rotas/rastreio.js) — cada item aqui é clicável e
+ * abre a PRÓPRIA ficha desse outro pedido, então clicar tanto no lado Red
+ * Rock quanto no lado FullStack de uma mesma venda leva a informação de um
+ * pro outro. */
+function renderRelacionados(relacionados) {
+  const ul = document.createElement('ul');
+  ul.className = 'rastreio-relacionados';
+  if (!relacionados?.length) {
+    const li = document.createElement('li');
+    li.className = 'rastreio-relacionados-vazio';
+    li.textContent = t('relacionadosVazio');
+    ul.append(li);
+    return ul;
+  }
+  for (const rel of relacionados) {
+    const li = document.createElement('li');
+    li.className = 'rastreio-relacionados-item';
+
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = 'rastreio-relacionados-link';
+    botao.textContent = rel.transacao_id;
+    botao.addEventListener('click', () => abrirDetalhePedido({ transacao_id: rel.transacao_id }));
+
+    const meta = document.createElement('span');
+    meta.textContent = `${rel.origem === 'front' ? t('origemFront') : t('origemUpsellDownsell')}`
+      + ` · ${rel.produto || '—'} · ${rotularPlataforma(rel.plataforma)}`;
+
+    const status = document.createElement('span');
+    status.append(seloProvedor(rel.provedor), ' ', chipRastreio(rel.status_interno));
+    if (rel.tracking_number) {
+      status.append(' · ');
+      const tn = document.createElement('span');
+      tn.className = 'cel-mono';
+      tn.textContent = rel.tracking_number;
+      status.append(tn);
+    }
+
+    li.append(botao, meta, status);
+    ul.append(li);
+  }
+  return ul;
+}
+
 async function abrirDetalhePedido(linha) {
   const { ok, dados: d } = await api(`/api/rastreio/${encodeURIComponent(linha.transacao_id)}`);
   if (!ok) { window.alert(t('erroCarregarFicha')); return; }
@@ -426,6 +477,7 @@ async function abrirDetalhePedido(linha) {
       { rotulo: t('fichaEnviadoEm'), valor: d.shipped_at ? dataHora(d.shipped_at) : '—' },
       { rotulo: t('fichaEntregueEm'), valor: d.delivered_at ? dataHora(d.delivered_at) : '—' },
       { rotulo: t('fichaUltimaConsulta'), valor: d.ultima_consulta_em ? dataHora(d.ultima_consulta_em) : '—' },
+      { rotulo: t('fichaRelacionados'), valor: renderRelacionados(d.relacionados), largo: true },
       { rotulo: t('fichaLinhaTempo'), valor: renderLinhaTempo(d.eventos), largo: true },
     ],
   });
