@@ -25,8 +25,16 @@ let carregando = false;
 const abertos = new Set();          // perfis com o acordeão aberto (sobrevive a "Atualizar")
 const cacheLinhas = new Map();      // perfil → linhas já baixadas
 
+/** Mesmo `boardId` do seletor no topo do Suporte Escalado (emailSuporteEscalado.js)
+ * — aqui só pra lembrar entre uma chamada e outra (ex.: trocar o filtro de
+ * formulário sem re-passar o board). `null`/`'todos'` = sem filtro (mostra
+ * de todo mundo); um id = só as respostas cujo caso está NAQUELE board —
+ * é o que separa "o que é do Rodrigo" de "o que é da Vitória". */
+let boardAtual = null;
+
 const filtroForm = () => $('fm-formulario').value || '';
 const qsForm = () => (filtroForm() ? `&formulario=${encodeURIComponent(filtroForm())}` : '');
+const qsBoard = () => (boardAtual && boardAtual !== 'todos' ? `&board_id=${encodeURIComponent(boardAtual)}` : '');
 
 /* ── ficha de uma resposta ── */
 async function abrirResposta(id) {
@@ -101,7 +109,7 @@ function tabelaDoGrupo(perfil, linhas, corpo) {
 
 async function carregarLinhas(perfil, corpo) {
   corpo.replaceChildren(el('p', 'vazio-suave', 'carregando…'));
-  const { ok, dados } = await api(`/api/formularios/respostas?perfil=${encodeURIComponent(perfil)}${qsForm()}`);
+  const { ok, dados } = await api(`/api/formularios/respostas?perfil=${encodeURIComponent(perfil)}${qsForm()}${qsBoard()}`);
   if (!ok) { corpo.replaceChildren(el('p', 'vazio-suave', 'Não consegui carregar as respostas deste grupo.')); return; }
   cacheLinhas.set(perfil, dados.itens);
   if (!dados.itens.length) { corpo.replaceChildren(el('p', 'vazio-suave', 'Nenhuma resposta neste grupo.')); return; }
@@ -154,11 +162,12 @@ function renderKpis(meta, grupos) {
     : 'As planilhas ainda não foram importadas. O n8n importa a cada 15 minutos.';
 }
 
-export async function carregarFormularios() {
+export async function carregarFormularios(boardId) {
+  if (boardId !== undefined) boardAtual = boardId;
   if (carregando) return;
   carregando = true;
   cacheLinhas.clear();
-  const { ok, dados } = await api(`/api/formularios/grupos?${qsForm().slice(1)}`);
+  const { ok, dados } = await api(`/api/formularios/grupos?${(qsForm() + qsBoard()).slice(1)}`);
   carregando = false;
   if (!ok) { $('fm-grupos').replaceChildren(el('p', 'vazio-suave', 'Não consegui carregar as respostas dos formulários agora.')); return; }
   renderKpis(dados.meta, dados.grupos);

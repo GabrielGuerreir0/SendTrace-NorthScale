@@ -1377,10 +1377,28 @@ async function atender(req, res, url, sessao) {
   if (url.pathname === '/api/galeria') {
     const q = url.searchParams;
     return json(res, 200, await obterApi('/api/galeria', {
-      pagina: q.get('pagina'), por_pagina: q.get('por_pagina'), tipo: q.get('tipo'), q: q.get('q'),
+      pagina: q.get('pagina'), por_pagina: q.get('por_pagina'), tipo: q.get('tipo'), defeito: q.get('defeito'), q: q.get('q'),
       dias: q.get('dias'), data_de: q.get('data_de'), data_ate: q.get('data_ate'),
       produto: q.get('produto'), loja: q.get('loja'),
     }));
+  }
+
+  // PDF em si: bytes crus, não JSON — mesmo padrão de /api/relatorio/pdf logo
+  // abaixo (não pode passar por obterApi(), que sempre decodifica como JSON).
+  if (url.pathname === '/api/galeria/exportar/pdf') {
+    const q = url.searchParams;
+    const params = new URLSearchParams();
+    for (const chave of ['tipo', 'defeito', 'q', 'dias', 'data_de', 'data_ate', 'produto', 'loja']) {
+      const v = q.get(chave);
+      if (v !== null && v !== '') params.set(chave, v);
+    }
+    const { buffer } = await obterBinario(`/api/galeria/exportar/pdf?${params}`);
+    res.writeHead(200, {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'attachment; filename="galeria-sendtrace.pdf"',
+    });
+    res.end(buffer);
+    return ATENDIDO;
   }
 
   /* ── boards do kanban de suporte escalado: um por responsável ──
@@ -1724,12 +1742,18 @@ async function atender(req, res, url, sessao) {
      suporte escalado — ver visaoGeralResumo em server/dados.js. */
   /* ── Suporte Escalado → respostas dos formulários (19/09/2026) — thin proxy, só leitura ── */
   if (url.pathname === '/api/formularios/grupos') {
-    return json(res, 200, await obterApi('/api/formularios/grupos/', { formulario: textoOuNulo(url.searchParams.get('formulario')) }));
+    return json(res, 200, await obterApi('/api/formularios/grupos/', {
+      formulario: textoOuNulo(url.searchParams.get('formulario')),
+      board_id: textoOuNulo(url.searchParams.get('board_id')),
+    }));
   }
   if (url.pathname === '/api/formularios/respostas') {
     const perfil = textoOuNulo(url.searchParams.get('perfil'));
     if (!perfil) return json(res, 400, { erro: 'Informe o perfil.' });
-    return json(res, 200, await obterApi('/api/formularios/respostas/', { perfil, formulario: textoOuNulo(url.searchParams.get('formulario')) }));
+    return json(res, 200, await obterApi('/api/formularios/respostas/', {
+      perfil, formulario: textoOuNulo(url.searchParams.get('formulario')),
+      board_id: textoOuNulo(url.searchParams.get('board_id')),
+    }));
   }
   const rotaFormulario = /^\/api\/formularios\/(\d+)$/.exec(url.pathname);
   if (rotaFormulario) {

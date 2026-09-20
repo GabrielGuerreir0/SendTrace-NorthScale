@@ -35,6 +35,13 @@ const JUNTA_CASO = `LEFT JOIN email_ia.suporte_escalado s ON lower(s.remetente_e
 
 export default async function rotasFormularios(app) {
   const FORMULARIO = { type: 'string', enum: ['reembolso', 'envio'] };
+  const BOARD_ID = {
+    type: 'integer',
+    description: 'Mesmo seletor de board do Kanban de Suporte Escalado (topo da tela) — filtra pra só as '
+      + 'respostas cujo caso está NESSE board (ex.: separar o que é do Rodrigo do que é da Vitória). Uma '
+      + 'resposta sem caso aberto ainda não pertence a nenhum board, então fica de fora quando um board '
+      + 'específico é escolhido.',
+  };
 
   app.get('/api/formularios/grupos/', {
     onRequest: [app.exigirSessao],
@@ -43,24 +50,28 @@ export default async function rotasFormularios(app) {
       summary: 'Grupos de perfil das respostas dos formulários (reembolso e devolução)',
       description: 'Uma linha por perfil, com contagens e o destino SUGERIDO (a decisão é humana). Só leitura.',
       security: [{ bearerAuth: [] }],
-      querystring: { type: 'object', properties: { formulario: FORMULARIO } },
+      querystring: { type: 'object', properties: { formulario: FORMULARIO, board_id: BOARD_ID } },
     },
   }, async (req) => {
     const form = req.query.formulario ?? null;
+    const boardId = req.query.board_id ?? null;
     const [grupos, meta] = await Promise.all([
-      query(`SELECT perfil, count(*)::int AS total, count(DISTINCT email)::int AS clientes,
-                    count(*) FILTER (WHERE formulario = 'reembolso')::int AS reembolso,
-                    count(*) FILTER (WHERE formulario = 'envio')::int AS envio,
-                    count(*) FILTER (WHERE destino = 'automatica')::int AS sug_automatica,
-                    count(*) FILTER (WHERE destino = 'escalada')::int AS sug_escalada,
-                    max(respondido_em) AS ultima_resposta
-             FROM formularios_respostas WHERE perfil IS NOT NULL AND ($1::text IS NULL OR formulario = $1)
-             GROUP BY perfil`, [form]),
-      query(`SELECT count(*)::int AS total, count(DISTINCT email)::int AS clientes,
-                    count(*) FILTER (WHERE respondido_em >= now() - interval '7 days')::int AS ultimos_7_dias,
-                    count(*) FILTER (WHERE perfil IS NULL)::int AS sem_perfil,
-                    max(importado_em) AS ultima_importacao, max(respondido_em) AS ultima_resposta
-             FROM formularios_respostas WHERE ($1::text IS NULL OR formulario = $1)`, [form]),
+      query(`SELECT f.perfil, count(*)::int AS total, count(DISTINCT f.email)::int AS clientes,
+                    count(*) FILTER (WHERE f.formulario = 'reembolso')::int AS reembolso,
+                    count(*) FILTER (WHERE f.formulario = 'envio')::int AS envio,
+                    count(*) FILTER (WHERE f.destino = 'automatica')::int AS sug_automatica,
+                    count(*) FILTER (WHERE f.destino = 'escalada')::int AS sug_escalada,
+                    max(f.respondido_em) AS ultima_resposta
+             FROM formularios_respostas f ${JUNTA_CASO}
+             WHERE f.perfil IS NOT NULL AND ($1::text IS NULL OR f.formulario = $1)
+               AND ($2::int IS NULL OR s.board_id = $2)
+             GROUP BY f.perfil`, [form, boardId]),
+      query(`SELECT count(*)::int AS total, count(DISTINCT f.email)::int AS clientes,
+                    count(*) FILTER (WHERE f.respondido_em >= now() - interval '7 days')::int AS ultimos_7_dias,
+                    count(*) FILTER (WHERE f.perfil IS NULL)::int AS sem_perfil,
+                    max(f.importado_em) AS ultima_importacao, max(f.respondido_em) AS ultima_resposta
+             FROM formularios_respostas f ${JUNTA_CASO}
+             WHERE ($1::text IS NULL OR f.formulario = $1) AND ($2::int IS NULL OR s.board_id = $2)`, [form, boardId]),
     ]);
     const itens = grupos.rows.map((g) => ({
       ...g, ...(PERFIS[g.perfil] ?? { ordem: 99, rotulo: g.perfil, descricao: '' }),
@@ -77,16 +88,19 @@ export default async function rotasFormularios(app) {
       querystring: {
         type: 'object',
         required: ['perfil'],
-        properties: { perfil: { type: 'string' }, formulario: FORMULARIO, limit: { type: 'integer', minimum: 1, maximum: 1000, default: 500 } },
+        properties: {
+          perfil: { type: 'string' }, formulario: FORMULARIO, board_id: BOARD_ID,
+          limit: { type: 'integer', minimum: 1, maximum: 1000, default: 500 },
+        },
       },
     },
   }, async (req) => {
-    const { perfil, formulario = null, limit = 500 } = req.query;
+    const { perfil, formulario = null, board_id: boardId = null, limit = 500 } = req.query;
     const { rows } = await query(
       `SELECT ${LEVE} FROM formularios_respostas f ${JUNTA_CASO}
-       WHERE f.perfil = $1 AND ($2::text IS NULL OR f.formulario = $2)
+       WHERE f.perfil = $1 AND ($2::text IS NULL OR f.formulario = $2) AND ($4::int IS NULL OR s.board_id = $4)
        ORDER BY f.respondido_em DESC NULLS LAST, f.id DESC LIMIT $3`,
-      [perfil, formulario, limit],
+      [perfil, formulario, limit, boardId],
     );
     return { perfil, total: rows.length, itens: rows };
   });

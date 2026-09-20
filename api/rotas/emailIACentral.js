@@ -52,6 +52,52 @@ const rotuloCategoria = (c) => LABEL_CATEGORIA[c]
   ?? String(c ?? '').replace(/_/g, ' ').replace(/^./, (ch) => ch.toUpperCase());
 
 /**
+ * WHERE de `/api/galeria` — extraído pra ser reaproveitado por
+ * `/api/galeria/exportar/pdf` (galeriaExportar.js): o PDF exporta exatamente
+ * o que a tela está filtrando, então as duas rotas precisam construir a
+ * MESMA condição a partir da MESMA querystring, nunca duas cópias que podem
+ * desalinhar. `i` sempre recomeça em 1 — quem chama monta a query final com
+ * `${onde}` e `[...valores, ...]`.
+ *
+ * `defeito` é um filtro À PARTE de `tipo` (não um valor de `tipo_conteudo`):
+ * a IA marca `defeito_visivel` numa foto mesmo quando ela classificou o
+ * anexo como `foto_produto` (ou outra categoria) — sem este filtro, boa
+ * parte das fotos de produto danificado nunca aparecia clicando no chip
+ * "Defeito" (achado real: 51 de 69 anexos com `defeito_visivel=true` tinham
+ * `tipo_conteudo` diferente de 'defeito').
+ */
+export async function montarFiltroGaleria(reqQuery) {
+  const qs = await resolverEmailsProdutoLoja(reqQuery, query);
+  const condicoes = [];
+  const valores = [];
+  let i = 1;
+
+  if (qs.tipo === 'sem_analise') {
+    condicoes.push('a.tipo_conteudo IS NULL');
+  } else if (qs.tipo) {
+    condicoes.push(`a.tipo_conteudo = $${i}`);
+    valores.push(qs.tipo);
+    i += 1;
+  }
+  if (qs.defeito === true) {
+    condicoes.push('a.defeito_visivel');
+  }
+  if (qs.q) {
+    condicoes.push(`(a.nome_arquivo ILIKE $${i} OR a.descricao_ia ILIKE $${i}
+      OR array_to_string(a.tags, ' ') ILIKE $${i} OR e.remetente_nome ILIKE $${i}
+      OR e.remetente_email ILIKE $${i} OR e.assunto ILIKE $${i})`);
+    valores.push(`%${qs.q}%`);
+    i += 1;
+  }
+  // Anexo sem e-mail vinculado (e IS NULL, do LEFT JOIN abaixo) fica de fora
+  // sempre que um destes três estiver ativo — não tem como saber a data, o
+  // produto ou a loja de um anexo sem remetente.
+  i = condicaoPeriodo(qs, 'e.data_email', condicoes, valores, i);
+  i = condicaoProdutoLoja(qs, 'e.remetente_email', condicoes, valores, i);
+  return { onde: condicoes.length ? condicoes.join(' AND ') : 'true', valores, proximoIndice: i };
+}
+
+/**
  * E-mails de antes do sistema de resposta automática entrar no ar (import
  * histórico de caixa antiga, feito em 06/08/2026) nunca tiveram chance real
  * de receber resposta da IA — taxa de resposta automática era 0% até
@@ -779,6 +825,7 @@ export default async function rotasEmailIACentral(app) {
           pagina: { type: 'integer', default: 1, minimum: 1 },
           por_pagina: { type: 'integer', default: 24, minimum: 6, maximum: 96 },
           tipo: { type: 'string' },
+          defeito: { type: 'boolean', description: 'Só anexos com defeito_visivel=true, independente do tipo_conteudo — uma foto de produto danificado pode estar classificada como "foto_produto" e não só como "defeito".' },
           q: { type: 'string' },
           dias: { type: 'integer', minimum: 1 },
           data_de: { type: 'string' },
@@ -792,37 +839,13 @@ export default async function rotasEmailIACentral(app) {
     const pagina = Math.max(1, Number(req.query.pagina) || 1);
     const porPagina = Math.min(96, Math.max(6, Number(req.query.por_pagina) || 24));
     const offset = (pagina - 1) * porPagina;
-    const qs = await resolverEmailsProdutoLoja(req.query, query);
-
-    const condicoes = [];
-    const valores = [];
-    let i = 1;
-
-    if (qs.tipo === 'sem_analise') {
-      condicoes.push('a.tipo_conteudo IS NULL');
-    } else if (qs.tipo) {
-      condicoes.push(`a.tipo_conteudo = $${i}`);
-      valores.push(qs.tipo);
-      i += 1;
-    }
-    if (qs.q) {
-      condicoes.push(`(a.nome_arquivo ILIKE $${i} OR a.descricao_ia ILIKE $${i}
-        OR array_to_string(a.tags, ' ') ILIKE $${i} OR e.remetente_nome ILIKE $${i}
-        OR e.remetente_email ILIKE $${i} OR e.assunto ILIKE $${i})`);
-      valores.push(`%${qs.q}%`);
-      i += 1;
-    }
-    // Anexo sem e-mail vinculado (e IS NULL, do LEFT JOIN abaixo) fica de
-    // fora sempre que um destes três estiver ativo — não tem como saber a
-    // data, o produto ou a loja de um anexo sem remetente.
-    i = condicaoPeriodo(qs, 'e.data_email', condicoes, valores, i);
-    i = condicaoProdutoLoja(qs, 'e.remetente_email', condicoes, valores, i);
-    const onde = condicoes.length ? condicoes.join(' AND ') : 'true';
+    const { onde, valores, proximoIndice: i } = await montarFiltroGaleria(req.query);
 
     const { rows } = await query(
       `SELECT json_build_object(
          'total', (SELECT count(*) FROM email_ia.anexos a
            LEFT JOIN email_ia.emails e USING (message_id) WHERE ${onde}),
+         'total_defeito', (SELECT count(*)::int FROM email_ia.anexos WHERE defeito_visivel),
          'tipos', (SELECT COALESCE(json_agg(t), '[]'::json) FROM (
            SELECT coalesce(tipo_conteudo, 'sem_analise') AS tipo, count(*)::int AS total
            FROM email_ia.anexos GROUP BY 1 ORDER BY 2 DESC) t),

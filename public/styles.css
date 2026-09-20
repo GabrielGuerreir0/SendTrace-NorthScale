@@ -2312,6 +2312,15 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 }
 .gal-chip-filtro:hover { border-color: var(--eixo); }
 .gal-chip-filtro[aria-pressed="true"] { color: var(--plano); background: var(--tinta); border-color: var(--tinta); }
+/* Toggle à parte dos chips de tipo (soma com eles, não substitui) — mesma
+   cor do selo "defeito visível" do cartão (.gal-chip--defeito), só que como
+   filtro clicável. */
+.gal-chip-filtro--defeito {
+  color: var(--st-travado); border-color: color-mix(in srgb, var(--st-travado) 45%, var(--borda));
+}
+.gal-chip-filtro--defeito[aria-pressed="true"] {
+  color: var(--branco, #fff); background: var(--st-travado); border-color: var(--st-travado);
+}
 
 .gal-grade {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px;

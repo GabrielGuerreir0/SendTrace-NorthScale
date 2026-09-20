@@ -245,6 +245,7 @@ async function carregarBoards() {
     boardId = null;
     renderControlesBoard();
     await carregarDados();
+    if (!$('esc-subaba-formularios').hidden) carregarFormularios(boardId);
     return;
   }
   boards = dados.boards ?? [];
@@ -269,6 +270,11 @@ async function carregarBoards() {
   renderControlesBoard();
   await renderFormBoard();
   await carregarDados();
+  // Se a página abriu direto na sub-aba "Respostas dos formulários"
+  // (`escSubaba` salvo), a chamada em mostrarSubaba() lá embaixo aconteceu
+  // ANTES do board ser resolvido (esta função é assíncrona) — sem isto, o
+  // primeiro carregamento sairia sem filtro nenhum de board.
+  if (!$('esc-subaba-formularios').hidden) carregarFormularios(boardId);
 }
 
 /** Cicla pela mesma paleta de 6 tons que o resto do painel já usa (--st-*)
@@ -299,7 +305,7 @@ function mostrarSubaba(qual) {
   }
   localStorage.setItem('escSubaba', qual);
   if (qual === 'metricas') renderGraficosTempo();
-  if (qual === 'formularios') carregarFormularios();
+  if (qual === 'formularios') carregarFormularios(boardId);
 }
 
 for (const nome of Object.keys(SUBABAS)) {
@@ -1499,6 +1505,10 @@ $('esc-board-seletor').addEventListener('change', (e) => {
   expandidos.clear();
   renderControlesBoard();
   carregarDados();
+  // Sub-aba "Respostas dos formulários" tem seu próprio carregamento (só
+  // dispara ao abrir a sub-aba) — sem isto, trocar o board com essa sub-aba
+  // já aberta deixava a tabela mostrando o board antigo até alguém recarregar.
+  if (!$('esc-subaba-formularios').hidden) carregarFormularios(boardId);
 });
 $('esc-board-novo').addEventListener('click', () => {
   boardFormAberto = 'novo';

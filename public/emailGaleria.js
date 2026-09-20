@@ -16,6 +16,7 @@ const POR_PAGINA = 24;
 
 let pagina = 1;
 let tipoAtivo = null;
+let defeitoAtivo = false;
 let busca = '';
 
 /* ═══════════════════════════════  desenho  ═══════════════════════════════ */
@@ -258,7 +259,7 @@ async function abrirDetalheAnexo(id) {
   });
 }
 
-function renderChips(tipos) {
+function renderChips(tipos, totalDefeito) {
   const totalGeral = tipos.reduce((a, t) => a + t.total, 0);
   const container = $('gl-chips');
   container.replaceChildren();
@@ -280,6 +281,18 @@ function renderChips(tipos) {
     b.addEventListener('click', () => { tipoAtivo = t.tipo; pagina = 1; carregar(); });
     container.append(b);
   }
+
+  // Filtro À PARTE de tipo (combina com ele, não substitui): a IA marca
+  // defeito_visivel numa foto mesmo quando ela classificou o anexo como
+  // "foto_produto" (ou outra categoria) — sem este toggle, boa parte das
+  // fotos de produto danificado nunca aparecia clicando só no chip "Defeito".
+  const defeito = document.createElement('button');
+  defeito.className = 'gal-chip-filtro gal-chip-filtro--defeito';
+  defeito.type = 'button';
+  defeito.textContent = `⚠ Com defeito visível (${n(totalDefeito ?? 0)})`;
+  defeito.setAttribute('aria-pressed', String(defeitoAtivo));
+  defeito.addEventListener('click', () => { defeitoAtivo = !defeitoAtivo; pagina = 1; carregar(); });
+  container.append(defeito);
 }
 
 function renderPaginacao(total) {
@@ -308,22 +321,31 @@ function renderPaginacao(total) {
 
 /* ═══════════════════════════════  carregamento  ═══════════════════════════ */
 
+/** Os mesmos filtros ativos na tela (tipo, defeito, busca + o que qsFiltroCE
+ * já resolve de período/produto/loja) — usado tanto pra carregar a grade
+ * quanto pra exportar em PDF exatamente o que está filtrado. */
+function qsFiltroAtual() {
+  const qs = qsFiltroCE();
+  if (tipoAtivo) qs.set('tipo', tipoAtivo);
+  if (defeitoAtivo) qs.set('defeito', 'true');
+  if (busca) qs.set('q', busca);
+  return qs;
+}
+
 let geracao = 0;
 
 async function carregar() {
   const meu = ++geracao;
-  const qs = qsFiltroCE();
+  const qs = qsFiltroAtual();
   qs.set('pagina', String(pagina));
   qs.set('por_pagina', String(POR_PAGINA));
-  if (tipoAtivo) qs.set('tipo', tipoAtivo);
-  if (busca) qs.set('q', busca);
 
   try {
     const { ok, dados } = await api(`/api/galeria?${qs}`);
     if (meu !== geracao) return;
     if (!ok) throw new Error(dados?.erro ?? 'falha ao carregar');
 
-    renderChips(dados.tipos ?? []);
+    renderChips(dados.tipos ?? [], dados.total_defeito);
 
     const grade = $('gl-grade');
     grade.replaceChildren();
@@ -354,5 +376,44 @@ $('gl-busca').addEventListener('input', debounce((e) => {
 }, 350));
 
 aoMudarFiltroCE(() => { pagina = 1; carregar(); });
+
+/*
+ * "Exportar PDF" — mesmo padrão de "Baixar PDF" do Relatório de Métricas
+ * (relatorioMetricas.js): fetch cru, não o `api()` de JSON, porque o corpo é
+ * binário. Manda os MESMOS filtros que estão na tela agora (tipo, defeito,
+ * busca, período, produto, loja) — sem paginação, a API decide até quantos
+ * anexos entram (e avisa dentro do próprio PDF se cortou por causa do limite).
+ */
+$('gl-exportar-pdf')?.addEventListener('click', async () => {
+  const btn = $('gl-exportar-pdf');
+  const status = $('gl-exportar-status');
+  const qs = qsFiltroAtual();
+
+  btn.disabled = true;
+  status.hidden = false;
+  status.textContent = 'Gerando o PDF (pode levar alguns segundos com muitas imagens)…';
+
+  try {
+    const resp = await fetch(`/api/galeria/exportar/pdf?${qs}`);
+    if (resp.status === 401) { location.replace('/login'); return; }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'galeria-sendtrace.pdf';
+    document.body.append(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    status.textContent = 'PDF baixado.';
+  } catch (err) {
+    status.textContent = `Falha ao gerar o PDF: ${err.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 carregar();

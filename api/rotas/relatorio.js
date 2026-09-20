@@ -285,7 +285,7 @@ const LABEL_MOTIVO_DEVOLUCAO = {
   diferente_do_anuncio: 'Diferente do anúncio', compra_duplicada: 'Compra duplicada',
   sem_resultado_esperado: 'Sem resultado esperado', motivo_saude: 'Motivo de saúde', outro: 'Outro',
 };
-const LABEL_TIPO_CONTEUDO = {
+export const LABEL_TIPO_CONTEUDO = {
   foto_produto: 'Foto de produto', defeito: 'Defeito', nota_fiscal: 'Nota fiscal',
   comprovante: 'Comprovante', print_tela: 'Print de tela', documento: 'Documento', outro: 'Outro',
   sem_analise: 'Sem análise',
