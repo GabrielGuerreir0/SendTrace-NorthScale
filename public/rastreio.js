@@ -52,6 +52,13 @@ const estado = {
 const DIC = {
   // cabeçalho da aba
   titRastreio: { en: 'Order Tracking', pt: 'Rastreio de Pedidos' },
+  heroRastreioEye: { en: 'Order tracking', pt: 'Rastreio de pedidos' },
+  heroRastreioA: { en: 'From the order', pt: 'Do pedido' },
+  heroRastreioB: { en: "to the customer's door.", pt: 'à porta do cliente.' },
+  heroRastreioSub: {
+    en: 'Status of every order at Red Rock and FullStack, delivery times and late deliveries.',
+    pt: 'Status de cada pedido na Red Rock e na FullStack, prazos de entrega e entregas atrasadas.',
+  },
   subRastreio: {
     en: 'Checked against Red Rock and FullStack by separate scripts (never real-time). An order '
       + 'can still show up as "not found on either platform" — expected for a checkout/platform '

@@ -2710,3 +2710,72 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .vg-par-txt { font: 500 10.5px/1.2 var(--fonte-mono); color: var(--tinta-fraca); margin-bottom: 3px; }
 
 .vg-card > .vg-tag { align-self: flex-start; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Sistema de página (21/09/2026) — o visual da Visão Geral em TODAS as telas.
+   Mesmos tokens, mesmo cabeçalho, mesmos alertas. Tudo aqui reaproveita o que
+   a Home já define (.vg-heroi, .vg-alerta); as abas só ganham o mesmo jeito.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Cabeçalho de aba: o da Home em tamanho menor (a Home é a vitrine; a aba é ferramenta). */
+.pag-heroi { padding: clamp(2px, 1vw, 10px) 0 2px; }
+.pag-heroi .vg-heroi-titulo { margin-top: 8px; font-size: clamp(28px, 3.6vw, 46px); }
+.pag-heroi .vg-heroi-sub { margin-top: 10px; font-size: clamp(13.5px, 1.1vw, 15px); }
+
+/* Com o cabeçalho no alto, o primeiro cartão volta a ser um cartão comum. */
+.conteudo > .pag-heroi + .cartao > .cartao-cabeca h2 { font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
+.conteudo > .pag-heroi + .cartao > .cartao-cabeca .cartao-sub { font-size: 12px; }
+
+/* Insights automáticos: o mesmo alerta da Home (borda + fundo tingidos + marcador).
+   Continua ícone + texto: a cor reforça, nunca carrega o significado sozinha. */
+.sup-insight {
+  padding: 12px 16px; border-radius: 12px; align-items: flex-start; gap: 12px;
+  background: var(--superficie); font-size: 13.5px; line-height: 1.55; color: var(--tinta);
+}
+.sup-insight::before { margin-top: 2px; font-size: 13px; }
+.sup-insight[data-nivel="alerta"] {
+  border-color: color-mix(in srgb, var(--st-travado) 50%, var(--borda));
+  background: color-mix(in srgb, var(--st-travado) 8%, var(--superficie));
+}
+.sup-insight[data-nivel="atencao"] {
+  border-color: color-mix(in srgb, var(--st-atrasado) 45%, var(--borda));
+  background: color-mix(in srgb, var(--st-atrasado) 7%, var(--superficie));
+}
+.sup-insight[data-nivel="info"] { color: var(--tinta-2); }
+
+/* Topo: quando os controles não cabem numa linha, quebram alinhados à direita
+   (antes o último botão, "Sair", ficava sozinho à esquerda da 2ª linha). */
+.topo-acoes { justify-content: flex-end; flex: 0 1 auto; min-width: 0; }
+.topo-acoes > * { flex: none; }
+.campo-produto select { max-width: 168px; }
+
+/* Rótulos e números seguem a linguagem da Home: versalete mono nos cabeçalhos de tabela. */
+.conteudo th {
+  font-family: var(--fonte-mono); font-size: 10px; font-weight: 600;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--tinta-fraca);
+}
+
+/* Login, recuperar senha e rastrear: mesma tipografia de título do painel. */
+.login-arte-frase { font-family: var(--fonte-display); font-size: 26px; font-weight: 600; line-height: 1.15; letter-spacing: -0.02em; word-spacing: .08em; }
+.login-tit { font-family: var(--fonte-display); font-size: 20px; font-weight: 600; letter-spacing: -0.015em; word-spacing: .08em; }
+.corpo-login a { color: var(--st-em-dia); text-underline-offset: 3px; }
+.corpo-login a:hover { filter: brightness(1.12); }
+.ch-topo h2 { font-family: var(--fonte-display); font-size: 24px; font-weight: 600; letter-spacing: -0.02em; word-spacing: .08em; }
+
+/* Celular: nenhuma aba pode rolar a PÁGINA na horizontal — a tabela larga rola dentro do cartão. */
+.conteudo { grid-template-columns: minmax(0, 1fr); }
+.cartao { min-width: 0; max-width: 100%; }
+.tabela-envolve, .sup-tabela-envolve { overflow-x: auto; max-width: 100%; }
+@media (max-width: 720px) {
+  .grade-3 { grid-template-columns: minmax(0, 1fr); }
+  .span-2 { grid-column: auto; }
+  .rst-saude-bloco { min-width: 0; max-width: 100%; overflow-x: auto; }
+}
+.campo select, .campo-sel select, .campo input { max-width: 100%; }
+@media (max-width: 720px) {
+  .campo { min-width: 0; max-width: 100%; }
+  .cartao .campo select { width: 100%; }
+}
+/* `1fr` não deixa a coluna encolher abaixo do conteúdo (a tabela de 624px); minmax(0,1fr) deixa. */
+.rst-saude-grade { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 820px) { .rst-saude-grade { grid-template-columns: minmax(0, 1fr); } }
