@@ -20,9 +20,10 @@
  * e tem o funil (front, upsell, downsell). Onde o dado é incompleto (reembolso só
  * é confiável desde 09/09/2026), a tela diz desde quando e esconde a comparação.
  *
- * O risco (bloco G) é calculado na hora por palavras-chave nos e-mails + os
- * pesos da seção 06 da especificação. A IA ainda não grava o campo de risco no
- * ticket (P9), então é uma aproximação — a tela diz isso.
+ * O risco (bloco G) vem guardado no ticket (`risco_*`, migração 043): o banco
+ * calcula por palavras-chave nos e-mails + os pesos da seção 06 da especificação
+ * (`email_ia.recalcular_risco`), a cada e-mail novo e a cada poucos minutos.
+ * Continua uma aproximação por palavras-chave — a tela diz isso.
  *
  * Filtros (plataforma, produto, família da régua, fulfillment): valem para tudo
  * que tem pedido por trás. Tickets e e-mails são filtrados pelo cliente (o
@@ -31,13 +32,6 @@
 import { query } from '../../server/db.js';
 
 const TZ = 'America/Sao_Paulo';
-
-/* Palavras-chave dos gatilhos de risco (seção 06). Apertadas de propósito: "bank"
-   solto casa com todo pedido de "reembolso na minha conta". */
-const RE_DISPUTA = String.raw`(charge ?back|disput(e|ed|ing)\M|(call|contact|notify|report|tell|inform|dispute)(ed|ing)? (my |the )?(bank|credit card|card company|card issuer)|\mbbb\M|better business bureau|attorney general|lawyer|attorney|legal action|lawsuit|\msu(e|ing) you|small claims|advogado)`;
-const RE_REACAO = String.raw`(allergic reaction|\mrash\M|\mhives\M|nauseous|nausea|vomit|dizzy|dizziness|chest pain|palpitations|shortness of breath|swelling|swollen|hospital|emergency room|diarrhea|migraine|panic attack)`;
-const RE_FRAUDE = String.raw`(fraud|scammed|scamming|rip(ped)? me off)`;
-const RE_CRITICO = `(${RE_DISPUTA.slice(1, -1)}|${RE_REACAO.slice(1, -1)}|${RE_FRAUDE.slice(1, -1)})`;
 
 const LIMITE_LOTE = 25;
 
@@ -218,33 +212,9 @@ const sqlMedidasCs = (F) => `
 /* ═══════════════════════════════  risco (bloco G)  ═════════════════════════ */
 
 const sqlRisco = (F) => `
-  WITH base AS (
-    SELECT lower(remetente_email) AS em,
-           max(nullif(remetente_nome, '')) AS nome,
-           bool_or(t ~ '${RE_DISPUTA}')  AS disputa,
-           bool_or(t ~ '${RE_REACAO}')   AS reacao,
-           bool_or(t ~ '${RE_FRAUDE}')   AS fraude,
-           bool_or(categoria IN ('devolucao', 'cancelamento')) AS pede_reembolso,
-           bool_or(sentimento = 'muito_negativo') AS muito_negativo,
-           bool_or(sentimento = 'negativo')       AS negativo,
-           max(data_email) AS ultimo_contato,
-           min(data_email) FILTER (WHERE t ~ '${RE_CRITICO}') AS primeiro_critico,
-           min(data_email) FILTER (WHERE t ~ '${RE_REACAO}')  AS primeira_reacao,
-           (array_agg(left(coalesce(resumo, assunto, ''), 140) ORDER BY data_email DESC))[1] AS resumo
-    FROM (SELECT *, lower(coalesce(assunto, '') || ' ' || left(coalesce(corpo_texto, ''), 4000)) AS t
-          FROM email_ia.emails
-          WHERE plataforma_origem IS NULL AND data_email >= now() - interval '30 days'${F.FC('remetente_email')}) x
-    GROUP BY 1
-  ),
-  reincid AS (
-    SELECT lower(remetente_email) AS em FROM email_ia.emails
-    WHERE categoria IN ('devolucao', 'troca') GROUP BY 1 HAVING count(*) >= 2
-  ),
-  pedido AS (
+  WITH pedido AS (
     SELECT DISTINCT ON (lower(d.email)) lower(d.email) AS em, r.status_interno,
-           floor(extract(epoch FROM (now() - d.criado_em)) / 86400)::int AS dias_compra,
-           (r.status_interno = 'pending' AND d.criado_em <= now() - interval '5 days') OR
-           (r.status_interno = 'shipped' AND r.shipped_at IS NOT NULL AND r.shipped_at <= now() - interval '15 days') AS parado
+           floor(extract(epoch FROM (now() - d.criado_em)) / 86400)::int AS dias_compra
     FROM disparos_pos_venda d JOIN rastreio_pedidos r ON r.transacao_id = d.transacao_id
     WHERE d.email IS NOT NULL ORDER BY lower(d.email), d.criado_em DESC
   ),
@@ -252,45 +222,25 @@ const sqlRisco = (F) => `
     SELECT lower(remetente_email) AS em, min(criado_em) AS esc_criado, min(iniciado_em) AS esc_iniciado
     FROM email_ia.suporte_escalado GROUP BY 1
   )
-  SELECT b.em, coalesce(b.nome, split_part(b.em, '@', 1)) AS nome, b.disputa, b.reacao, b.fraude,
-         b.pede_reembolso, b.muito_negativo, b.negativo, b.resumo, b.primeiro_critico, b.primeira_reacao,
-         (i.em IS NOT NULL) AS reincidente,
-         coalesce(p.parado, false) AS pedido_parado, p.status_interno AS pedido_status, p.dias_compra,
-         (t.status IS NOT NULL AND t.status <> 'resolvido') AS ticket_aberto,
-         (t.status <> 'resolvido' AND t.ultimo_email_em IS NOT NULL
-            AND t.ultimo_email_em < now() - interval '24 hours'
-            AND (t.ultima_resposta_ia_em IS NULL OR t.ultima_resposta_ia_em < t.ultimo_email_em)) AS sem_resposta_24h,
-         round(extract(epoch FROM (now() - coalesce(t.ultimo_email_em, b.ultimo_contato))) / 3600.0)::int AS espera_h,
+  SELECT lower(t.remetente_email) AS em,
+         coalesce(nullif(t.nome, ''), split_part(t.remetente_email, '@', 1)) AS nome,
+         t.risco_score AS score, t.risco_nivel AS nivel, t.risco_sinais AS sinais,
+         (t.risco_flags->>'disputa')::boolean AS disputa,
+         (t.risco_flags->>'reacao')::boolean AS reacao,
+         (t.risco_flags->>'fraude')::boolean AS fraude,
+         (t.risco_flags->>'pede_reembolso')::boolean AS pede_reembolso,
+         t.risco_primeiro_critico_em AS primeiro_critico, t.risco_primeira_reacao_em AS primeira_reacao,
+         (SELECT left(coalesce(e.resumo, e.assunto, ''), 140) FROM email_ia.emails e
+           WHERE lower(e.remetente_email) = lower(t.remetente_email) AND e.plataforma_origem IS NULL
+           ORDER BY e.data_email DESC LIMIT 1) AS resumo,
+         p.status_interno AS pedido_status, p.dias_compra,
+         (t.status <> 'resolvido') AS ticket_aberto,
+         round(extract(epoch FROM (now() - t.ultimo_email_em)) / 3600.0)::int AS espera_h,
          (e.em IS NOT NULL) AS escalado, e.esc_criado, e.esc_iniciado
-  FROM base b
-  LEFT JOIN reincid i ON i.em = b.em
-  LEFT JOIN pedido p ON p.em = b.em
-  LEFT JOIN email_ia.tickets t ON lower(t.remetente_email) = b.em
-  LEFT JOIN escalado e ON e.em = b.em
-  WHERE b.disputa OR b.reacao OR b.fraude OR b.pede_reembolso OR b.muito_negativo OR b.negativo
-        OR i.em IS NOT NULL OR coalesce(p.parado, false)`;
-
-/** Score 0–100 e nível (seção 06). Gatilho crítico sempre vence a soma. */
-function classificarRisco(r) {
-  let score = 0;
-  const sinais = [];
-  if (r.disputa) { score += 35; sinais.push('Menção a disputa, banco, BBB ou advogado'); }
-  if (r.fraude) { sinais.push('Suspeita de fraude'); }
-  if (r.reacao) { score += 30; sinais.push('Relato de reação física'); }
-  if (r.pede_reembolso) { score += 20; sinais.push('Pede reembolso'); }
-  if (r.muito_negativo) { score += 15; sinais.push('Sentimento muito negativo'); }
-  else if (r.negativo) { score += 8; sinais.push('Sentimento negativo'); }
-  if (r.reincidente) { score += 10; sinais.push('Reincidente (2+ devoluções)'); }
-  if (r.pedido_parado) { score += 10; sinais.push('Pedido parado'); }
-  if (r.sem_resposta_24h) { score += 5; sinais.push('Sem resposta há mais de 24 h'); }
-  score = Math.min(100, score);
-  const critico = r.disputa || r.reacao || r.fraude;
-  let nivel = 'baixo';
-  if (critico || score >= 70) nivel = 'critico';
-  else if (score >= 40) nivel = 'alto';
-  else if (score >= 20) nivel = 'medio';
-  return { score, nivel, sinais };
-}
+  FROM email_ia.tickets t
+  LEFT JOIN pedido p ON p.em = lower(t.remetente_email)
+  LEFT JOIN escalado e ON e.em = lower(t.remetente_email)
+  WHERE t.risco_no_radar${F.FC('t.remetente_email')}`;
 
 const ROTULO_PEDIDO = {
   pending: 'Recebido', shipped: 'Em trânsito', delivered: 'Entregue',
@@ -515,7 +465,7 @@ async function coletarVisaoGeral(p, comparar, filtros = {}) {
                            ORDER BY d.criado_em DESC LIMIT 1) o ON true
              WHERE e.categoria IN ('devolucao', 'reclamacao', 'troca') AND e.plataforma_origem IS NULL
                AND e.data_email >= $1 AND e.data_email < $2 GROUP BY 1)
-      SELECT coalesce(pr.nome, ped.s) AS produto, ped.s AS slug, ped.n AS pedidos, coalesce(rec.n, 0) AS reclamantes
+      SELECT CASE WHEN ped.s = '*' THEN 'Não identificado' ELSE coalesce(pr.nome, ped.s) END AS produto, ped.s AS slug, ped.n AS pedidos, coalesce(rec.n, 0) AS reclamantes
       FROM ped LEFT JOIN rec ON rec.s = ped.s LEFT JOIN produtos pr ON pr.slug = ped.s
       WHERE ped.n >= 30 ORDER BY coalesce(rec.n, 0)::float / ped.n DESC LIMIT 8`, [ini, fim]),
 
@@ -546,7 +496,7 @@ async function coletarVisaoGeral(p, comparar, filtros = {}) {
     s2: query(`
       SELECT count(*)::int AS ativos,
              count(*) FILTER (WHERE EXISTS (SELECT 1 FROM produto_readmes r WHERE r.produto = p.nome AND r.ativo = true))::int AS com_ficha
-      FROM produtos p WHERE p.ativo = true${filtros.produto ? ` AND p.slug = ${lit(filtros.produto)}` : ''}${filtros.linha ? ` AND p.linha = ${lit(filtros.linha)}` : ''}`),
+      FROM produtos p WHERE p.ativo = true AND p.slug <> '*'${filtros.produto ? ` AND p.slug = ${lit(filtros.produto)}` : ''}${filtros.linha ? ` AND p.linha = ${lit(filtros.linha)}` : ''}`),
     s3: query(`SELECT count(*) FILTER (WHERE defeito_visivel = true)::int AS com_defeito, count(*)::int AS total
                FROM email_ia.anexos WHERE tipo_conteudo IS NOT NULL`),
 
@@ -604,10 +554,10 @@ async function coletarVisaoGeral(p, comparar, filtros = {}) {
       SELECT (SELECT coalesce(json_agg(p ORDER BY p), '[]'::json) FROM
                 (SELECT DISTINCT btrim(plataforma) AS p FROM disparos_pos_venda WHERE btrim(plataforma) NOT IN ('', 'teste')) x) AS plataformas,
              (SELECT coalesce(json_agg(json_build_object('slug', slug, 'nome', nome, 'linha', linha) ORDER BY nome), '[]'::json)
-                FROM produtos WHERE ativo) AS produtos,
+                FROM produtos WHERE ativo AND slug <> '*') AS produtos,
              (SELECT coalesce(json_agg(x ORDER BY length(x.linha), x.linha), '[]'::json) FROM
                 (SELECT linha, string_agg(nome, ', ' ORDER BY nome) AS nomes FROM produtos
-                  WHERE ativo AND linha IS NOT NULL GROUP BY linha) x) AS linhas`),
+                  WHERE ativo AND slug <> '*' AND linha IS NOT NULL GROUP BY linha) x) AS linhas`),
   };
 
   const chaves = Object.keys(Q);
@@ -645,7 +595,7 @@ async function coletarVisaoGeral(p, comparar, filtros = {}) {
   const maduro = [...curva].reverse().find((c) => c.expostos >= MIN_COORTE) ?? null;
 
   // Risco: classifica, ordena (crítico primeiro, depois score) e devolve a fila do dia
-  const clientes = R.risco.rows.map((r) => ({ ...r, ...classificarRisco(r) }));
+  const clientes = R.risco.rows;
   const abertos = clientes.filter((c) => c.ticket_aberto);
   const criticos = clientes.filter((c) => c.nivel === 'critico');
   const criticosAbertos = criticos.filter((c) => c.ticket_aberto);

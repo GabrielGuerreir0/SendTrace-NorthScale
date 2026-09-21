@@ -384,9 +384,21 @@ const intervaloAlertas = setInterval(() => {
   verificarEEnviarAlertas().catch((err) => app.log.error(err, 'falha na checagem periódica de alertas'));
 }, ALERTAS_INTERVALO_MS);
 
+/*
+ * Risco dos tickets (migração 043) — a cada 10 min. O trigger já recalcula o cliente quando chega
+ * e-mail novo; isto cobre o que depende do relógio ("pedido parado", "sem resposta há 24 h") e a
+ * janela de 30 dias que anda. Roda em ~2 s. Erro vira só log.
+ */
+const RISCO_INTERVALO_MS = 10 * 60 * 1000;
+const recalcularRisco = () => pool.query('SELECT email_ia.recalcular_risco()')
+  .catch((err) => app.log.error(err, 'falha no recálculo de risco dos tickets'));
+recalcularRisco();
+const intervaloRisco = setInterval(recalcularRisco, RISCO_INTERVALO_MS);
+
 for (const sinal of ['SIGINT', 'SIGTERM']) {
   process.on(sinal, async () => {
     clearInterval(intervaloAlertas);
+    clearInterval(intervaloRisco);
     await app.close();
     await pool.end();
     process.exit(0);

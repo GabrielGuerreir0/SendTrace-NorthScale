@@ -790,7 +790,7 @@ function blocoG(s) {
   });
   return bloco({
     id: 'vg-bloco-g', letra: 'G', titulo: 'Risco e save-desk', pergunta: 'Quem precisa de atenção agora?',
-    fonte: 'Fonte: SendTrace · calculado na hora, o ticket ainda não guarda o risco',
+    fonte: 'Fonte: SendTrace · risco guardado no ticket, recalculado a cada e-mail novo e a cada 10 min',
     pendencias: 'G2 (salvamento por tipo de oferta), G3 (custo da retenção) e G4 (reembolsos de proteção) dependem do registro da oferta feita e do valor concedido (P10) e do teto de custo da controladoria.',
   }, [c1, c6, c5, fila]);
 }
