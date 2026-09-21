@@ -803,6 +803,7 @@ export default async function rotasEmailIACentral(app) {
          iniciado_em = CASE WHEN $1 = 'em_aberto' THEN coalesce(iniciado_em, now()) ELSE iniciado_em END,
          resolvido_em = CASE WHEN $1 = 'resolvido' THEN now() ELSE resolvido_em END,
          resolvido_por = CASE WHEN $1 = 'resolvido' THEN 'humano' ELSE NULL END,
+         primeira_resposta_humana_em = coalesce(primeira_resposta_humana_em, now()),
          atualizado_em = now()
        WHERE remetente_email = lower($2)
        RETURNING remetente_email, status`,
@@ -1460,6 +1461,7 @@ export default async function rotasEmailIACentral(app) {
       `UPDATE email_ia.suporte_escalado SET status = $1,
          iniciado_em = CASE WHEN $1 <> 'pendente' THEN coalesce(iniciado_em, now()) ELSE iniciado_em END,
          finalizado_em = CASE WHEN $1 = 'finalizado' THEN now() ELSE finalizado_em END,
+         primeiro_toque_humano_em = coalesce(primeiro_toque_humano_em, now()),
          atualizado_em = now()
        WHERE id = $2
        RETURNING id, remetente_email, nome, resumo_conversa, motivo_escalonamento, status,
@@ -1504,7 +1506,8 @@ export default async function rotasEmailIACentral(app) {
     if (!destino) throw new ErroHttp(404, 'Board de destino não encontrado.');
     const { rows } = await query(
       `UPDATE email_ia.suporte_escalado
-       SET board_id = $1, status = 'pendente', iniciado_em = NULL, finalizado_em = NULL, atualizado_em = now()
+       SET board_id = $1, status = 'pendente', iniciado_em = NULL, finalizado_em = NULL,
+           primeiro_toque_humano_em = coalesce(primeiro_toque_humano_em, now()), atualizado_em = now()
        WHERE id = $2
        RETURNING id, remetente_email, nome, resumo_conversa, motivo_escalonamento, status,
                  email_id, criado_em, atualizado_em, iniciado_em, finalizado_em, board_id`,
@@ -1758,7 +1761,8 @@ export default async function rotasEmailIACentral(app) {
     if (!board) throw new ErroHttp(404, 'Caso escalado não encontrado.');
     if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este caso não é de um board seu.');
     const { rows } = await query(
-      `UPDATE email_ia.suporte_escalado SET data_entrega = $1, atualizado_em = now()
+      `UPDATE email_ia.suporte_escalado SET data_entrega = $1,
+         primeiro_toque_humano_em = coalesce(primeiro_toque_humano_em, now()), atualizado_em = now()
        WHERE id = $2 RETURNING id, data_entrega`,
       [req.body.data_entrega, req.params.id],
     );

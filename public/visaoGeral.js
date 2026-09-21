@@ -454,7 +454,7 @@ function blocoC(s) {
       return w;
     })(),
     ref: 'Referência: 1ª resposta humana em menos de 24 h.',
-    nota: 'A resolução pela IA usa a assinatura do fluxo (o registro de quem resolveu, P8, ainda não está ligado) e a 1ª resposta humana não é gravada hoje — “até pegar o caso” é o momento em que alguém move o caso no kanban.',
+    nota: '“Até pegar o caso” é o momento da 1ª ação de uma pessoa no caso (mover no kanban, nota, data de entrega); movimentos feitos por automação não contam. Antes de 21/09 só entram casos com nota humana ou movidos para Iniciado/Em análise — por isso a base é menor no passado.',
   });
 
   // F4 — escalados pendentes
@@ -760,7 +760,7 @@ function blocoG(s) {
     tom: g.g1.abertos > 0 ? 'ruim' : 'bom', tag: 'aprox.',
     sub: `${n(g.g1.abertos)} de ${n(g.g1.criticos)} clientes críticos dos últimos 30 dias estão com ticket aberto · humano pegou o caso em até 2 h em ${n(g.g1.humano_2h)} (${pctTxt(razao(g.g1.humano_2h, g.g1.criticos), 0)}%)`,
     ref: 'Regra: crítico é atendido por humano em até 2 h (meta: 100%).',
-    nota: 'O prazo de 2 h usa o momento em que alguém move o caso no Suporte Escalado, porque a 1ª resposta humana não é gravada (P9). Crítico vem de palavras-chave nos e-mails.',
+    nota: 'O prazo de 2 h usa o 1º toque humano no caso (mover no kanban, nota, data de entrega); automação não conta. Antes de 21/09 a base é menor: só casos com nota humana ou movidos para Iniciado/Em análise. Crítico vem de palavras-chave nos e-mails.',
   });
   const c6 = card({
     codigo: 'G6', span: 4, titulo: 'Relatos de reação adversa', valor: n(g.g6.relatos), unidade: 'clientes',

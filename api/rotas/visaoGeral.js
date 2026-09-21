@@ -147,7 +147,7 @@ const SEM_CONTATO = `NOT EXISTS (SELECT 1 FROM email_ia.emails e WHERE lower(e.r
  *                 `resolvido_em = ultima_resposta_ia_em`: o UPDATE do fluxo n8n
  *                 grava os dois no mesmo now(); a migração 042 passa a gravar
  *                 `resolvido_por` e o resultado é o mesmo);
- *  humano_pega  — caso chegar no Suporte Escalado até alguém iniciar;
+ *  humano_pega  — caso chegar no Suporte Escalado até UMA PESSOA agir (primeiro_toque_humano_em; automação não conta);
  *  humano_resolve — caso chegar no Suporte Escalado até ser finalizado.
  */
 const sqlMedidasCs = (F) => `
@@ -158,7 +158,7 @@ const sqlMedidasCs = (F) => `
     ORDER BY lower(remetente_email), data_email DESC
   ),
   lote_criado AS ${LOTE('criado_em')},
-  lote_inicio AS ${LOTE('iniciado_em')},
+  lote_inicio AS ${LOTE('primeiro_toque_humano_em')},
   lote_final  AS ${LOTE('finalizado_em')},
   lote_resolv AS (
     SELECT date_trunc('minute', resolvido_em) FROM email_ia.tickets
@@ -189,11 +189,11 @@ const sqlMedidasCs = (F) => `
       AND date_trunc('minute', t.resolvido_em) NOT IN (SELECT * FROM lote_resolv)${F.FC('t.remetente_email')}
     UNION ALL
     SELECT coalesce(ac.area_problema, 'sem_area'), 'humano_pega',
-           extract(epoch FROM (s.iniciado_em - s.criado_em)) / 3600.0
+           extract(epoch FROM (s.primeiro_toque_humano_em - s.criado_em)) / 3600.0
     FROM email_ia.suporte_escalado s
     LEFT JOIN area_cliente ac ON ac.email = lower(s.remetente_email)
-    WHERE s.iniciado_em >= $1 AND s.iniciado_em < $2 AND s.iniciado_em >= s.criado_em
-      AND date_trunc('minute', s.iniciado_em) NOT IN (SELECT * FROM lote_inicio)${F.FC('s.remetente_email')}
+    WHERE s.primeiro_toque_humano_em >= $1 AND s.primeiro_toque_humano_em < $2 AND s.primeiro_toque_humano_em >= s.criado_em
+      AND date_trunc('minute', s.primeiro_toque_humano_em) NOT IN (SELECT * FROM lote_inicio)${F.FC('s.remetente_email')}
     UNION ALL
     SELECT coalesce(ac.area_problema, 'sem_area'), 'humano_resolve',
            extract(epoch FROM (s.finalizado_em - s.criado_em)) / 3600.0
@@ -219,7 +219,7 @@ const sqlRisco = (F) => `
     WHERE d.email IS NOT NULL ORDER BY lower(d.email), d.criado_em DESC
   ),
   escalado AS (
-    SELECT lower(remetente_email) AS em, min(criado_em) AS esc_criado, min(iniciado_em) AS esc_iniciado
+    SELECT lower(remetente_email) AS em, min(criado_em) AS esc_criado, min(primeiro_toque_humano_em) AS esc_iniciado
     FROM email_ia.suporte_escalado GROUP BY 1
   )
   SELECT lower(t.remetente_email) AS em,
