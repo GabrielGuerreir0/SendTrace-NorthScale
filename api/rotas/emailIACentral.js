@@ -802,6 +802,7 @@ export default async function rotasEmailIACentral(app) {
       `UPDATE email_ia.tickets SET status = $1,
          iniciado_em = CASE WHEN $1 = 'em_aberto' THEN coalesce(iniciado_em, now()) ELSE iniciado_em END,
          resolvido_em = CASE WHEN $1 = 'resolvido' THEN now() ELSE resolvido_em END,
+         resolvido_por = CASE WHEN $1 = 'resolvido' THEN 'humano' ELSE NULL END,
          atualizado_em = now()
        WHERE remetente_email = lower($2)
        RETURNING remetente_email, status`,

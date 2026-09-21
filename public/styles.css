@@ -14,9 +14,14 @@
      seção do menu), nunca para texto corrido: dá a leitura "painel de
      operação" sem virar um terminal ilegível. Stack nativo de propósito (sem
      CDN de fonte): já cobre bem os três sistemas mais comuns e não adiciona
-     uma dependência de rede a uma ferramenta interna. */
-  --fonte-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'JetBrains Mono',
+     uma dependência de rede a uma ferramenta interna. As duas fontes de marca
+     (Clash Display e Roboto Mono, ver @font-face no fim) ficam hospedadas em
+     /fonts, pelo mesmo motivo: nada de CDN externo. */
+  --fonte-mono: 'Roboto Mono', ui-monospace, 'SF Mono', 'Cascadia Code',
     Consolas, 'Liberation Mono', monospace;
+  /* Títulos: Clash Display, a mesma do dash oficial (dash.thenorthscales.com).
+     O texto corrido segue system-ui, que é o que o dash efetivamente usa. */
+  --fonte-display: 'Clash Display', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
   /* Tema claro sem branco puro em lugar nenhum — #ffffff numa área grande de
      tela (cartão, cabeçalho, nó do canvas) sob brilho normal de monitor é
@@ -25,28 +30,29 @@
      abaixo de 255. --tinta também não é mais preto absoluto, pelo mesmo
      motivo do outro lado: preto puro sobre um fundo assim ainda claro é
      contraste mais alto do que precisa. */
-  --plano:        #eceae4;
-  --superficie:   #f8f6f1;
-  --superficie-2: #f1efe9;
-  --no-bg:        #f8f6f1;
-  --no-borda:     rgba(11, 11, 11, 0.12);
+  --plano:        #f5f3ec;
+  --superficie:   #fcfbf6;
+  --superficie-2: #edeae0;
+  --no-bg:        #fcfbf6;
+  --no-borda:     rgba(24, 34, 38, 0.14);
 
-  --tinta:        #201f1c;
-  --tinta-2:      #55534e;
-  --tinta-fraca:  #8b8983;
+  --tinta:        #182226;
+  --tinta-2:      #43535a;
+  --tinta-fraca:  #5e6d71;
 
-  --grade:        #e1e0d9;
-  --eixo:         #c3c2b7;
-  --borda:        rgba(11, 11, 11, 0.10);
-  --pontos:       rgba(11, 11, 11, 0.10);
-  --trilho:       #d9d8d0;
+  --grade:        #e4e1d6;
+  --eixo:         #c9c7bc;
+  --borda:        rgba(24, 34, 38, 0.13);
+  --pontos:       rgba(24, 34, 38, 0.10);
+  --trilho:       #dad8cd;
 
   /* estados — ver comentário do topo. --st-em-dia é também o azul de marca
-     (NorthScale, #4260e6 na logo) — reaproveitado como o acento primário do
+     (era o azul da logo, #4260e6; desde 21/09/2026 é o ciano do dash) — reaproveitado como o acento primário do
      painel inteiro (foco, gráficos, filtro ativo), não só do status "em dia". */
-  --st-em-dia:      #4260e6;
+  --st-em-dia:      #0e7c97;
+  --sobre-acento: #ffffff;  /* texto sobre fundo de acento/sucesso (contraste) */
   --st-atrasado:    #fab219;
-  --st-processando: #1baf7a;
+  --st-processando: #2e7d5b;
   --st-travado:     #d03b3b;
   --st-finalizado:  #0ca30c;
   /* Cancelado é cinza de propósito: não é problema (vermelho) nem conclusão
@@ -66,8 +72,8 @@
   --serie-7: #4a3aa7;
   --serie-8: #e34948;
 
-  --sombra-1: 0 1px 2px rgba(11, 11, 11, 0.05), 0 4px 14px rgba(11, 11, 11, 0.05);
-  --sombra-no: 0 1px 2px rgba(11, 11, 11, 0.06), 0 6px 18px rgba(11, 11, 11, 0.07);
+  --sombra-1: 0 1px 2px rgba(24, 34, 38, 0.04), 0 10px 28px rgba(24, 34, 38, 0.06);
+  --sombra-no: 0 1px 2px rgba(24, 34, 38, 0.05), 0 8px 22px rgba(24, 34, 38, 0.07);
   --raio: 16px;
 }
 
@@ -75,26 +81,28 @@
   :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
 
-    --plano:        #0b0c0f;
-    --superficie:   #15161b;
-    --superficie-2: #1b1d23;
-    --no-bg:        #1a1c22;
-    --no-borda:     rgba(255, 255, 255, 0.13);
+    --plano:        #0d1215;
+    --superficie:   #161d21;
+    --superficie-2: #1a2428;
+    --no-bg:        #1a2428;
+    --no-borda:     rgba(236, 239, 234, 0.15);
 
-    --tinta:        #ffffff;
-    --tinta-2:      #c3c2b7;
-    --tinta-fraca:  #898781;
+    --tinta:        #ecefea;
+    --tinta-2:      #b9c4c0;
+    --tinta-fraca:  #92a1a1;
 
-    --grade:        #24262c;
-    --eixo:         #33363e;
-    --borda:        rgba(255, 255, 255, 0.10);
-    --pontos:       rgba(255, 255, 255, 0.10);
-    --trilho:       #2e313a;
+    --grade:        #202a2f;
+    --eixo:         #33424a;
+    --borda:        rgba(236, 239, 234, 0.12);
+    --pontos:       rgba(236, 239, 234, 0.10);
+    --trilho:       #2a363c;
 
-    --st-em-dia:      #6478ea;
+
+    --sobre-acento: #0d1215;  /* texto sobre fundo de acento/sucesso (contraste) */
+    --st-em-dia:      #3eb7d4;
     --st-atrasado:    #fab219;
-    --st-processando: #199e70;
-    --st-travado:     #d03b3b;
+    --st-processando: #4fb58f;
+    --st-travado:     #ef5a5f;
     --st-finalizado:  #0ca30c;
     --st-cancelado:   #9a99a5;
 
@@ -107,34 +115,36 @@
     --serie-7: #9085e9;
     --serie-8: #e66767;
 
-    --sombra-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 26px rgba(0, 0, 0, 0.34);
-    --sombra-no: 0 1px 2px rgba(0, 0, 0, 0.55), 0 8px 22px rgba(0, 0, 0, 0.42);
+    --sombra-1: 0 1px 2px rgba(0, 0, 0, 0.30), 0 12px 32px rgba(0, 0, 0, 0.35);
+    --sombra-no: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 22px rgba(0, 0, 0, 0.40);
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --plano:        #0b0c0f;
-  --superficie:   #15161b;
-  --superficie-2: #1b1d23;
-  --no-bg:        #1a1c22;
-  --no-borda:     rgba(255, 255, 255, 0.13);
+  --plano:        #0d1215;
+  --superficie:   #161d21;
+  --superficie-2: #1a2428;
+  --no-bg:        #1a2428;
+  --no-borda:     rgba(236, 239, 234, 0.15);
 
-  --tinta:        #ffffff;
-  --tinta-2:      #c3c2b7;
-  --tinta-fraca:  #898781;
+  --tinta:        #ecefea;
+  --tinta-2:      #b9c4c0;
+  --tinta-fraca:  #92a1a1;
 
-  --grade:        #24262c;
-  --eixo:         #33363e;
-  --borda:        rgba(255, 255, 255, 0.10);
-  --pontos:       rgba(255, 255, 255, 0.10);
-  --trilho:       #2e313a;
+  --grade:        #202a2f;
+  --eixo:         #33424a;
+  --borda:        rgba(236, 239, 234, 0.12);
+  --pontos:       rgba(236, 239, 234, 0.10);
+  --trilho:       #2a363c;
 
-  --st-em-dia:      #6478ea;
+
+  --sobre-acento: #0d1215;  /* texto sobre fundo de acento/sucesso (contraste) */
+  --st-em-dia:      #3eb7d4;
   --st-atrasado:    #fab219;
-  --st-processando: #199e70;
-  --st-travado:     #d03b3b;
+  --st-processando: #4fb58f;
+  --st-travado:     #ef5a5f;
   --st-finalizado:  #0ca30c;
   --st-cancelado:   #9a99a5;
 
@@ -147,8 +157,8 @@
   --serie-7: #9085e9;
   --serie-8: #e66767;
 
-  --sombra-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 26px rgba(0, 0, 0, 0.34);
-  --sombra-no: 0 1px 2px rgba(0, 0, 0, 0.55), 0 8px 22px rgba(0, 0, 0, 0.42);
+  --sombra-1: 0 1px 2px rgba(0, 0, 0, 0.30), 0 12px 32px rgba(0, 0, 0, 0.35);
+  --sombra-no: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 22px rgba(0, 0, 0, 0.40);
 }
 
 /* ─────────────────────────────  base  ───────────────────────────── */
@@ -1725,159 +1735,6 @@ body[data-menu="fechado"] .menu-alternar { justify-content: center; padding: 9px
   background: color-mix(in srgb, var(--st-em-dia) 10%, var(--superficie));
 }
 
-/* ════════════════════════  aba Visão Geral (Home)  ═════════════════════════
-   9ª aba, a primeira que abre. Reaproveita quase tudo que já existe (.cartao,
-   .kpi/.kpis, .sup-ranking/.sup-item via barraHorizontal, .grafico via
-   desenharColunas, .sup-grade) — o que segue é só o que não tinha equivalente:
-   a faixa de status (insight de maior severidade), os termômetros de meta, a
-   barra empilhada de sentimento, o anel de cobertura e os cards de navegação. */
-
-/* ── faixa de status: "o que mudou nas últimas 24h" + "ponto positivo" ──
-   Mesmo idioma visual de .janela-msg[data-tom] (borda esquerda colorida +
-   fundo tingido), só maior — é o primeiro dado real que a pessoa vê na Home. */
-.vg-status {
-  display: flex; gap: 14px; align-items: flex-start;
-  padding: 16px 20px; border-left-width: 3px; border-left-style: solid;
-}
-.vg-status[data-nivel="alerta"] {
-  background: color-mix(in srgb, var(--st-travado) 11%, var(--superficie));
-  border-left-color: var(--st-travado);
-}
-.vg-status[data-nivel="atencao"] {
-  background: color-mix(in srgb, var(--st-atrasado) 11%, var(--superficie));
-  border-left-color: var(--st-atrasado);
-}
-.vg-status[data-nivel="info"] {
-  background: color-mix(in srgb, var(--st-processando) 9%, var(--superficie));
-  border-left-color: var(--st-processando);
-}
-.vg-status[data-nivel="bom"] {
-  background: color-mix(in srgb, var(--st-finalizado) 10%, var(--superficie));
-  border-left-color: var(--st-finalizado);
-}
-.vg-status-glifo {
-  width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; flex: none;
-  background: currentColor;
-}
-.vg-status[data-nivel="alerta"]  .vg-status-glifo { color: var(--st-travado); }
-.vg-status[data-nivel="atencao"] .vg-status-glifo { color: var(--st-atrasado); }
-.vg-status[data-nivel="info"]    .vg-status-glifo { color: var(--st-processando); }
-.vg-status[data-nivel="bom"]     .vg-status-glifo { color: var(--st-finalizado); }
-.vg-status p { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--tinta); }
-.vg-status b { font-weight: 650; }
-.vg-status-fonte { margin-top: 6px; font-size: 11.5px; color: var(--tinta-fraca); }
-.vg-status-link { margin-top: 10px; }
-
-/* ── termômetros de meta ── */
-.vg-metas { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(14px, 1.6vw, 20px); }
-.vg-meta-card { display: flex; gap: 20px; align-items: flex-start; }
-.vg-therm-wrap { flex: none; width: 92px; padding-top: 5px; }
-.vg-therm-track {
-  width: 100%; height: 9px; border-radius: 999px; position: relative; overflow: visible;
-  background: color-mix(in srgb, var(--tinta) 9%, transparent);
-}
-.vg-therm-fill { height: 100%; border-radius: 999px; }
-.vg-therm-mark { position: absolute; top: -3px; width: 2px; height: 15px; background: var(--tinta-fraca); }
-.vg-therm-mark::after {
-  content: attr(data-label); position: absolute; top: 19px; left: 50%; transform: translateX(-50%);
-  font-size: 10px; color: var(--tinta-fraca); white-space: nowrap;
-}
-.vg-meta-body h3 { margin: 0 0 4px; font-size: 13.5px; font-weight: 640; }
-.vg-meta-formula { font-size: 11px; color: var(--tinta-fraca); margin-bottom: 10px; }
-.vg-meta-readout { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
-.vg-meta-readout .vg-big { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.vg-meta-readout .vg-of { font-size: 11.5px; color: var(--tinta-fraca); }
-.vg-meta-nota { font-size: 12px; color: var(--tinta-2); line-height: 1.5; }
-@media (max-width: 900px) { .vg-metas { grid-template-columns: 1fr; } }
-
-/* ── barra empilhada de sentimento ── */
-.vg-stack { display: flex; width: 100%; height: 22px; border-radius: 6px; overflow: hidden; }
-.vg-stack-seg {
-  display: flex; align-items: center; justify-content: center;
-  font-size: 10.5px; font-weight: 640; color: #fff;
-}
-.vg-stack-legend { list-style: none; display: flex; gap: 16px; flex-wrap: wrap; margin: 12px 0 0; padding: 0; }
-.vg-stack-legend li { display: flex; align-items: center; font-size: 12px; color: var(--tinta-2); }
-.vg-dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 6px; }
-
-/* ── anel de cobertura (SVG) ── */
-.vg-cobertura { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
-.vg-ring { flex: none; width: 72px; height: 72px; position: relative; display: flex; align-items: center; justify-content: center; }
-.vg-ring svg { position: absolute; inset: 0; transform: rotate(-90deg); }
-.vg-ring-num { font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
-
-/* ── cards de navegação pras outras 8 abas ── */
-.vg-nav-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-.vg-nav-card {
-  appearance: none; cursor: pointer; text-align: left; font: inherit; color: inherit;
-  display: flex; flex-direction: column; gap: 5px;
-  padding: 14px 16px; border: 1px solid var(--borda); border-radius: 12px;
-  background: var(--superficie);
-}
-.vg-nav-card:hover { border-color: var(--eixo); background: var(--superficie-2); }
-.vg-nav-card h3 { margin: 0; font-size: 13.5px; font-weight: 640; }
-.vg-nav-card p { margin: 0; font-size: 12px; color: var(--tinta-fraca); line-height: 1.5; }
-
-/* ── linha do tempo de rastreio (Home) — snapshot agregado, não um pedido só.
-   As 4 etapas sequenciais ficam ligadas por uma linha (::after); "não
-   encontrado"/"cancelado" são desvios da jornada normal, por isso vêm depois
-   de uma quebra visual (margin-left maior, sem linha ligando ao anterior) e
-   com tom mais apagado — mesmo espírito do "cancelado é desvio, não degrau"
-   já usado no rastreio público (rastrear.js). ── */
-.vg-rastreio-linha {
-  list-style: none; margin: 4px 0 0; padding: 0;
-  display: flex; flex-wrap: wrap; gap: 4px; align-items: stretch;
-}
-.vg-rastreio-etapa { display: flex; align-items: center; position: relative; }
-.vg-rastreio-etapa:not(:first-child)::before {
-  content: ''; width: 22px; height: 1px; background: var(--borda); flex: none; margin: 0 2px;
-  align-self: center;
-}
-.vg-rastreio-etapa.vg-rastreio-desvio { margin-left: 14px; }
-.vg-rastreio-etapa.vg-rastreio-desvio::before { display: none; }
-.vg-rastreio-etapa.vg-rastreio-desvio:not(:first-child)::after {
-  content: ''; position: absolute; left: -8px; top: 15%; bottom: 15%; width: 1px; background: var(--borda);
-}
-.vg-rastreio-etapa button {
-  appearance: none; cursor: pointer; font: inherit; color: inherit;
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  padding: 12px 16px; border: 1px solid var(--borda); border-radius: 12px;
-  background: var(--superficie); min-width: 108px;
-}
-.vg-rastreio-etapa button:hover { border-color: var(--eixo); background: var(--superficie-2); }
-.vg-rastreio-ponto { font-size: 13px; color: var(--eixo); line-height: 1; }
-.vg-rastreio-etapa button strong {
-  font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1;
-}
-.vg-rastreio-rotulo { font-size: 11px; color: var(--tinta-fraca); text-align: center; line-height: 1.3; }
-.vg-rastreio-desvio .vg-rastreio-ponto { color: var(--tinta-fraca); }
-.vg-rastreio-desvio button strong { color: var(--tinta-2); }
-@media (max-width: 700px) {
-  .vg-rastreio-etapa:not(:first-child)::before { display: none; }
-  .vg-rastreio-etapa.vg-rastreio-desvio { margin-left: 0; }
-  .vg-rastreio-etapa.vg-rastreio-desvio:not(:first-child)::after { display: none; }
-}
-
-/* ── nota estática de ideias futuras: mesmo tratamento visual de "proposta" ── */
-.vg-proposta { border-style: dashed; }
-
-/* ── novidades: changelog + roadmap curados à mão (13/09/2026) ── */
-.vg-novidades { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
-.vg-novidade { display: flex; gap: 16px; align-items: flex-start; }
-.vg-novidade-data {
-  flex: none; width: 40px; padding-top: 2px; text-align: center;
-  font-size: 11.5px; font-weight: 640; color: var(--tinta-fraca);
-  font-variant-numeric: tabular-nums;
-}
-.vg-novidade-corpo h3 { margin: 0 0 3px; font-size: 13.5px; font-weight: 640; }
-.vg-novidade-corpo p { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--tinta-2); }
-.vg-novidades--futuras .vg-novidade-data { font-size: 15px; }
-.vg-novidades--futuras .vg-novidade-corpo h3::after {
-  content: "em andamento"; margin-left: 8px; font-size: 10px; font-weight: 640;
-  color: var(--st-processando); background: color-mix(in srgb, var(--st-processando) 14%, transparent);
-  padding: 2px 7px; border-radius: 999px; vertical-align: middle; white-space: nowrap;
-}
-
 /* ═══════════════════════  Central de E-mail IA  ═══════════════════════════
    As 5 telas novas (Tickets, Detalhes, Chat, Galeria, Suporte Escalado)
    reaproveitam quase tudo que já existe (.cartao, .kpi, .tabela, .sup-item,
@@ -2473,7 +2330,7 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 }
 .rastreio-etapa.is-atual .rastreio-etapa-ponto {
   background: var(--st-em-dia); border-color: var(--st-em-dia);
-  box-shadow: 0 0 0 3px rgba(66, 96, 230, .18);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--st-em-dia) 22%, transparent);
 }
 .rastreio-etapa-corpo { display: flex; flex-direction: column; gap: 2px; }
 .rastreio-etapa-corpo strong { font-size: 13.5px; font-weight: 600; color: var(--tinta-fraca); }
@@ -2560,3 +2417,296 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 .fm-tabela td { vertical-align: top; }
 .fm-tabela .fm-nowrap { white-space: nowrap; }
 .fm-sub { display: block; margin-top: 3px; color: var(--tinta-fraca); font-size: 12px; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Tema North — alinhado ao dash oficial (dash.thenorthscales.com), 21/09/2026
+   Os tokens de cor/sombra/fonte lá em cima já foram trocados pelos do dash
+   (fundo petróleo no escuro, papel quente no claro, acento ciano). Este bloco
+   cuida do que token sozinho não resolve: fontes, menu escuro, títulos com
+   trecho em itálico e o cabeçalho da Home. Regra do design system deles: nada
+   de glassmorphism (por isso o cabeçalho perdeu o blur), nada de neon.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@font-face { font-family: 'Clash Display'; font-weight: 500; font-display: swap;
+  src: url('/fonts/ClashDisplay-500.woff2') format('woff2'); }
+@font-face { font-family: 'Clash Display'; font-weight: 600; font-display: swap;
+  src: url('/fonts/ClashDisplay-600.woff2') format('woff2'); }
+@font-face { font-family: 'Clash Display'; font-weight: 700; font-display: swap;
+  src: url('/fonts/ClashDisplay-700.woff2') format('woff2'); }
+@font-face { font-family: 'Roboto Mono'; font-weight: 500; font-display: swap;
+  src: url('/fonts/RobotoMono-500.ttf') format('truetype'); }
+@font-face { font-family: 'Roboto Mono'; font-weight: 600; font-display: swap;
+  src: url('/fonts/RobotoMono-600.ttf') format('truetype'); }
+@font-face { font-family: 'Roboto Mono'; font-weight: 700; font-display: swap;
+  src: url('/fonts/RobotoMono-700.ttf') format('truetype'); }
+
+/* Clash Display só em título GRANDE (marca, cabeçalho da página, título da aba):
+   o espaço dela mede 0,15 em, então em corpo pequeno as palavras grudam — no
+   dash ela também só aparece em display. Título de card fica no texto do
+   sistema, com o peso de antes. */
+.topo h1, .login-marca h1, .vg-heroi-titulo,
+.conteudo > .cartao:first-child > .cartao-cabeca h2 {
+  font-family: var(--fonte-display); letter-spacing: -0.025em; word-spacing: 0.08em;
+}
+h1 em, h2 em, h3 em { font-style: italic; font-weight: 500; color: var(--st-em-dia); }
+
+.marca-nome b { font-weight: 700; letter-spacing: -0.025em; }
+.conteudo > .cartao:first-child > .cartao-cabeca h2 { font-size: 24px; font-weight: 600; }
+
+/* Cabeçalho fixo sem vidro: fundo chapado + filete, como a barra do dash. */
+.topo { background: var(--plano); backdrop-filter: none; box-shadow: none; }
+
+/* Rótulos técnicos: versalete mono com o espaçamento largo do dash. */
+.kpi-rotulo { letter-spacing: .12em; }
+.menu-separador { letter-spacing: .18em; font-size: 9px; }
+
+/* Menu lateral: escuro SEMPRE (gradiente petróleo fixo), igual nos dois
+   temas — é assim no dash. Cores fixas de propósito: não seguem o tema. */
+.menu {
+  background: linear-gradient(180deg, #0e1a20 0%, #132630 55%, #0f2028 100%);
+  border-right: 1px solid rgba(91, 200, 255, 0.10);
+}
+.menu-item, .menu-alternar {
+  color: #9da9a7; border-radius: 6px; font-weight: 500; letter-spacing: -0.005em;
+}
+.menu-item:hover, .menu-alternar:hover { color: #fff; background: rgba(91, 200, 255, 0.06); }
+.menu-item:focus-visible, .menu-alternar:focus-visible { outline-color: #5bc8ff; }
+.menu-item[aria-selected="true"] {
+  color: #5bc8ff; border-color: transparent;
+  background: linear-gradient(90deg, rgba(91, 200, 255, 0.14), transparent 80%);
+  box-shadow: inset 2px 0 0 #5bc8ff;
+}
+.menu-item[aria-selected="true"] svg { color: #5bc8ff; }
+.menu-alternar { color: #879494; }
+.menu-separador { color: #879494; border-top-color: rgba(91, 200, 255, 0.12); }
+
+/* ── Home: cabeçalho da página no layout do print da especificação ── */
+.vg-heroi { padding: clamp(8px, 2vw, 22px) 0 6px; }
+.vg-heroi-eyebrow {
+  font: 500 11px/1.3 var(--fonte-mono); letter-spacing: .2em; text-transform: uppercase;
+  color: var(--tinta-fraca);
+}
+.vg-heroi-eyebrow b { font-weight: 500; color: var(--st-em-dia); }
+.vg-heroi-titulo {
+  margin: 12px 0 0; font-size: clamp(34px, 5.4vw, 68px); font-weight: 600;
+  line-height: 1.02; letter-spacing: -0.03em; color: var(--tinta);
+}
+.vg-heroi-sub {
+  margin-top: 14px; max-width: 62ch; font-size: clamp(14px, 1.3vw, 17px);
+  line-height: 1.55; color: var(--tinta-2);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Visão Geral v2 — blocos A–G (especificação + RETIRAR DASH), 21/09/2026
+   Cor é estado, não enfeite: ciano = neutro, verde = dentro da meta, âmbar =
+   atenção, vermelho = acima do limite (o cartão ganha a borda vermelha).
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.vg-tom--bom    { --vg-tom: var(--st-processando); }
+.vg-tom--neutro { --vg-tom: var(--st-em-dia); }
+.vg-tom--medio  { --vg-tom: var(--st-atrasado); }
+.vg-tom--ruim   { --vg-tom: var(--st-travado); }
+
+/* filtros globais: período + comparação */
+.vg-filtros {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
+  padding: 12px 0; border-top: 1px solid var(--borda); border-bottom: 1px solid var(--borda);
+}
+.vg-seg { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.vg-filtro-rotulo, .vg-data span {
+  font: 500 10px/1 var(--fonte-mono); letter-spacing: .16em; text-transform: uppercase; color: var(--tinta-fraca);
+  margin-right: 4px;
+}
+.vg-chip {
+  appearance: none; cursor: pointer; padding: 7px 13px; border-radius: 999px;
+  border: 1px solid var(--borda); background: var(--superficie); color: var(--tinta-2);
+  font: 500 12.5px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  transition: border-color .14s, color .14s, background-color .14s;
+}
+.vg-chip:hover { border-color: var(--eixo); color: var(--tinta); }
+.vg-chip.is-ativo {
+  color: var(--st-em-dia); border-color: color-mix(in srgb, var(--st-em-dia) 55%, var(--borda));
+  background: color-mix(in srgb, var(--st-em-dia) 9%, var(--superficie));
+}
+.vg-datas { display: inline-flex; gap: 10px; align-items: center; }
+.vg-data { display: inline-flex; align-items: center; gap: 4px; }
+.vg-data input {
+  font: 500 12.5px/1 var(--fonte-mono); color: var(--tinta); background: var(--superficie);
+  border: 1px solid var(--borda); border-radius: 8px; padding: 6px 8px;
+}
+.vg-sync { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font: 500 11px/1 var(--fonte-mono); color: var(--tinta-fraca); }
+.vg-sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--st-processando); }
+
+/* alertas (até 3) */
+.vg-alertas { display: grid; gap: 8px; }
+.vg-alerta {
+  display: flex; align-items: flex-start; gap: 12px; padding: 13px 16px; border-radius: 12px;
+  border: 1px solid var(--borda); background: var(--superficie);
+}
+.vg-alerta-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; margin-top: 6px; background: var(--tinta-fraca); }
+.vg-alerta-corpo { flex: 1; min-width: 0; }
+.vg-alerta-corpo b { font-size: 14px; font-weight: 640; color: var(--tinta); }
+.vg-alerta-corpo p { margin: 3px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--tinta-2); }
+.vg-alerta-ir { flex: none; align-self: center; }
+.vg-alerta--alerta {
+  border-color: color-mix(in srgb, var(--st-travado) 50%, var(--borda));
+  background: color-mix(in srgb, var(--st-travado) 8%, var(--superficie));
+}
+.vg-alerta--alerta .vg-alerta-dot { background: var(--st-travado); }
+.vg-alerta--atencao {
+  border-color: color-mix(in srgb, var(--st-atrasado) 45%, var(--borda));
+  background: color-mix(in srgb, var(--st-atrasado) 7%, var(--superficie));
+}
+.vg-alerta--atencao .vg-alerta-dot { background: var(--st-atrasado); }
+.vg-alerta--ok .vg-alerta-dot { background: var(--st-processando); }
+
+/* blocos */
+.vg-blocos { display: grid; gap: clamp(22px, 3vw, 38px); margin-top: 6px; }
+.vg-bloco { display: grid; gap: 14px; scroll-margin-top: 90px; }
+.vg-bloco-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+.vg-bloco-cab h3 { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+.vg-bloco-letra { color: var(--st-em-dia); }
+.vg-bloco-perg { font-size: 13.5px; color: var(--tinta-2); }
+.vg-bloco-fonte { margin-left: auto; font: 500 10.5px/1.3 var(--fonte-mono); letter-spacing: .04em; color: var(--tinta-fraca); text-align: right; }
+.vg-grade { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: clamp(12px, 1.4vw, 18px); align-items: stretch; }
+.vg-card { grid-column: span 4; }
+.vg-card--largo { grid-column: span 8; }
+.vg-card--cheio { grid-column: 1 / -1; }
+@media (max-width: 1000px) { .vg-card, .vg-card--largo { grid-column: 1 / -1 !important; } }
+.vg-pendencia {
+  margin: 0; padding: 10px 14px; border-radius: 10px; font-size: 12px; line-height: 1.55; color: var(--tinta-2);
+  border: 1px dashed var(--eixo);
+}
+.vg-pendencia b { color: var(--tinta); font-weight: 640; }
+
+/* cartão de indicador */
+.vg-card {
+  display: flex; flex-direction: column; gap: 8px; min-width: 0; text-align: left;
+  padding: 16px 18px 15px; border-radius: 14px; font: inherit; color: inherit;
+  background: var(--superficie); border: 1px solid var(--borda); box-shadow: var(--sombra-1);
+}
+.vg-card--clicavel { cursor: pointer; }
+.vg-card--clicavel:hover { border-color: var(--eixo); }
+.vg-tom--ruim.vg-card { border-color: color-mix(in srgb, var(--st-travado) 55%, var(--borda)); }
+.vg-card-cab { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.vg-card-tit {
+  display: inline-flex; align-items: center; gap: 8px;
+  font: 500 10px/1.35 var(--fonte-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--st-em-dia);
+}
+.vg-card-tit::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--vg-tom, var(--st-em-dia)); }
+.vg-card-cod { font: 500 10px/1 var(--fonte-mono); letter-spacing: .08em; color: var(--tinta-fraca); }
+.vg-card-valor { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
+.vg-card-valor b {
+  font: 600 clamp(28px, 2.6vw, 36px)/1.05 var(--fonte-mono); letter-spacing: -0.02em; color: var(--tinta);
+  font-variant-numeric: tabular-nums;
+}
+.vg-card-valor small { font: 500 12px/1.2 var(--fonte-mono); color: var(--tinta-fraca); }
+.vg-tag {
+  display: inline-block; padding: 2px 7px; border-radius: 6px; vertical-align: middle;
+  font: 600 9px/1.4 var(--fonte-mono); letter-spacing: .12em; text-transform: uppercase;
+  color: var(--st-atrasado); border: 1px solid color-mix(in srgb, var(--st-atrasado) 55%, transparent);
+}
+.vg-card-sub { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--tinta-2); }
+.vg-card-ref { margin: auto 0 0; font: 500 10.5px/1.45 var(--fonte-mono); color: var(--tinta-fraca); }
+.vg-card-nota { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--tinta-fraca); }
+.vg-card-valor + .vg-card-sub { margin-top: -2px; }
+.vg-var { font: 600 11px/1.2 var(--fonte-mono); color: var(--tinta-fraca); }
+.vg-var--bom { color: var(--st-processando); }
+.vg-var--ruim { color: var(--st-travado); }
+
+/* sparkline */
+.vg-spark { width: 100%; height: 30px; display: block; margin-top: 2px; }
+.vg-spark-ref { stroke: var(--eixo); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+
+/* bullet: valor contra meta e limite */
+.vg-bullet { position: relative; padding: 2px 0 16px; margin-top: 2px; }
+.vg-bullet-trilho { position: relative; height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--tinta) 9%, transparent); }
+.vg-bullet-cheio { height: 100%; border-radius: 4px; background: var(--vg-tom, var(--st-em-dia)); min-width: 3px; }
+.vg-bullet-marca { position: absolute; top: -4px; width: 2px; height: 16px; background: var(--tinta-2); transform: translateX(-1px); }
+.vg-bullet-marca--atencao { background: var(--st-atrasado); }
+.vg-bullet-marca--limite { background: var(--st-travado); }
+.vg-bullet-marca--meta { background: var(--st-processando); }
+.vg-bullet-rotulos { position: absolute; left: 0; right: 0; top: 16px; }
+.vg-bullet-rot { position: absolute; transform: translateX(-50%); font: 500 10px/1 var(--fonte-mono); color: var(--tinta-fraca); white-space: nowrap; }
+
+/* barra empilhada: cor esquenta conforme piora */
+.vg-emp { display: grid; gap: 8px; }
+.vg-emp-duplo { display: grid; gap: 14px; }
+.vg-emp-titulo { font: 500 11.5px/1 system-ui, sans-serif; color: var(--tinta-2); }
+.vg-emp-barra { display: flex; height: 22px; border-radius: 6px; overflow: hidden; gap: 2px; }
+.vg-emp-barra--vazia { background: color-mix(in srgb, var(--tinta) 8%, transparent); }
+.vg-emp-seg { display: block; border: 0; padding: 0; min-width: 3px; }
+button.vg-emp-seg { cursor: pointer; }
+button.vg-emp-seg:hover { filter: brightness(1.12); }
+.vg-emp-seg--1 { background: var(--st-em-dia); }
+.vg-emp-seg--2 { background: color-mix(in srgb, var(--st-em-dia) 55%, var(--st-atrasado)); }
+.vg-emp-seg--3 { background: var(--st-atrasado); }
+.vg-emp-seg--4 { background: color-mix(in srgb, var(--st-atrasado) 45%, var(--st-travado)); }
+.vg-emp-seg--5 { background: var(--st-travado); }
+.vg-emp-legenda { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 0; list-style: none; }
+.vg-emp-legenda li { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--tinta-2); }
+.vg-emp-legenda b { font-variant-numeric: tabular-nums; color: var(--tinta); }
+.vg-emp-dot { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+
+/* dumbbell: mediana ● e P90 ○ */
+.vg-db { display: grid; gap: 12px; margin-top: 4px; }
+.vg-db-linha { display: grid; grid-template-columns: minmax(150px, 230px) 1fr minmax(240px, 360px); gap: 6px 16px; align-items: center; }
+.vg-db-rotulo { font-size: 12.5px; color: var(--tinta-2); }
+.vg-db-trilho { position: relative; height: 16px; }
+.vg-db-trilho::before { content: ''; position: absolute; left: 0; right: 0; top: 7px; height: 2px; background: color-mix(in srgb, var(--tinta) 8%, transparent); }
+.vg-db-seg { position: absolute; top: 7px; height: 2px; }
+.vg-db-seg--ia { background: var(--serie-7); }
+.vg-db-seg--humano { background: var(--st-em-dia); }
+.vg-db-ponto { position: absolute; top: 3px; width: 10px; height: 10px; border-radius: 50%; transform: translateX(-5px); box-sizing: border-box; }
+.vg-db-ponto--med.vg-db-ponto--ia { background: var(--serie-7); }
+.vg-db-ponto--med.vg-db-ponto--humano { background: var(--st-em-dia); }
+.vg-db-ponto--p90 { background: var(--superficie); border: 2px solid var(--serie-7); }
+.vg-db-ponto--p90.vg-db-ponto--humano { border-color: var(--st-em-dia); }
+.vg-db-texto { font: 500 11.5px/1.4 var(--fonte-mono); color: var(--tinta-fraca); }
+.vg-db-texto b { color: var(--tinta); font-weight: 600; }
+.vg-db-leg { display: flex; gap: 14px; font: 500 10.5px/1 var(--fonte-mono); color: var(--tinta-fraca); }
+@media (max-width: 900px) { .vg-db-linha { grid-template-columns: 1fr; } }
+.vg-porarea { margin-top: 12px; border-top: 1px solid var(--borda); padding-top: 10px; }
+.vg-porarea summary { cursor: pointer; font: 500 11.5px/1 var(--fonte-mono); letter-spacing: .06em; color: var(--st-em-dia); padding: 4px 0 10px; }
+
+.vg-linha { min-height: 190px; }
+.vg-pizza { min-height: 190px; }
+
+/* risco */
+.vg-niveis { display: flex; flex-wrap: wrap; gap: 8px; }
+.vg-nivel { display: inline-flex; align-items: baseline; gap: 5px; padding: 5px 11px; border-radius: 999px; font-size: 12px; color: var(--tinta-2); border: 1px solid var(--borda); }
+.vg-nivel b { font: 600 13px/1 var(--fonte-mono); color: var(--tinta); }
+.vg-nivel--critico { border-color: color-mix(in srgb, var(--st-travado) 55%, var(--borda)); }
+.vg-nivel--alto { border-color: color-mix(in srgb, var(--st-atrasado) 55%, var(--borda)); }
+.vg-score {
+  display: inline-block; min-width: 34px; padding: 3px 7px; border-radius: 6px; text-align: center;
+  font: 700 12px/1.2 var(--fonte-mono); color: var(--sobre-acento); background: var(--st-em-dia);
+}
+.vg-score--critico { background: var(--st-travado); color: #fff; }
+.vg-score--alto { background: var(--st-atrasado); color: #1f1a06; }
+.vg-score--medio { background: color-mix(in srgb, var(--st-atrasado) 45%, var(--superficie-2)); color: var(--tinta); }
+.vg-score--baixo { background: var(--superficie-2); color: var(--tinta-2); }
+.vg-fila td { vertical-align: top; }
+.vg-fila td.num { white-space: nowrap; }
+
+/* filtros da Home: segunda linha (plataforma, família, produto, fulfillment) */
+.vg-filtros-2 { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 16px; padding-top: 4px; }
+.vg-sel { display: inline-flex; flex-direction: column; gap: 5px; }
+.vg-sel .vg-filtro-rotulo { margin: 0; }
+.vg-sel select {
+  min-width: 150px; max-width: 260px; padding: 7px 10px; border-radius: 8px; font: 500 12.5px/1.2 system-ui, sans-serif;
+  color: var(--tinta); background: var(--superficie); border: 1px solid var(--borda);
+}
+.vg-limpar { align-self: flex-end; }
+
+/* E3: barras pareadas (pedidos x contatos) */
+.vg-par { display: grid; gap: 12px; }
+.vg-par-linha { display: grid; grid-template-columns: 96px 1fr auto; gap: 4px 12px; align-items: center; }
+.vg-par-rot { font-size: 12.5px; color: var(--tinta-2); }
+.vg-par-barras { display: grid; grid-template-columns: 1fr; gap: 3px; position: relative; }
+.vg-par-barra { height: 8px; border-radius: 4px; }
+.vg-par-barra--ped { background: var(--st-em-dia); }
+.vg-par-barra--cont { background: var(--serie-7); }
+.vg-par-txt { font: 500 10.5px/1.2 var(--fonte-mono); color: var(--tinta-fraca); margin-bottom: 3px; }
+
+.vg-card > .vg-tag { align-self: flex-start; }

@@ -7,28 +7,12 @@
  * poucos segundos, para uma tela que ninguém está olhando, seria desperdício.
  * Busca de novo só ao trocar o período ou reabrir a aba.
  */
-import { $, api, kpiCard, barraHorizontal, tooltip, rotularCategoria, rotularMotivo, rotularTipoConteudo } from './emailComum.js';
+import { $, api, kpiCard, barraHorizontal, tooltip, topMaisOutros, rotularCategoria, rotularMotivo, rotularTipoConteudo } from './emailComum.js';
 import { n, dia } from './format.js';
 import { desenharColunas, desenharPizza } from './charts.js';
 
 const pct = (v) => (v === null || v === undefined ? '—' : `${Math.round(v * 1000) / 10}%`);
 const ROTULO_TIPO_REEMBOLSO = { reembolso: 'Reembolso', chargeback: 'Chargeback' };
-
-/**
- * Reduz uma lista { campo, total } pra no máximo 8 fatias — a paleta
- * categórica da pizza só foi validada pra esse tamanho (ver skill de
- * dataviz). Só agrupa numa fatia "Outros" o que sobrar ALÉM da 8ª (raro,
- * hoje o próprio "outro" da classificação já entra como fatia nomeada).
- */
-function topMaisOutros(itens, campo, fnRotular, maxNomeados = 8) {
-  const ordenado = [...itens].sort((a, b) => b.total - a.total);
-  const nomeados = ordenado.slice(0, maxNomeados).map((item) => ({
-    chave: item[campo], rotulo: fnRotular(item[campo]), valor: item.total,
-  }));
-  const resto = ordenado.slice(maxNomeados).reduce((soma, item) => soma + item.total, 0);
-  if (resto > 0) nomeados.push({ chave: '__outros__', rotulo: 'Outros', valor: resto });
-  return nomeados;
-}
 
 let carregando = false;
 

@@ -304,6 +304,22 @@ export function kpiCard({
   return el;
 }
 
+/**
+ * Reduz uma lista { campo, total } pra no máximo 8 fatias — a paleta
+ * categórica da pizza só foi validada pra esse tamanho (ver skill de
+ * dataviz), e a cor da fatia N+1 repetiria a da 1ª. Até 8 itens, todos
+ * ficam nomeados; acima disso, os 7 maiores + uma fatia "Outros".
+ */
+export function topMaisOutros(itens, campo, fnRotular, maxFatias = 8) {
+  const ordenado = [...itens].sort((a, b) => b.total - a.total);
+  const nomear = (item) => ({ chave: item[campo], rotulo: fnRotular(item[campo]), valor: item.total });
+  if (ordenado.length <= maxFatias) return ordenado.map(nomear);
+  const nomeados = ordenado.slice(0, maxFatias - 1).map(nomear);
+  const resto = ordenado.slice(maxFatias - 1).reduce((soma, item) => soma + item.total, 0);
+  if (resto > 0) nomeados.push({ chave: '__outros__', rotulo: 'Outros', valor: resto });
+  return nomeados;
+}
+
 /* ═══════════════════════════  barra horizontal  ═══════════════════════════
    Motivos/categorias/áreas/responsáveis/pagamento/plataformas — todas a
    mesma forma: rótulo + número + barra proporcional ao maior valor. */

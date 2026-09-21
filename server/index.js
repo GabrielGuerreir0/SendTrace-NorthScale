@@ -60,6 +60,9 @@ const PUBLICOS = new Set([
   // o rastreio.js da aba INTERNA do painel (arquivo diferente, mesma pasta).
   '/rastreio', '/rastrear.html', '/rastrear.js',
   '/styles.css', '/src/logo_northscale.png',
+  // Fontes de marca (Clash Display e Roboto Mono): a tela de login também usa o styles.css.
+  '/fonts/ClashDisplay-500.woff2', '/fonts/ClashDisplay-600.woff2', '/fonts/ClashDisplay-700.woff2',
+  '/fonts/RobotoMono-500.ttf', '/fonts/RobotoMono-600.ttf', '/fonts/RobotoMono-700.ttf',
 ]);
 
 /* /login, /recuperar e /rastreio são as três telas públicas (arquivo .html) —
@@ -165,6 +168,8 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.json': 'application/json; charset=utf-8',
   '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
 };
 
 // 'na_regua' é pseudo-estado: tudo que ainda circula (não-finalizado). É o que
@@ -1773,9 +1778,18 @@ async function atender(req, res, url, sessao) {
   }
 
   if (url.pathname === '/api/visao-geral') {
-    const dias = inteiroOuNulo(url.searchParams.get('dias'));
+    const q = url.searchParams;
+    const dias = inteiroOuNulo(q.get('dias'));
     if (dias === false) return json(res, 400, { erro: 'dias inválido' });
-    return json(res, 200, await visaoGeralResumo(dias ?? 30));
+    const periodo = textoOuNulo(q.get('periodo'));
+    if (periodo && !['hoje', '7d', '30d', 'custom'].includes(periodo)) {
+      return json(res, 400, { erro: 'periodo inválido' });
+    }
+    const data = (raw) => { const v = textoOuNulo(raw); return v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null; };
+    return json(res, 200, await visaoGeralResumo({
+      periodo, de: data(q.get('de')), ate: data(q.get('ate')),
+      dias: dias ?? undefined, comparar: q.get('comparar') === '0' ? 0 : 1,
+    }));
   }
 
   /* ── aba interna "Rastreio" (Red Rock) — thin proxy, mesmo padrão de

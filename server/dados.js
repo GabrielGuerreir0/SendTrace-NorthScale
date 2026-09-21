@@ -1442,9 +1442,9 @@ function escolherStatus(fontes) {
  * faixa de status vem de reaproveitar os 4 insights que já existem — nenhum
  * dos dois lados inventa uma consulta nova de propósito.
  */
-export async function visaoGeralResumo(dias = 30) {
+export async function visaoGeralResumo(params = {}) {
   const [geral, regua, suporte, tickets, escalado] = await Promise.all([
-    obter('/api/visao-geral/', { dias }),
+    obter('/api/visao-geral/', params),
     reguaInsights(),
     suporteResumo(30),
     obter('/api/tickets/insights'),
