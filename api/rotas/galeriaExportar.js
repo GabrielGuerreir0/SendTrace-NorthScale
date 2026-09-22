@@ -162,35 +162,50 @@ function descreverFiltros(qs) {
  * na prática rodando local: 500 depois de ~17s) — em lotes pequenos, cada
  * query fica bem abaixo do limite mesmo se algum arquivo for grande. */
 const TAMANHO_LOTE_BINARIO = 15;
+/** Lotes rodam em paralelo (não um de cada vez) — cada query continua pequena
+ *  (protege o statement_timeout igual antes), só o TEMPO TOTAL que cai: pra
+ *  300 anexos eram 20 lotes em série (~cada um leva 1-2s de query+sharp),
+ *  agora só 20/CONCORRENCIA_LOTES rodadas. Achado 22/09: exportação real
+ *  "demorando demais" na tela — a query em si nunca foi o problema (por
+ *  isso os lotes pequenos), era rodar tudo em série sem necessidade. */
+const CONCORRENCIA_LOTES = 4;
+
+async function buscarLote(ids, mapa) {
+  let linhas = [];
+  try {
+    const { rows } = await query(
+      'SELECT id, conteudo FROM email_ia.anexos WHERE id = ANY($1::int[])',
+      [ids],
+    );
+    linhas = rows;
+  } catch {
+    // Um lote que falhar (timeout, anexo corrompido) não derruba os
+    // outros — esses itens só saem sem prévia de imagem no PDF.
+    return;
+  }
+  await Promise.all(linhas.map(async (r) => {
+    try {
+      const reduzida = await sharp(r.conteudo)
+        .resize({ width: LARGURA_MAX_EMBUTIDA, height: LARGURA_MAX_EMBUTIDA, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 72 })
+        .toBuffer();
+      mapa.set(r.id, reduzida);
+    } catch {
+      // Formato que o sharp não decodifica (HEIC sem libheif, DNG etc.) —
+      // fica sem prévia no PDF, não derruba a exportação inteira.
+    }
+  }));
+}
 
 async function buscarConteudos(ids) {
   const mapa = new Map();
+  const lotes = [];
   for (let i = 0; i < ids.length; i += TAMANHO_LOTE_BINARIO) {
-    const lote = ids.slice(i, i + TAMANHO_LOTE_BINARIO);
-    let linhas = [];
-    try {
-      const { rows } = await query(
-        'SELECT id, conteudo FROM email_ia.anexos WHERE id = ANY($1::int[])',
-        [lote],
-      );
-      linhas = rows;
-    } catch {
-      // Um lote que falhar (timeout, anexo corrompido) não derruba os
-      // outros — esses itens só saem sem prévia de imagem no PDF.
-      continue;
-    }
-    await Promise.all(linhas.map(async (r) => {
-      try {
-        const reduzida = await sharp(r.conteudo)
-          .resize({ width: LARGURA_MAX_EMBUTIDA, height: LARGURA_MAX_EMBUTIDA, fit: 'inside', withoutEnlargement: true })
-          .jpeg({ quality: 72 })
-          .toBuffer();
-        mapa.set(r.id, reduzida);
-      } catch {
-        // Formato que o sharp não decodifica (HEIC sem libheif, DNG etc.) —
-        // fica sem prévia no PDF, não derruba a exportação inteira.
-      }
-    }));
+    lotes.push(ids.slice(i, i + TAMANHO_LOTE_BINARIO));
+  }
+  for (let i = 0; i < lotes.length; i += CONCORRENCIA_LOTES) {
+    const grupo = lotes.slice(i, i + CONCORRENCIA_LOTES);
+    await Promise.all(grupo.map((lote) => buscarLote(lote, mapa)));
   }
   return mapa;
 }
