@@ -301,7 +301,9 @@ function blocoA(s) {
     extra: comVariacao(s, 'reembolso', v.valor_reemb, v.valor_reemb_ant, { menorMelhor: true }),
     viz: el('p', 'vg-card-sub', `${pctTxt(razao(v.valor_reemb, v.valor_pedidos), 1)}% do valor dos pedidos do período (${n(v.pedidos_com_valor)} pedidos com valor). Ticket médio ${usd(v.ticket_medio)}.`),
     ref: 'Referência: vs período anterior.',
-    nota: 'É um piso: o valor vem do rastreio e só existe para pedidos da Red Rock e da FullStack. O valor exato de cada venda passa a ser guardado quando o registro dos eventos das plataformas for ligado no n8n.',
+    nota: v.reemb_com_valor
+      ? `${n(v.reemb_com_valor_evento)} de ${n(v.reemb_com_valor)} reembolsos com valor exato, vindo do evento da própria plataforma (desde 21/09) — o resto usa o piso do rastreio (Red Rock/FullStack) ou fica sem valor. A BuyGoods não manda evento de reembolso, então os dela sempre caem no piso.`
+      : 'Ainda sem reembolso com valor conhecido no período.',
   });
   return bloco({
     id: 'vg-bloco-a', letra: 'A', titulo: 'Resultado', pergunta: 'Estamos perdendo dinheiro?',
@@ -317,14 +319,14 @@ function blocoB(s) {
   const taxa = razao(e.ia, e.resolvidos);
   const taxaAnt = razao(e.ia_ant, e.resolvidos_ant);
   const c4 = card({
-    codigo: 'E4', span: 4, titulo: 'Resolvido só pela IA', tag: 'aprox.',
+    codigo: 'E4', span: 4, titulo: 'Resolvido só pela IA',
     valor: pctTxt(taxa, 0), unidade: '% dos tickets resolvidos',
     tom: taxa === null ? 'neutro' : (taxa >= 0.7 ? 'bom' : (taxa >= 0.4 ? 'medio' : 'ruim')),
     sub: `${n(e.ia)} de ${n(e.resolvidos)} tickets resolvidos foram concluídos pela IA · ${rotuloPeriodo(s)}`,
     extra: comVariacao(s, 'ia', taxa, taxaAnt, { pp: true, menorMelhor: false }),
     viz: bullet({ valor: (taxa ?? 0) * 100, max: 100, meta: 70, tom: taxa !== null && taxa >= 0.7 ? 'bom' : 'medio', rotulos: true }),
     ref: 'Meta sugerida: 70%.',
-    nota: 'O registro de quem fechou cada ticket (IA ou humano) começa quando for ligado. Até lá vale a assinatura do fluxo da IA.',
+    nota: 'Quem resolveu (IA ou humano) é registrado no ticket desde 21/09 — deixou de ser aproximação. Ticket resolvido antes disso sem sinal de IA conta como humano; ticket reaberto some da conta até ser resolvido de novo.',
   });
 
   const e1 = s.b.e1;

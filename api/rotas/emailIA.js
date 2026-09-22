@@ -307,7 +307,14 @@ async function executarChat({ anthropic, mensagens, modelo }) {
     role: m.role,
     content: String(m.content ?? '').slice(0, 20_000),
   }));
-  const sistema = montarSistemaChat();
+  // Cache do prompt (21/09/2026): o system prompt (~2.700 tokens, o schema do banco pra
+  // ferramenta de consulta) é sempre o mesmo texto. Sem cache_control, cada iteração do loop de
+  // tool-use abaixo reenviava esse prompt do zero pagando preço cheio — uma pergunta que precisa
+  // de 3-4 consultas ao banco pagava o prompt inteiro 3-4 vezes. Com cache_control, só a 1ª
+  // chamada da conversa paga cheio (+25% de escrita); as seguintes, dentro da mesma pergunta,
+  // pagam ~10% do preço (leitura do cache, TTL de 5 min — sempre válido aqui, as iterações do
+  // loop acontecem em segundos).
+  const sistema = [{ type: 'text', text: montarSistemaChat(), cache_control: { type: 'ephemeral' } }];
   const consultas = [];
 
   for (let iteracao = 0; iteracao < 12; iteracao += 1) {

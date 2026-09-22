@@ -143,10 +143,9 @@ const SEM_CONTATO = `NOT EXISTS (SELECT 1 FROM email_ia.emails e WHERE lower(e.r
  * Cinco medidas, em horas, numa janela [$1, $2):
  *  ia_primeira  — e-mail do cliente até a 1ª resposta automática da IA;
  *  ia_escala    — e-mail do cliente até a IA jogar o caso pro Suporte Escalado;
- *  ia_conclui   — 1º e-mail até a IA concluir sozinha (só é IA quando
- *                 `resolvido_em = ultima_resposta_ia_em`: o UPDATE do fluxo n8n
- *                 grava os dois no mesmo now(); a migração 042 passa a gravar
- *                 `resolvido_por` e o resultado é o mesmo);
+ *  ia_conclui   — 1º e-mail até a IA concluir sozinha (`resolvido_por = 'ia'`, migração 042,
+ *                 fechada em 21/09 — P8 do PDF; só entra o ticket que está `resolvido` agora,
+ *                 senão um ticket reaberto ficava contado pra sempre com o timestamp velho);
  *  humano_pega  — caso chegar no Suporte Escalado até UMA PESSOA agir (primeiro_toque_humano_em; automação não conta);
  *  humano_resolve — caso chegar no Suporte Escalado até ser finalizado.
  */
@@ -184,7 +183,7 @@ const sqlMedidasCs = (F) => `
            extract(epoch FROM (t.resolvido_em - t.primeiro_email_em)) / 3600.0
     FROM email_ia.tickets t
     LEFT JOIN area_cliente ac ON ac.email = lower(t.remetente_email)
-    WHERE t.resolvido_em = t.ultima_resposta_ia_em AND t.primeiro_email_em IS NOT NULL
+    WHERE t.resolvido_por = 'ia' AND t.status = 'resolvido' AND t.primeiro_email_em IS NOT NULL
       AND t.resolvido_em >= $1 AND t.resolvido_em < $2
       AND date_trunc('minute', t.resolvido_em) NOT IN (SELECT * FROM lote_resolv)${F.FC('t.remetente_email')}
     UNION ALL
@@ -298,18 +297,43 @@ async function coletarVisaoGeral(p, comparar, filtros = {}) {
       FROM disparos_pos_venda d
       WHERE (d.criado_em >= $3 OR d.reembolsado_em >= $3 OR d.chargeback_em >= $3)${FO('d')}`, J),
 
-    // R3 · valor reembolsado em $ (prévia): o valor do pedido vem do rastreio (Red Rock/FullStack)
+    // R3 · valor reembolsado em $ (prévia): desde 21/09 o valor real de cada venda/reembolso é
+    // gravado por evento_plataforma (migração 041) — usa esse valor quando existe (todas as
+    // plataformas, não só Red Rock/FullStack) e cai pro rastreio (o piso antigo) só quando não há
+    // evento (pedido de antes de 21/09, ou BuyGoods, que não manda refund/chargeback pro SendTrace).
+    // 'venda_ev' pega o 1º evento de venda (não uma rebill futura); 'reembolso_ev' pega o mais
+    // recente (por segurança, se algum dia a plataforma mandar correção). Digistore24 manda o
+    // valor do reembolso NEGATIVO — por isso o abs().
     valor: query(`
+      WITH venda_ev AS (
+        SELECT DISTINCT ON (d2.id) d2.id AS disparo_id, e.valor AS valor
+        FROM disparos_pos_venda d2
+        JOIN eventos_plataforma e ON e.transacao_id = d2.transacao_id AND btrim(e.plataforma) = btrim(d2.plataforma)
+          AND e.evento IN ('SALE', 'payment', 'neworder') AND e.valor IS NOT NULL
+        WHERE d2.criado_em >= $3${FO('d2')}
+        ORDER BY d2.id, e.recebido_em ASC
+      ), reembolso_ev AS (
+        SELECT DISTINCT ON (d2.id) d2.id AS disparo_id, abs(e.valor) AS valor
+        FROM disparos_pos_venda d2
+        JOIN eventos_plataforma e ON e.transacao_id = d2.transacao_id AND btrim(e.plataforma) = btrim(d2.plataforma)
+          AND e.evento IN ('RFND', 'refund') AND e.valor IS NOT NULL
+        WHERE d2.reembolsado_em >= $3${FO('d2')}
+        ORDER BY d2.id, e.recebido_em DESC
+      )
       SELECT count(*) FILTER (WHERE d.reembolsado_em >= $1 AND d.reembolsado_em < $2 AND d.chargeback_em IS NULL)::int AS reemb,
-             count(r.total) FILTER (WHERE d.reembolsado_em >= $1 AND d.reembolsado_em < $2 AND d.chargeback_em IS NULL)::int AS reemb_com_valor,
-             coalesce(sum(r.total) FILTER (WHERE d.reembolsado_em >= $1 AND d.reembolsado_em < $2 AND d.chargeback_em IS NULL), 0)::float AS valor_reemb,
+             count(coalesce(rev.valor, r.total)) FILTER (WHERE d.reembolsado_em >= $1 AND d.reembolsado_em < $2 AND d.chargeback_em IS NULL)::int AS reemb_com_valor,
+             count(rev.valor) FILTER (WHERE d.reembolsado_em >= $1 AND d.reembolsado_em < $2 AND d.chargeback_em IS NULL)::int AS reemb_com_valor_evento,
+             coalesce(sum(coalesce(rev.valor, r.total)) FILTER (WHERE d.reembolsado_em >= $1 AND d.reembolsado_em < $2 AND d.chargeback_em IS NULL), 0)::float AS valor_reemb,
              count(*) FILTER (WHERE d.reembolsado_em >= $3 AND d.reembolsado_em < $1 AND d.chargeback_em IS NULL)::int AS reemb_ant,
-             count(r.total) FILTER (WHERE d.reembolsado_em >= $3 AND d.reembolsado_em < $1 AND d.chargeback_em IS NULL)::int AS reemb_ant_com_valor,
-             coalesce(sum(r.total) FILTER (WHERE d.reembolsado_em >= $3 AND d.reembolsado_em < $1 AND d.chargeback_em IS NULL), 0)::float AS valor_reemb_ant,
-             count(r.total) FILTER (WHERE d.criado_em >= $1 AND d.criado_em < $2)::int AS pedidos_com_valor,
-             coalesce(sum(r.total) FILTER (WHERE d.criado_em >= $1 AND d.criado_em < $2), 0)::float AS valor_pedidos,
-             coalesce(avg(r.total), 0)::float AS ticket_medio
-      FROM disparos_pos_venda d LEFT JOIN rastreio_pedidos r ON r.transacao_id = d.transacao_id
+             count(coalesce(rev.valor, r.total)) FILTER (WHERE d.reembolsado_em >= $3 AND d.reembolsado_em < $1 AND d.chargeback_em IS NULL)::int AS reemb_ant_com_valor,
+             coalesce(sum(coalesce(rev.valor, r.total)) FILTER (WHERE d.reembolsado_em >= $3 AND d.reembolsado_em < $1 AND d.chargeback_em IS NULL), 0)::float AS valor_reemb_ant,
+             count(coalesce(vev.valor, r.total)) FILTER (WHERE d.criado_em >= $1 AND d.criado_em < $2)::int AS pedidos_com_valor,
+             coalesce(sum(coalesce(vev.valor, r.total)) FILTER (WHERE d.criado_em >= $1 AND d.criado_em < $2), 0)::float AS valor_pedidos,
+             coalesce(avg(coalesce(vev.valor, r.total)), 0)::float AS ticket_medio
+      FROM disparos_pos_venda d
+      LEFT JOIN rastreio_pedidos r ON r.transacao_id = d.transacao_id
+      LEFT JOIN venda_ev vev ON vev.disparo_id = d.id
+      LEFT JOIN reembolso_ev rev ON rev.disparo_id = d.id
       WHERE (d.criado_em >= $3 OR d.reembolsado_em >= $3)${FO('d')}${FR('r')}`, J),
 
     // R1 / C1 · curva de reembolso por coorte (só pedidos criados depois de 09/09, quando o registro é completo).
@@ -393,16 +417,25 @@ async function coletarVisaoGeral(p, comparar, filtros = {}) {
                                                   AND d.reembolsado_em IS NOT NULL AND d.reembolsado_em >= p.primeira - interval '1 day'))::int AS retidos
       FROM pediram p`, [ini, fim]),
 
-    // B · E4 resolvido só pela IA ÷ resolvidos no período (lote de script fora)
+    // B · E4 resolvido só pela IA ÷ resolvidos no período (lote de script fora). P8 fechado em
+    // 21/09 (migração 042): usa resolvido_por='ia' em vez da assinatura (resolvido_em =
+    // ultima_resposta_ia_em) — testado contra produção, mesmo resultado em 1.568 de 1.575 tickets;
+    // os 7 que divergem são tickets REABERTOS (status muda, resolvido_por volta a NULL pelo
+    // gatilho da 042, a assinatura antiga ficava com o timestamp velho e continuava marcando 'ia').
+    // Some AND status = 'resolvido': sem isso, um ticket reaberto (e ainda não resolvido de novo)
+    // ficava contado como "resolvido" pra sempre, só porque resolvido_em não é limpo no reabrir —
+    // achado nesta investigação, 33 de 557 tickets dos últimos 30 dias estavam inflando o
+    // denominador assim.
     e4: query(`
       WITH lote AS (SELECT date_trunc('minute', resolvido_em) FROM email_ia.tickets
                     WHERE resolvido_em IS NOT NULL GROUP BY 1 HAVING count(*) > ${LIMITE_LOTE})
       SELECT count(*) FILTER (WHERE resolvido_em >= $1 AND resolvido_em < $2)::int AS resolvidos,
-             count(*) FILTER (WHERE resolvido_em >= $1 AND resolvido_em < $2 AND resolvido_em = ultima_resposta_ia_em)::int AS ia,
+             count(*) FILTER (WHERE resolvido_em >= $1 AND resolvido_em < $2 AND resolvido_por = 'ia')::int AS ia,
              count(*) FILTER (WHERE resolvido_em >= $3 AND resolvido_em < $1)::int AS resolvidos_ant,
-             count(*) FILTER (WHERE resolvido_em >= $3 AND resolvido_em < $1 AND resolvido_em = ultima_resposta_ia_em)::int AS ia_ant
+             count(*) FILTER (WHERE resolvido_em >= $3 AND resolvido_em < $1 AND resolvido_por = 'ia')::int AS ia_ant
       FROM email_ia.tickets
-      WHERE resolvido_em IS NOT NULL AND date_trunc('minute', resolvido_em) NOT IN (SELECT * FROM lote)${FC('remetente_email')}`, J),
+      WHERE resolvido_em IS NOT NULL AND status = 'resolvido'
+        AND date_trunc('minute', resolvido_em) NOT IN (SELECT * FROM lote)${FC('remetente_email')}`, J),
 
     // B · E3 cobertura por plataforma: % dos pedidos x % dos clientes que falaram com o CS
     e3: query(`
