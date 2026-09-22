@@ -38,6 +38,12 @@ let resumoMovimentos = {};
 let busca = '';
 let plataforma = ''; // '' (todas) | 'direto' | 'digistore24' | 'jvzoo' | 'buygoods' | ...
 let ordem = 'recentes'; // 'recentes' | 'antigos'
+/** true quando um carregarDados() foi adiado por a sub-aba "Respostas dos
+ *  formulários" estar visível — /api/suporte-escalado?board_id=todos chega
+ *  a 2,5 MB, e baixar+parsear+redesenhar isso (Kanban inteiro) toda vez que
+ *  o filtro de board/plataforma muda travava a tela mesmo estando na aba de
+ *  Formulários, que não usa nada disso. Ver formulariosVisivel() abaixo. */
+let dadosPendentes = false;
 const expandidos = new Set();
 let arrastandoId = null;
 const POR_PAGINA_COLUNA = 8;
@@ -236,6 +242,19 @@ async function editarBoard(id, corpo) {
 /** Escolhe qual board mostrar: o salvo em localStorage se ainda existir e a
  *  pessoa puder vê-lo, senão o único que ela tem — senão nenhum (força
  *  escolher, ou mostra o aviso de "ainda sem board"). */
+function formulariosVisivel() {
+  return !$('esc-subaba-formularios').hidden;
+}
+
+/** Mesma coisa que carregarDados(), mas adia a chamada (2,5 MB de payload
+ *  do Kanban) se a sub-aba visível agora é "Respostas dos formulários" —
+ *  ela não usa nada disso. mostrarSubaba() dispara o carregarDados() real
+ *  assim que a pessoa volta pro Kanban/Métricas. */
+async function carregarDadosSeVisivel(opcoes) {
+  if (formulariosVisivel()) { dadosPendentes = true; return; }
+  await carregarDados(opcoes);
+}
+
 async function carregarBoards() {
   const { ok, dados } = await api('/api/suporte-escalado/boards');
   if (!ok) {
@@ -244,7 +263,7 @@ async function carregarBoards() {
     orfaos = 0;
     boardId = null;
     renderControlesBoard();
-    await carregarDados();
+    await carregarDadosSeVisivel();
     if (!$('esc-subaba-formularios').hidden) carregarFormularios(boardId);
     return;
   }
@@ -269,7 +288,7 @@ async function carregarBoards() {
 
   renderControlesBoard();
   await renderFormBoard();
-  await carregarDados();
+  await carregarDadosSeVisivel();
   // Se a página abriu direto na sub-aba "Respostas dos formulários"
   // (`escSubaba` salvo), a chamada em mostrarSubaba() lá embaixo aconteceu
   // ANTES do board ser resolvido (esta função é assíncrona) — sem isto, o
@@ -306,6 +325,7 @@ function mostrarSubaba(qual) {
   localStorage.setItem('escSubaba', qual);
   if (qual === 'metricas') renderGraficosTempo();
   if (qual === 'formularios') carregarFormularios(boardId);
+  if (qual !== 'formularios' && dadosPendentes) { dadosPendentes = false; carregarDados(); }
 }
 
 for (const nome of Object.keys(SUBABAS)) {
@@ -1498,7 +1518,7 @@ export async function carregarDados(opcoes = {}) {
 $('esc-busca').addEventListener('input', debounce((e) => {
   busca = e.target.value.trim();
   paginaColuna.clear();
-  carregarDados();
+  carregarDadosSeVisivel();
 }, 350));
 $('esc-ordem').addEventListener('change', (e) => {
   ordem = e.target.value || 'recentes';
@@ -1508,7 +1528,7 @@ $('esc-ordem').addEventListener('change', (e) => {
 $('esc-plataforma').addEventListener('change', (e) => {
   plataforma = e.target.value || '';
   paginaColuna.clear();
-  carregarDados();
+  carregarDadosSeVisivel();
 });
 
 $('esc-board-seletor').addEventListener('change', (e) => {
@@ -1517,7 +1537,7 @@ $('esc-board-seletor').addEventListener('change', (e) => {
   paginaColuna.clear();
   expandidos.clear();
   renderControlesBoard();
-  carregarDados();
+  carregarDadosSeVisivel();
   // Sub-aba "Respostas dos formulários" tem seu próprio carregamento (só
   // dispara ao abrir a sub-aba) — sem isto, trocar o board com essa sub-aba
   // já aberta deixava a tabela mostrando o board antigo até alguém recarregar.
@@ -1538,7 +1558,7 @@ ligarArrastoBoard($('esc-board'));
 carregarBoards();
 carregarInsightsEscalado();
 // Aba escondida não atualiza (várias abas abertas o dia todo multiplicavam a carga); ao voltar, atualiza na hora.
-setInterval(() => { if (!document.hidden) carregarDados({ periodico: true }); }, 30 * 1000);
+setInterval(() => { if (!document.hidden) carregarDadosSeVisivel({ periodico: true }); }, 30 * 1000);
 setInterval(() => { if (!document.hidden) carregarInsightsEscalado(); }, 60 * 1000);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
