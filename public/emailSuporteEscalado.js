@@ -866,7 +866,14 @@ function criarCard(item) {
     linhaEmail.className = 'esc-card-email-linha';
     const email = document.createElement('span');
     email.className = 'esc-card-email';
-    email.textContent = item.remetente_email;
+    // Cartão de 280px não cabe um e-mail inteiro numa linha — em vez de deixar
+    // o CSS quebrar em qualquer ponto (partia no meio do domínio), insere
+    // <wbr> (oportunidade de quebra, sem caractere visível) depois do @ e de
+    // cada ponto, pra a linha só cortar em lugar que ainda dá pra ler.
+    item.remetente_email.split(/([@.])/).forEach((parte) => {
+      email.append(document.createTextNode(parte));
+      if (parte === '@' || parte === '.') email.append(document.createElement('wbr'));
+    });
     linhaEmail.append(email, botaoCopiar(item.remetente_email, { titulo: `Copiar ${item.remetente_email}` }));
     card.append(linhaEmail);
   }
@@ -896,7 +903,13 @@ function criarCard(item) {
     resumo.className = 'esc-card-resumo';
     resumo.textContent = item.resumo_conversa;
     card.append(resumo);
-    card.title = 'Clique para ver o resumo completo';
+  }
+
+  // Motivo e resumo colapsam em 3 linhas (CSS) — o clique no cartão expande os
+  // dois juntos. Antes só existia se tivesse resumo; um cartão só com motivo
+  // longo ficava sem jeito nenhum de ler o texto cortado.
+  if (item.motivo_escalonamento || item.resumo_conversa) {
+    card.title = 'Clique para ver o texto completo';
     card.addEventListener('click', (ev) => {
       if (ev.target.closest('select, button')) return;
       if (expandidos.has(item.id)) expandidos.delete(item.id);
