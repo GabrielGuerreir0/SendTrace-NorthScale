@@ -226,6 +226,38 @@ public.produtos (catálogo): slug, nome, nome_sms, forma, uso, link_ebook, email
 public.produto_aliases: apelido por plataforma → produto_slug.
 public.produto_readmes: conhecimento por produto.
 
+public.postmark_eventos (eventos que o Postmark manda pro webhook do n8n — alimenta a aba
+  "Postmark" do painel; NÃO é 1 linha por e-mail, é 1 linha por EVENTO — pode ter várias por
+  mensagem):
+  id, recebido_em, tipo (Delivery | Bounce | SpamComplaint | Open | Click | SubscriptionChange),
+  subtipo, email, message_id, tag, stream, assunto, detalhes, ocorreu_em (hora real do evento no
+  Postmark — pode ser NULL, aí use recebido_em). Junte sempre por lower(email). Eventos de teste
+  (email @example.com) não são reais, exclua com email NOT LIKE '%@example.com'.
+  "Esse cliente recebeu/abriu os e-mails que mandamos?" / "algum e-mail voltou (bounce)?" / "ele
+  reclamou de spam?" = filtrar tipo + lower(email) aqui, ANTES de responder um cliente que diz
+  "não recebi nada" — pode ter sido bounce/spam do lado dele, não falha nossa.
+
+public.formularios_respostas (respostas dos formulários de reembolso/devolução do Drive,
+  importadas a cada 15 min pelo fluxo "Forms — Sincronizar respostas" — ver Suporte Escalado →
+  "Respostas dos formulários"):
+  id, chave, formulario ('reembolso' | 'envio'), respondido_em, email (já minúsculo), nome,
+  pedido, produto, qtd_potes, motivo (texto livre — "What is the reason for your refund
+  request?"), recebeu_produto (bool), usou_produto (bool), produto_em_casa ('Yes, sealed' |
+  'Yes, opened' | 'I no longer have it'), contatou_suporte (bool), problema_entrega (bool),
+  esperava_resultado, o_que_melhorar, rastreio, transportadora, lacrado (só do formulário
+  'envio'), qtd_devolvida, dados (jsonb — a resposta INTEIRA da planilha, todas as perguntas
+  originais por cabeçalho; use quando as colunas específicas não bastarem), perfil (grupo
+  atribuído por classificar_formularios() — ver PERFIS em api/rotas/formularios.js: nao_recebeu,
+  devolver_lacrado, devolucao_enviada, usou_sem_resultado, entrega_ou_produto_errado,
+  reincidente, efeito_adverso, risco_reputacional, outro), destino ('automatica' | 'escalada' —
+  SUGESTÃO da regra automática; a decisão de qual perfil a IA responde sozinha ainda é humana e
+  NÃO está em vigor — nunca trate como "isso já foi respondido pela IA" nem sugira mandar
+  resposta automática sem essa decisão estar tomada), motivo_destino, classificado_em,
+  importado_em.
+  "O que esse cliente disse no formulário?" / "ele confirma que devolveu lacrado?" / "qual o
+  perfil dele?" = filtrar por lower(email) aqui. Um cliente pode ter mais de uma resposta
+  (perfil 'reincidente' é justamente isso).
+
 public.compras_upsell_downsell (13/09/2026): upsell/downsell comprado pelo MESMO lead/cliente,
   À PARTE da régua principal — não entra em disparos_pos_venda, não dispara e-mail/SMS, só fica
   registrado. Colunas: transacao_id, nome, email, telefone, produto, tag_produto, etapa_funil
@@ -246,10 +278,16 @@ public.compras_upsell_downsell (13/09/2026): upsell/downsell comprado pelo MESMO
 - ticket ↔ histórico de status: email_ia.ticket_eventos.ticket_id = email_ia.tickets.id.
 - caso escalado ↔ histórico/notas: email_ia.suporte_escalado_historico/notas.suporte_escalado_id =
   email_ia.suporte_escalado.id.
+- e-mail ↔ eventos do Postmark: por lower(email) = lower(remetente_email) em
+  public.postmark_eventos.
+- e-mail ↔ resposta de formulário: por lower(email) = lower(remetente_email) em
+  public.formularios_respostas (já vem minúsculo).
 
 ── Pedido de "recomendação de resposta a um e-mail" ──
 Busque o e-mail completo, o histórico do remetente (outros e-mails dele), a venda vinculada
-(mv_emails_x_pedidos) e atendimentos de chat anteriores; escreva o rascunho no idioma do cliente.
+(mv_emails_x_pedidos), atendimentos de chat anteriores, eventos do Postmark (entregue? abriu?
+voltou?) e respostas de formulário que ele já tenha preenchido; escreva o rascunho no idioma do
+cliente.
 
 ── Proibido ──
 Nunca selecione colunas de senha/token/sessão de tabelas administrativas: painel_usuarios.senha_*,
