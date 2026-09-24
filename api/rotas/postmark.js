@@ -22,6 +22,8 @@ import { query as consultaPadrao } from '../../server/db.js';
 const TZ = 'America/Sao_Paulo';
 const SEM_TESTE = "coalesce(email, '') NOT LIKE '%@example.com'";
 const LIMITE_SPAM_POSTMARK = 0.1; // % — acima disso o Postmark avisa e pode pausar a conta
+const SPAM_PERTO_DO_LIMITE = 0.08; // % — daqui pra cima já é alerta crítico (24/09/2026: chegou a 0,099%)
+const MARGEM_CRITICA = 3; // reclamações que ainda cabem antes de chegar a 0,1%
 
 const CHAVES = [
   'orcamento_limite_ciclo', 'orcamento_margem_pct', 'orcamento_ciclo_fim',
@@ -29,6 +31,8 @@ const CHAVES = [
 ];
 
 const pct = (parte, todo) => (todo > 0 ? Math.round((parte / todo) * 10000) / 100 : null);
+// A taxa de spam precisa de 3 casas: 20/20.144 = 0,099% (limite 0,1%) não pode arredondar para 0,10%.
+const pct3 = (parte, todo) => (todo > 0 ? Math.round((parte / todo) * 100000) / 1000 : null);
 const virgula = (v) => String(v).replace('.', ',');
 
 /** Roda uma consulta que pode falhar (tabela ainda inexistente etc.) sem derrubar a aba inteira. */
@@ -48,7 +52,7 @@ export async function coletarPostmark(dias = 7, consulta = consultaPadrao) {
   const q = async (sql, params = []) => (await consulta(sql, params)).rows;
   const desde = `(date_trunc('day', now() AT TIME ZONE '${TZ}') - ($1::int - 1) * interval '1 day') AT TIME ZONE '${TZ}'`;
 
-  const [cfgRows, uso, saldoRow, serieRegua, serieIA, serieBV, evRows, prob, beat, fila, motivos, ia] = await Promise.all([
+  const [cfgRows, uso, saldoRow, serieRegua, serieIA, serieBV, evRows, prob, beat, fila, motivos, ia, spamEmail, bounceTipo, spam24] = await Promise.all([
     tentar(() => q('SELECT chave, valor FROM config_disparos WHERE chave = ANY($1)', [CHAVES]), null),
     tentar(() => q(`WITH cfg AS (SELECT valor::timestamptz AS desde FROM config_disparos WHERE chave = 'orcamento_log_desde')
       SELECT (SELECT count(*) FROM email_envios_log l, cfg WHERE l.quando >= cfg.desde)::int AS regua,
@@ -83,6 +87,15 @@ export async function coletarPostmark(dias = 7, consulta = consultaPadrao) {
       count(*) FILTER (WHERE pede_resposta AND resposta_enviada_em IS NULL AND erro_resposta_automatica IS NULL
                          AND plataforma_origem IS NULL AND data_email >= now() - interval '24 hours')::int AS pendentes_24h
       FROM email_ia.emails WHERE data_email >= now() - interval '48 hours'`), null),
+    // De qual e-mail vêm as reclamações (assunto = etapa da régua) e de que tipo são os bounces — o que o Postmark mostra e a aba não mostrava.
+    tentar(() => q(`SELECT coalesce(nullif(assunto, ''), '(sem assunto)') AS assunto, count(*)::int AS n FROM postmark_eventos
+      WHERE tipo = 'SpamComplaint' AND coalesce(ocorreu_em, recebido_em) >= ${desde} AND ${SEM_TESTE}
+      GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 8`, [dias]), null),
+    tentar(() => q(`SELECT coalesce(nullif(subtipo, ''), '(sem tipo)') AS subtipo, count(*)::int AS n FROM postmark_eventos
+      WHERE tipo = 'Bounce' AND coalesce(ocorreu_em, recebido_em) >= ${desde} AND ${SEM_TESTE}
+      GROUP BY 1 ORDER BY 2 DESC, 1`, [dias]), null),
+    tentar(() => q(`SELECT count(*)::int AS n FROM postmark_eventos
+      WHERE tipo = 'SpamComplaint' AND coalesce(ocorreu_em, recebido_em) >= now() - interval '24 hours' AND ${SEM_TESTE}`), null),
   ]);
 
   /* ── série por dia ── */
@@ -126,7 +139,10 @@ export async function coletarPostmark(dias = 7, consulta = consultaPadrao) {
   const eventos = {
     enviados: enviadosJanela, entregues: ev.Delivery ?? 0, aberturas: ev.Open ?? 0, cliques: ev.Click ?? 0,
     bounces: ev.Bounce ?? 0, spam: ev.SpamComplaint ?? 0,
-    taxa_spam: pct(ev.SpamComplaint ?? 0, enviadosJanela), taxa_bounce: pct(ev.Bounce ?? 0, enviadosJanela),
+    taxa_spam: pct3(ev.SpamComplaint ?? 0, enviadosJanela), taxa_bounce: pct(ev.Bounce ?? 0, enviadosJanela),
+    // quantas reclamações ainda cabem antes da taxa chegar a 0,1% (0 = a próxima já estoura)
+    margem_spam: enviadosJanela > 0 ? Math.max(0, Math.ceil((enviadosJanela * LIMITE_SPAM_POSTMARK) / 100) - (ev.SpamComplaint ?? 0) - 1) : null,
+    spam_24h: (Array.isArray(spam24) && spam24[0]) ? spam24[0].n : 0,
     taxa_abertura: Math.min(100, pct(ev.Open ?? 0, ev.Delivery ?? 0) ?? 0) || (ev.Delivery ? 0 : null), // eventos, não e-mails únicos: limita a 100%
     taxa_clique: Math.min(100, pct(ev.Click ?? 0, ev.Delivery ?? 0) ?? 0) || (ev.Delivery ? 0 : null),
   };
@@ -144,7 +160,9 @@ export async function coletarPostmark(dias = 7, consulta = consultaPadrao) {
   const add = (nivel, titulo, detalhe) => alertas.push({ nivel, titulo, detalhe });
   if (eventos.spam > 0) {
     const t = eventos.taxa_spam;
-    if (t !== null && t >= LIMITE_SPAM_POSTMARK) add('critico', `Reclamações de spam acima do limite do Postmark (${virgula(t)}%)`, `${eventos.spam} reclamação(ões) em ${enviadosJanela} envios no período. O Postmark avisa e pode pausar a conta se a taxa passar de ~${LIMITE_SPAM_POSTMARK}%. Veja quais e-mails geraram no Postmark → Activity.`);
+    const m = eventos.margem_spam;
+    if (t !== null && t < LIMITE_SPAM_POSTMARK && (t >= SPAM_PERTO_DO_LIMITE || (m !== null && m <= MARGEM_CRITICA))) add('critico', `Spam a ${m} reclamação(ões) de passar do limite (${virgula(t)}%)`, `${eventos.spam} reclamação(ões) em ${enviadosJanela} envios (${eventos.spam_24h} nas últimas 24 h). Com mais ${m + 1} o Postmark passa de ~${LIMITE_SPAM_POSTMARK}% e pode pausar a conta. Veja "Reclamações por e-mail" abaixo; se uma etapa nova concentrar as reclamações, pause essa etapa.`);
+    else if (t !== null && t >= LIMITE_SPAM_POSTMARK) add('critico', `Reclamações de spam acima do limite do Postmark (${virgula(t)}%)`, `${eventos.spam} reclamação(ões) em ${enviadosJanela} envios no período. O Postmark avisa e pode pausar a conta se a taxa passar de ~${LIMITE_SPAM_POSTMARK}%. Veja quais e-mails geraram no Postmark → Activity.`);
     else add('atencao', `${eventos.spam} reclamação(ões) de spam no período (${t === null ? '—' : virgula(t)}%)`, 'Ainda abaixo do limite de 0,1%, mas vale conferir o assunto e a etapa da régua desses e-mails.');
   }
   if (eventos.bounces > 0) {
@@ -166,7 +184,8 @@ export async function coletarPostmark(dias = 7, consulta = consultaPadrao) {
   else if (Date.now() - new Date(webhook.ultimo_evento_em).getTime() > 3 * 3600 * 1000 && (cota.enviados_hoje ?? 0) > 100) add('atencao', 'Webhook do Postmark sem eventos há mais de 3 h', 'Há envios acontecendo, mas nenhum evento chegou. Confira o webhook no Postmark e o fluxo no n8n.');
   if (!alertas.length) add('ok', 'Tudo em ordem', 'Sem alertas de spam, bounce, cota, fila ou falha de envio no período.');
 
-  return { gerado_em: new Date().toISOString(), dias, cota, serie, eventos, webhook, problemas, fila: filaOut, ia: iaOut, alertas };
+  const lista = (x) => (Array.isArray(x) ? x : []);
+  return { gerado_em: new Date().toISOString(), dias, cota, serie, eventos, webhook, problemas, spam_por_email: lista(spamEmail), bounces_por_tipo: lista(bounceTipo), fila: filaOut, ia: iaOut, alertas };
 }
 
 let cache = { em: 0, dias: 0, valor: null };

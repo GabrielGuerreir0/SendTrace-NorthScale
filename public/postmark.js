@@ -39,14 +39,14 @@ function renderAlertas(alertas) {
 /* ── KPIs ── */
 function renderKpis(d) {
   const e = d.eventos; const c = d.cota; const f = d.fila;
-  const tomSpam = e.taxa_spam !== null && e.taxa_spam >= 0.1 ? 'ruim' : (e.spam > 0 ? 'medio' : 'bom');
+  const tomSpam = e.taxa_spam !== null && (e.taxa_spam >= 0.08 || (e.margem_spam !== null && e.margem_spam <= 3)) ? 'ruim' : (e.spam > 0 ? 'medio' : 'bom');
   const tomBounce = e.taxa_bounce !== null && e.taxa_bounce >= 5 ? 'ruim' : (e.taxa_bounce >= 2 ? 'medio' : 'bom');
   const tomCota = c.pct !== null && c.pct >= 90 ? 'ruim' : (c.pct >= 75 ? 'medio' : 'bom');
   const tomFila = f.vencidos >= 1000 || f.maior_atraso_h >= 12 ? 'ruim' : (f.vencidos >= 200 || f.maior_atraso_h >= 3 ? 'medio' : 'bom');
   $('pm-kpis').replaceChildren(
     kpiCard({ icone: '✉', tom: 'neutro', rotulo: 'E-mails enviados', valor: n(e.enviados), nota: 'régua + IA + boas-vindas no período' }),
     kpiCard({ icone: '◔', tom: tomCota, rotulo: 'Cota do ciclo', valor: pct(c.pct), nota: `${n(c.usado_total)} de ${n(c.limite)} e-mails` }),
-    kpiCard({ icone: '⚑', tom: tomSpam, rotulo: 'Reclamações de spam', valor: n(e.spam), nota: `taxa ${pct(e.taxa_spam)} — limite do Postmark: 0,1%` }),
+    kpiCard({ icone: '⚑', tom: tomSpam, rotulo: 'Reclamações de spam', valor: n(e.spam), nota: `taxa ${pct(e.taxa_spam)} — limite 0,1%${e.margem_spam === null ? '' : ` · cabem mais ${n(e.margem_spam)}`}` }),
     kpiCard({ icone: '↩', tom: tomBounce, rotulo: 'Bounces', valor: n(e.bounces), nota: `taxa ${pct(e.taxa_bounce)} dos enviados` }),
     kpiCard({ icone: '◉', tom: 'neutro', rotulo: 'Abertura', valor: pct(e.taxa_abertura), nota: `${n(e.aberturas)} aberturas / ${n(e.entregues)} entregues (webhook)` }),
     kpiCard({ icone: '⏱', tom: tomFila, rotulo: 'Fila da régua', valor: n(f.vencidos), nota: f.vencidos ? `vencidos — maior atraso ${String(f.maior_atraso_h).replace('.', ',')} h` : 'nenhum pedido esperando' }),
@@ -137,6 +137,24 @@ function renderWebhook(d) {
   );
 }
 
+/* ── spam por e-mail e bounces por tipo ── */
+function renderSpamEBounces(d) {
+  const e = d.eventos;
+  const spam = [
+    linha('Reclamações no período', `${n(e.spam)} (${pct(e.taxa_spam)})`, e.taxa_spam !== null && e.taxa_spam >= 0.1 ? 'ruim' : null),
+    linha('Ainda cabem antes de 0,1%', e.margem_spam === null ? '—' : n(e.margem_spam), e.margem_spam !== null && e.margem_spam <= 3 ? 'ruim' : null),
+    linha('Nas últimas 24 h', n(e.spam_24h ?? 0), (e.spam_24h ?? 0) > 0 ? 'medio' : null),
+  ];
+  for (const r of d.spam_por_email ?? []) spam.push(linha('  ' + r.assunto, n(r.n)));
+  if (!(d.spam_por_email ?? []).length) spam.push(el('p', 'vazio-suave', 'Nenhuma reclamação de spam registrada pelo webhook no período.'));
+  $('pm-spam-email').replaceChildren(...spam);
+
+  const bounces = [linha('Bounces no período', `${n(e.bounces)} (${pct(e.taxa_bounce)})`)];
+  for (const r of d.bounces_por_tipo ?? []) bounces.push(linha('  ' + r.subtipo, n(r.n)));
+  if (!(d.bounces_por_tipo ?? []).length) bounces.push(el('p', 'vazio-suave', 'Nenhum bounce registrado pelo webhook no período.'));
+  $('pm-bounce-tipo').replaceChildren(...bounces);
+}
+
 /* ── tabela de problemas ── */
 const ROTULO_EVENTO = { Bounce: 'Bounce', SpamComplaint: 'Spam', SubscriptionChange: 'Supressão' };
 
@@ -173,6 +191,7 @@ async function carregar() {
   renderGrafico(dados);
   renderFila(dados);
   renderWebhook(dados);
+  renderSpamEBounces(dados);
   renderProblemas(dados);
   $('pm-atualizado').textContent = `atualizado às ${new Date(dados.gerado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
 }
