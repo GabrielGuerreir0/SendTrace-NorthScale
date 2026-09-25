@@ -533,7 +533,7 @@ async function coletarVisaoGeral(p, comparar, filtros = {}) {
                  AND ((e.plataforma_origem = 'digistore24' AND e.lead_digistore_enviado_em IS NULL AND e.lead_digistore_erro LIKE 'Falha no envio SMTP%')
                    OR (e.plataforma_origem = 'jvzoo' AND e.lead_jvzoo_enviado_em IS NULL AND e.lead_jvzoo_erro LIKE 'Falha no envio SMTP%'))
                  AND NOT EXISTS (SELECT 1 FROM email_ia.suporte_escalado se
-                                  WHERE lower(se.remetente_email) = lower((regexp_match(e.destinatario, '[\w.+-]+@[\w-]+\.[\w.-]+'))[1])))::int AS leads_sem_resposta`, [ini, fim]),
+                                  WHERE lower(se.remetente_email) = lower((regexp_match(e.destinatario, '[\\w.+-]+@[\\w-]+\\.[\\w.-]+'))[1])))::int AS leads_sem_resposta`, [ini, fim]),
     s2: query(`
       SELECT count(*)::int AS ativos,
              count(*) FILTER (WHERE EXISTS (SELECT 1 FROM produto_readmes r WHERE r.produto = p.nome AND r.ativo = true))::int AS com_ficha
