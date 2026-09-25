@@ -525,7 +525,15 @@ async function coletarVisaoGeral(p, comparar, filtros = {}) {
       SELECT (SELECT count(*) FROM disparos_pos_venda d WHERE d.status IN ('ativo', 'processando') AND d.ultimo_erro IS NOT NULL${FO('d')})::int AS regua_erro,
              (SELECT count(*) FROM disparos_pos_venda d WHERE d.status IN ('ativo', 'processando')${FO('d')})::int AS regua_total,
              (SELECT count(*) FROM email_ia.emails WHERE erro_resposta_automatica IS NOT NULL AND plataforma_origem IS NULL AND data_email >= $1 AND data_email < $2${FC('remetente_email')})::int AS smtp_erro,
-             (SELECT count(*) FROM email_ia.emails WHERE resposta_automatica IS NOT NULL AND plataforma_origem IS NULL AND data_email >= $1 AND data_email < $2${FC('remetente_email')})::int AS smtp_total`, [ini, fim]),
+             (SELECT count(*) FROM email_ia.emails WHERE resposta_automatica IS NOT NULL AND plataforma_origem IS NULL AND data_email >= $1 AND data_email < $2${FC('remetente_email')})::int AS smtp_total,
+             -- E-mails de LEADS (Digistore/JVZoo) que a IA não respondeu porque o envio falhou 3 vezes seguidas (erro definitivo),
+             -- e que também não têm caso no Suporte Escalado: ninguém está com eles. Últimos 30 dias; a falha de 18/08–18/09 deixou 76 clientes assim.
+             (SELECT count(*) FROM email_ia.emails e
+               WHERE e.pede_resposta AND e.data_email > now() - interval '30 days'
+                 AND ((e.plataforma_origem = 'digistore24' AND e.lead_digistore_enviado_em IS NULL AND e.lead_digistore_erro LIKE 'Falha no envio SMTP%')
+                   OR (e.plataforma_origem = 'jvzoo' AND e.lead_jvzoo_enviado_em IS NULL AND e.lead_jvzoo_erro LIKE 'Falha no envio SMTP%'))
+                 AND NOT EXISTS (SELECT 1 FROM email_ia.suporte_escalado se
+                                  WHERE lower(se.remetente_email) = lower((regexp_match(e.destinatario, '[\w.+-]+@[\w-]+\.[\w.-]+'))[1])))::int AS leads_sem_resposta`, [ini, fim]),
     s2: query(`
       SELECT count(*)::int AS ativos,
              count(*) FILTER (WHERE EXISTS (SELECT 1 FROM produto_readmes r WHERE r.produto = p.nome AND r.ativo = true))::int AS com_ficha
@@ -817,6 +825,10 @@ function montarAlertas({ bloco, b28, dias, base4sem }) {
   if (t6 !== null && t6 > 0.02) {
     add('atencao', 40, 'Rastreio não encontra parte dos pedidos',
       `${pt(t6 * 100)}% dos pedidos não foram encontrados na Red Rock nem na FullStack. A meta é abaixo de 2%.`, 'f');
+  }
+  if (e.s1.leads_sem_resposta > 0) {
+    add('alerta', 93, `${pt(e.s1.leads_sem_resposta, 0)} e-mails de leads sem resposta por falha de envio`,
+      'A IA tentou 3 vezes e o envio falhou, e não há caso aberto no Suporte Escalado: ninguém está com esses clientes. Reprocessar ou passar para uma pessoa.', 'e');
   }
   const s1 = razao(e.s1.regua_erro, e.s1.regua_total);
   if (s1 !== null && s1 > 0.01) {
