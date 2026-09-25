@@ -1769,6 +1769,10 @@ async function atender(req, res, url, sessao) {
       throw err;
     }
   }
+  /* ── Suporte Escalado → relatório de métricas da recorrência (25/09/2026) — thin proxy, só leitura ── */
+  if (url.pathname === '/api/recorrencia/relatorio') {
+    return json(res, 200, await obterApi('/api/recorrencia/relatorio/', {}));
+  }
 
   /* ── aba "Postmark" (18/09/2026): saúde do envio de e-mail — thin proxy, só leitura ── */
   if (url.pathname === '/api/postmark') {
