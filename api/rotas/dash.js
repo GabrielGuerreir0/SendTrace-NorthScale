@@ -92,29 +92,12 @@ function itemRetencao(r) {
 
 /* ──────────────────────────────  indicadores  ────────────────────────────── */
 
-/* Uma "venda" é uma linha que NÃO é a linha negativa de estorno da Digistore (extra-row, gross < 0).
-   O estorno dela vem do próprio refunded_usd (in-place) ou da soma das linhas negativas que
-   apontam pra ela em parent_external_id (extra-row). Duas formas, um número. */
+/* Uma "venda" = uma linha de dash_vendas (visão materializada, migração 055). O estorno já vem ligado à venda:
+   JVZoo/BuyGoods/etc. in-place; Digistore pela linha negativa que aponta para o ID do PEDIDO (session_id da venda,
+   não o external_id — achado de 25/09). `reembolsada`/`chargeback` = houve estorno; reemb_em/cb_em = quando. */
 const CTE_VENDAS = `
   vendas AS (
-    SELECT p.plataforma, p.external_id, p.status, p.product_type, p.ordered_at,
-           coalesce(p.original_gross, p.gross) AS valor,
-           greatest(p.refunded_usd, coalesce(f.refunded_usd, 0)) AS reemb_usd,
-           greatest(p.chargeback_usd, coalesce(f.chargeback_usd, 0)) AS cb_usd,
-           coalesce(p.refunded_at, f.refunded_at) AS reemb_em,
-           coalesce(p.chargeback_at, f.chargeback_at) AS cb_em
-    FROM dash_pedidos p
-    LEFT JOIN LATERAL (
-      SELECT sum(c.refunded_usd) AS refunded_usd, sum(c.chargeback_usd) AS chargeback_usd,
-             min(c.refunded_at) AS refunded_at, min(c.chargeback_at) AS chargeback_at
-      FROM dash_pedidos c
-      WHERE c.plataforma = p.plataforma AND c.parent_external_id = p.external_id
-        AND c.external_id <> p.external_id AND c.refund_model = 'extra-row' AND c.gross < 0
-    ) f ON true
-    WHERE NOT (p.refund_model = 'extra-row' AND p.gross < 0)
-      AND p.status IN ('APPROVED', 'REFUNDED', 'CHARGEBACK')
-      AND coalesce(p.original_gross, p.gross) > 0
-      AND ($2::text IS NULL OR p.plataforma = $2)
+    SELECT * FROM dash_vendas WHERE ($2::text IS NULL OR plataforma = $2)
   )`;
 
 async function coletarIndicadores({ dias, plataforma }) {
@@ -127,10 +110,10 @@ async function coletarIndicadores({ dias, plataforma }) {
              count(*)::int AS vendas,
              count(*) FILTER (WHERE product_type = 'FRONTEND')::int AS vendas_front,
              coalesce(sum(valor), 0)::float AS vendas_usd,
-             count(*) FILTER (WHERE reemb_usd > 0)::int AS reembolsos,
+             count(*) FILTER (WHERE reembolsada)::int AS reembolsos,
              count(*) FILTER (WHERE status = 'REFUNDED')::int AS reembolsos_por_status,
              coalesce(sum(reemb_usd), 0)::float AS reembolsado_usd,
-             count(*) FILTER (WHERE cb_usd > 0)::int AS chargebacks,
+             count(*) FILTER (WHERE chargeback)::int AS chargebacks,
              coalesce(sum(cb_usd), 0)::float AS chargeback_usd
       FROM vendas
       WHERE ordered_at >= ${janela} AND ordered_at < now()

@@ -259,9 +259,84 @@ function renderAlertas(s) {
   }
 }
 
+/* ═════════════════════  A · Resultado — dado do dash (Fase 2)  ═════════════════════ */
+
+const ROT_PLAT = { jvzoo: 'JVZoo', digistore24: 'Digistore24', buygoods: 'BuyGoods' };
+const rotPlat = (p) => ROT_PLAT[p] ?? p;
+const dhm = (iso) => (iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—');
+
+/** R1 (D30), R2 e R3 lidos do dash: mesma estrutura dos cartões da prévia, sem o selo "prévia". */
+function blocoADash(s, d) {
+  const m = d.metas ?? {};
+  const meta = m.reembolso_meta_d30_pct ?? 10;
+  const limite = m.reembolso_limite_d30_pct ?? 18;
+  const cbAt = m.chargeback_atencao_pct ?? 0.5;
+  const cbLim = m.chargeback_limite_pct ?? 0.9;
+  const dias30 = 30 * 86_400_000;
+  const deCoorte = new Date(new Date(s.periodo.de).getTime() - dias30);
+  const ateCoorte = new Date(new Date(s.periodo.ate).getTime() - dias30);
+
+  const porPlat = (campo, fmt) => (d.por_plataforma.length > 1 || d.completas.length === 1
+    ? el('p', 'vg-card-sub', d.por_plataforma.map((p) => `${rotPlat(p.plataforma)} ${fmt(p[campo])}`).join('  ·  '))
+    : null);
+
+  const excl = d.excluidas.map((x) => `${rotPlat(x.plataforma)} fora da taxa: ${x.motivo}${x.vendas ? ` (${n(x.vendas)} vendas no período)` : ''}.`);
+  const conf = d.confere.por_plataforma.filter((x) => x.sendtrace > 0 || x.dash_front > 0)
+    .map((x) => `${rotPlat(x.plataforma)} ${n(x.dash_front)} × ${n(x.sendtrace)}${x.diferenca_pct === null ? '' : ` (${x.diferenca_pct >= 0 ? '+' : '−'}${pctTxt(Math.abs(x.diferenca_pct), 1)}%)`}`);
+
+  const t1 = d.r1.taxa;
+  const semTaxa = d.completas.length === 0;
+  const c1 = card({
+    codigo: 'R1', span: 4, titulo: 'Reembolso em D30',
+    valor: semTaxa ? 'sem dado' : pctTxt(t1), unidade: semTaxa ? null : '% das compras',
+    tom: t1 === null ? 'neutro' : tomFaixa(t1 * 100, meta, limite),
+    sub: semTaxa
+      ? 'A plataforma escolhida não manda reembolso ao dash.'
+      : `${n(d.r1.reembolsadas)} de ${n(d.r1.expostos)} compras reembolsadas em até 30 dias · compras de ${dDesde(deCoorte)} a ${dDesde(ateCoorte)}`,
+    extra: semTaxa ? null : comVariacao(s, null, t1, d.r1.taxa_ant, { pp: true, menorMelhor: true }),
+    viz: semTaxa ? null : porPlat('r1', (r) => (r ? `${pctTxt(r.taxa)}%` : '—')),
+    ref: `Meta do CS: até ${meta}% em D30 · limite ${limite}% (metas do dash).`,
+    nota: [excl.join(' '), d.avisos.join(' '),
+      conf.length ? `Conferência com o SendTrace (front, mesmo período — dash × SendTrace): ${conf.join(' · ')}. A régua também inscreve alguns itens que não são front.` : ''].filter(Boolean).join(' '),
+  });
+
+  const t2 = d.r2.taxa;
+  const tom2 = t2 === null ? 'neutro' : (t2 * 100 < cbAt ? 'bom' : (t2 * 100 <= cbLim ? 'medio' : 'ruim'));
+  const c2 = card({
+    codigo: 'R2', span: 4, titulo: 'Chargeback no período',
+    valor: semTaxa ? 'sem dado' : pctTxt(t2), unidade: semTaxa ? null : '% das vendas', tom: tom2,
+    sub: semTaxa ? null : `${n(d.r2.chargebacks)} chargebacks ÷ ${n(d.r2.vendas)} vendas · ${rotuloPeriodo(s)}`,
+    extra: semTaxa ? null : comVariacao(s, null, t2, d.r2.taxa_ant, { pp: true, menorMelhor: true }),
+    viz: semTaxa ? null : bullet({ valor: (t2 ?? 0) * 100, max: Math.max(1.2, cbLim * 1.4), atencao: cbAt, limite: cbLim, tom: tom2 }),
+    ref: `Atenção ${String(cbAt).replace('.', ',')}% · limite ${String(cbLim).replace('.', ',')}% (metas do dash).`,
+    nota: 'O chargeback chega semanas depois da venda: os números dos últimos dias tendem a subir.',
+  });
+
+  const r3 = d.r3;
+  const serie = (r3.serie ?? []).map((x) => x.usd);
+  const c3 = card({
+    codigo: 'R3', span: 4, titulo: 'Valor reembolsado',
+    valor: semTaxa ? 'sem dado' : usd(r3.valor), unidade: semTaxa ? null : 'em reembolsos', tom: 'neutro',
+    sub: semTaxa ? null : `${n(r3.reembolsos)} reembolsos · ${pctTxt(r3.pct_do_valor, 1)}% do valor vendido no período (${usd(r3.vendas_usd)}) · ${rotuloPeriodo(s)}`,
+    extra: semTaxa ? null : comVariacao(s, null, r3.valor, r3.valor_ant, { menorMelhor: true }),
+    viz: serie.length > 1 ? sparkline(serie, { cor: 'var(--st-travado)' }) : null,
+    ref: 'Referência: vs período anterior.',
+    nota: `Valor do estorno na data em que ocorreu, no dash. Chargeback à parte: ${usd(r3.chargeback_usd)}.`,
+  });
+
+  return bloco({
+    id: 'vg-bloco-a', letra: 'A', titulo: 'Resultado', pergunta: 'Estamos perdendo dinheiro?',
+    fonte: `Dado do dash · ${d.completas.map(rotPlat).join(' + ') || '—'} · sincronizado às ${dhm(d.atualizado_em)}`,
+    pendencias: 'R4 (receita preservada pelo CS) precisa do registro da oferta feita e do valor concedido (P10). O chat já marca “reembolso evitado”, mas ainda sem casos no período.',
+  }, [c1, c2, c3]);
+}
+
 /* ═════════════════════════  A · Resultado (prévia)  ═════════════════════════ */
 
 function blocoA(s) {
+  if (s.dash?.disponivel) {
+    try { return blocoADash(s, s.dash); } catch (err) { console.error('dash (bloco A): caindo na prévia —', err); }
+  }
   const a = s.a;
   const taxa = razao(a.reembolsos, a.pedidos);
   const taxaAnt = razao(a.reembolsos_ant, a.pedidos_ant);
@@ -307,7 +382,9 @@ function blocoA(s) {
   });
   return bloco({
     id: 'vg-bloco-a', letra: 'A', titulo: 'Resultado', pergunta: 'Estamos perdendo dinheiro?',
-    fonte: 'Prévia com os eventos das plataformas no SendTrace — o dash não está ligado',
+    fonte: s.dash?.motivo === 'filtro'
+      ? 'Prévia com os eventos das plataformas no SendTrace — o dash não tem o recorte de produto, família ou fulfillment'
+      : 'Prévia com os eventos das plataformas no SendTrace — o dash não está disponível',
     pendencias: 'R4 (receita preservada pelo CS) precisa do registro da oferta feita e do valor concedido (P10). O chat já marca “reembolso evitado”, mas ainda sem casos no período.',
   }, [c1, c2, c3]);
 }
@@ -563,26 +640,45 @@ function blocoD(s) {
     ref: 'Referência: tendência de queda.',
   });
 
-  // C1 — curva de reembolso por coorte, com as etapas da régua
+  // C1 — curva de reembolso por coorte, com as etapas da régua (dash: uma linha por plataforma)
   const c1 = d.c1;
-  const pontos = c1.curva.filter((c) => c.expostos >= c1.min_coorte);
-  const grafico = el('div', 'vg-linha');
+  const dc = s.dash?.disponivel && s.dash.c1?.series?.length ? s.dash.c1 : null;
   const etapas = c1.marcadores.map((m) => `${m.nome} · D${Math.round(m.offset_h / 24)}`).join('  ·  ');
-  const cCurva = card({
-    codigo: 'C1', span: 8, titulo: 'Curva de reembolso por coorte, com a régua', tag: 'prévia',
-    sub: pontos.length > 1
-      ? `% acumulado dos pedidos reembolsados por dia desde a compra · pedidos desde ${dDesde(c1.desde)} (só entra o dia em que há ao menos ${c1.min_coorte} pedidos com essa idade).`
-      : 'Ainda não há pedidos suficientes com idade para desenhar a curva.',
-    viz: pontos.length > 1 ? grafico : null,
-    ref: etapas ? `Etapas da régua: ${etapas}` : null,
-    nota: 'O SendTrace só registra reembolso completo desde 09/09, então a curva cresce um dia por dia até fechar os 30. Meta do CS: abaixo de 10% em D30.',
-  });
-  if (pontos.length > 1) {
+  let cCurva;
+  if (dc) {
+    const grafico = el('div', 'vg-linha');
+    const metaD30 = s.dash.metas?.reembolso_meta_d30_pct ?? 10;
+    cCurva = card({
+      codigo: 'C1', span: 8, titulo: 'Curva de reembolso por coorte, com a régua',
+      sub: `% acumulado das compras reembolsadas por dia desde a compra · compras de ${dc.desde_dias} a ${dc.ate_dias} dias atrás (dado do dash) · ${dc.series.map((x) => `${rotPlat(x.plataforma)}: ${n(x.expostos)} compras`).join(' · ')}.`,
+      viz: grafico,
+      ref: etapas ? `Etapas da régua: ${etapas}` : null,
+      nota: `Meta do CS: abaixo de ${metaD30}% em D30 (meta do dash). A curva vale para todas as etapas do funil; a régua atua sobre o front.`,
+    });
     queueMicrotask(() => desenharLinha(
-      grafico, pontos.map((c) => `D${c.dia}`),
-      [{ chave: 'reemb', rotulo: 'Reembolsado (% acumulado)', cor: 7, pontos: pontos.map((c) => (c.expostos ? (c.reemb / c.expostos) * 100 : null)) }],
+      grafico, dc.series[0].pontos.map((pt) => `D${pt.dia}`),
+      dc.series.map((x, i) => ({ chave: x.plataforma, rotulo: rotPlat(x.plataforma), cor: [7, 3, 5][i % 3], pontos: x.pontos.map((pt) => (pt.pct === null ? null : pt.pct * 100)) })),
       { altura: 190, tooltip, unidade: '%', formatarValor: (v) => `${dec1(v)}%` },
     ));
+  } else {
+    const pontos = c1.curva.filter((c) => c.expostos >= c1.min_coorte);
+    const grafico = el('div', 'vg-linha');
+    cCurva = card({
+      codigo: 'C1', span: 8, titulo: 'Curva de reembolso por coorte, com a régua', tag: 'prévia',
+      sub: pontos.length > 1
+        ? `% acumulado dos pedidos reembolsados por dia desde a compra · pedidos desde ${dDesde(c1.desde)} (só entra o dia em que há ao menos ${c1.min_coorte} pedidos com essa idade).`
+        : 'Ainda não há pedidos suficientes com idade para desenhar a curva.',
+      viz: pontos.length > 1 ? grafico : null,
+      ref: etapas ? `Etapas da régua: ${etapas}` : null,
+      nota: 'O SendTrace só registra reembolso completo desde 09/09, então a curva cresce um dia por dia até fechar os 30. Meta do CS: abaixo de 10% em D30.',
+    });
+    if (pontos.length > 1) {
+      queueMicrotask(() => desenharLinha(
+        grafico, pontos.map((c) => `D${c.dia}`),
+        [{ chave: 'reemb', rotulo: 'Reembolsado (% acumulado)', cor: 7, pontos: pontos.map((c) => (c.expostos ? (c.reemb / c.expostos) * 100 : null)) }],
+        { altura: 190, tooltip, unidade: '%', formatarValor: (v) => `${dec1(v)}%` },
+      ));
+    }
   }
 
   // C4 — reembolso por etapa do funil

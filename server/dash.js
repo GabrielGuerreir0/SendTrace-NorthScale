@@ -261,6 +261,15 @@ export async function sincronizarPedidos({ modo = 'incremental', buscar = fetch 
     }
     if (modo === 'varredura') await salvarEstado('ultima_varredura', { em: inicio.toISOString() }, con);
 
+    // dash_vendas (migração 055) guarda a venda com o estorno já ligado; a Home lê dela. Atualiza a cada
+    // sincronização; se falhar (ex.: migração ainda não aplicada) só registra — o sync em si já deu certo.
+    try {
+      await con.query('REFRESH MATERIALIZED VIEW CONCURRENTLY dash_vendas');
+      await con.query("DELETE FROM dash_estado WHERE chave = 'erro_vendas'");
+    } catch (err) {
+      await salvarEstado('erro_vendas', { mensagem: err.message, em: new Date().toISOString() }, con).catch(() => {});
+    }
+
     // Metas e catálogo mudam pouco: renovam a cada 12 h, ou em toda varredura.
     for (const [chave, atualizar] of [['metas', atualizarMetas], ['catalogo', atualizarCatalogo]]) {
       const est = await lerEstado(chave, con);
