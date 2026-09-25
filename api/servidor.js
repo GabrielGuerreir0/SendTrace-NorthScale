@@ -46,6 +46,8 @@ import rotasPostmark from './rotas/postmark.js';
 import rotasFormularios from './rotas/formularios.js';
 import rotasDescadastro from './rotas/descadastro.js';
 import rotasRecorrencia from './rotas/recorrencia.js';
+import rotasDash from './rotas/dash.js';
+import { agendarSincronizacaoDash } from '../server/dash.js';
 
 const PORTA = Number(process.env.API_PORT) || 4400;
 const HOST = process.env.API_HOST || '127.0.0.1';
@@ -233,6 +235,7 @@ await app.register(swagger, {
       { name: 'Suporte', description: 'Histórico de atendimentos do chatbot — a memória do suporte por cliente.' },
       { name: 'Central de E-mail IA', description: 'Chat com o banco e geração de rascunho de resposta, os dois recursos que chamam Claude.' },
       { name: 'Rastreio', description: 'Onde cada pedido está de verdade (Red Rock) — snapshot, linha do tempo e a rota pública `/rastrear/:transacao_id`, sem login.' },
+      { name: 'Dash', description: 'Integração com o dash: sincronização de pedidos (leitura), metas, indicadores e o endpoint de retenção que o dash consome.' },
       { name: 'Saúde', description: 'A API está de pé?' },
     ],
   },
@@ -359,6 +362,7 @@ await app.register(rotasPostmark);
 await app.register(rotasFormularios);
 await app.register(rotasDescadastro);
 await app.register(rotasRecorrencia);
+await app.register(rotasDash);
 
 /* ═══════════════════════════════  subida  ══════════════════════════════ */
 
@@ -397,8 +401,15 @@ const recalcularRisco = () => pool.query('SELECT email_ia.recalcular_risco()')
 recalcularRisco();
 const intervaloRisco = setInterval(recalcularRisco, RISCO_INTERVALO_MS);
 
+/*
+ * Sincronização com o dash (só leitura) — de hora em hora + varredura semanal de 90 dias. Só liga com
+ * DASH_API_KEY no .env; sem a chave é um no-op e a API sobe igual. Erro vira só log.
+ */
+const desligarDash = agendarSincronizacaoDash(app.log);
+
 for (const sinal of ['SIGINT', 'SIGTERM']) {
   process.on(sinal, async () => {
+    desligarDash();
     clearInterval(intervaloAlertas);
     clearInterval(intervaloRisco);
     await app.close();
