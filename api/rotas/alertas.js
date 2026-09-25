@@ -63,7 +63,7 @@ const CONSULTAS = {
            coalesce(s.nome, s.remetente_email) AS titulo,
            s.motivo_escalonamento AS subtitulo
     FROM email_ia.suporte_escalado s
-    WHERE s.status = 'pendente'
+    WHERE s.status IN ('pendente', 'pendente_recorrencia')
       AND NOT EXISTS (SELECT 1 FROM painel_alertas_enviados x WHERE x.tipo = 'caso_escalado' AND x.chave = s.id::text)
     ORDER BY s.criado_em
     LIMIT 100`,

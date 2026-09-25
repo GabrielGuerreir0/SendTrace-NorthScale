@@ -469,7 +469,7 @@ async function coletarVisaoGeral(p, comparar, filtros = {}) {
              count(*) FILTER (WHERE now() - criado_em > interval '3 days' AND now() - criado_em <= interval '7 days')::int AS d3_7,
              count(*) FILTER (WHERE now() - criado_em > interval '7 days')::int AS mais_7d
       FROM email_ia.suporte_escalado
-      WHERE status IN ('pendente', 'iniciado', 'em_analise', 'esperando_resposta')${FC('remetente_email')}`),
+      WHERE status IN ('pendente', 'pendente_recorrencia', 'iniciado', 'em_analise', 'esperando_resposta')${FC('remetente_email')}`),
 
     f5: query(`SELECT count(*) FILTER (WHERE reaberturas > 0)::int AS reabertos,
                       count(*) FILTER (WHERE status = 'resolvido' OR reaberturas > 0)::int AS resolvidos

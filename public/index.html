@@ -1815,6 +1815,7 @@
       <button class="subaba-btn" id="esc-subaba-btn-kanban" type="button" role="tab" aria-selected="true">Kanban</button>
       <button class="subaba-btn" id="esc-subaba-btn-metricas" type="button" role="tab" aria-selected="false">Tempo no kanban</button>
       <button class="subaba-btn" id="esc-subaba-btn-formularios" type="button" role="tab" aria-selected="false">Respostas dos formulários</button>
+      <button class="subaba-btn" id="esc-subaba-btn-recorrencia" type="button" role="tab" aria-selected="false">Relatório de métricas</button>
     </div>
   </section>
 
@@ -1863,6 +1864,31 @@
         </div>
       </header>
       <div id="fm-grupos"></div>
+    </section>
+  </div>
+
+  <!-- ── sub-página: relatório de métricas da recorrência (pedido da Vitória, 25/09/2026) ── -->
+  <div id="esc-subaba-recorrencia" hidden>
+    <section class="cartao">
+      <header class="cartao-cabeca">
+        <div>
+          <h2>Relatório de métricas — recorrência</h2>
+          <p class="cartao-sub">
+            Clientes que compraram a entrada de US$ 39 e são cobrados de novo cerca de 31 dias depois.
+            "Com recorrência" são os que já tiveram a renovação cobrada; "entraram em contato" conta cada
+            cliente uma vez (mesmo os que cancelaram) e vale a partir do dia da 1ª renovação. Cada linha é
+            acumulada até o fim do mês. A média de dias vai do contato até a renovação mais recente antes dele.
+          </p>
+        </div>
+        <div class="tk-filtros">
+          <button class="btn btn-fantasma" id="rc-atualizar" type="button">Atualizar</button>
+        </div>
+      </header>
+      <p class="cartao-sub" id="rc-status"></p>
+    </section>
+    <section class="kpis kpis--suporte" id="rc-kpis"></section>
+    <section class="cartao">
+      <div id="rc-tabela"></div>
     </section>
   </div>
 

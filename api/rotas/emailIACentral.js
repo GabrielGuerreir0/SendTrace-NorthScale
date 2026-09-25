@@ -1053,7 +1053,7 @@ export default async function rotasEmailIACentral(app) {
     return rows[0] ?? null;
   }
 
-  /** Cria as 6 colunas padrão de todo board novo (mesmo ponto de partida dos
+  /** Cria as 7 colunas padrão de todo board novo (mesmo ponto de partida dos
    *  boards da Vitória/Rodrigo) — inclusive a `pendente`, obrigatória: o
    *  trigger de roteamento automático (email_ia.trg_suporte_escalado_rotear)
    *  só elege um board se ele tiver alguém pra receber o caso, e o kanban em
@@ -1066,17 +1066,22 @@ export default async function rotasEmailIACentral(app) {
   async function semearColunasPadrao(boardId) {
     const padrao = [
       ['pendente', 'Pendente', 'Caso acabou de ser escalado pela IA — ainda ninguém olhou.', 1],
+      ['pendente_recorrencia', 'Pendente - Recorrência', 'Cliente com recorrência (US$ 39 de entrada + renovação) — ainda ninguém olhou.', 1],
       ['formulario', 'Formulário', 'Esperando responder formulário.', 2],
       ['iniciado', 'Iniciado', 'Um humano já está atendendo este caso.', 3],
       ['esperando_resposta', 'Esperando resposta', 'A bola está com o cliente — aguardando ele responder.', 4],
       ['reembolsado', 'Reembolsado', 'O reembolso já foi processado.', 5],
       ['finalizado', 'Finalizado', 'Atendimento concluído.', 6],
     ];
-    await Promise.all(padrao.map(([chave, rotulo, descricao, ordem]) => query(
-      `INSERT INTO email_ia.suporte_escalado_colunas (board_id, chave, rotulo, descricao, ordem)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [boardId, chave, rotulo, descricao, ordem],
-    )));
+    // Em série (não Promise.all): "pendente" e "pendente_recorrencia" empatam em ordem 1 e o desempate é o id —
+    // em paralelo a ordem de inserção não é garantida e a Recorrência poderia aparecer antes da Pendente.
+    for (const [chave, rotulo, descricao, ordem] of padrao) {
+      await query(
+        `INSERT INTO email_ia.suporte_escalado_colunas (board_id, chave, rotulo, descricao, ordem)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [boardId, chave, rotulo, descricao, ordem],
+      );
+    }
   }
 
   app.post('/api/suporte-escalado/boards', {
@@ -1084,7 +1089,7 @@ export default async function rotasEmailIACentral(app) {
     schema: {
       tags: ['Central de E-mail IA'],
       summary: 'Cria um board novo no kanban de suporte escalado',
-      description: 'Só administradores. Nasce com as mesmas 6 colunas padrão (incluindo a '
+      description: 'Só administradores. Nasce com as mesmas 7 colunas padrão (incluindo a '
         + '"Pendente", fixa) e pode já vir vinculado a um usuário — cada usuário só pode ter '
         + 'um board.',
       security: [{ bearerAuth: [] }],
@@ -1224,7 +1229,7 @@ export default async function rotasEmailIACentral(app) {
       query(
         `SELECT b.id, b.nome, b.ativo, u.nome AS usuario_nome, u.email AS usuario_email,
                 count(s.id)::int AS total,
-                count(s.id) FILTER (WHERE s.status = 'pendente')::int AS pendentes
+                count(s.id) FILTER (WHERE s.status IN ('pendente', 'pendente_recorrencia'))::int AS pendentes
          FROM email_ia.suporte_escalado_boards b
          LEFT JOIN public.painel_usuarios u ON u.id = b.usuario_id
          LEFT JOIN email_ia.suporte_escalado s ON s.board_id = b.id
@@ -1459,7 +1464,7 @@ export default async function rotasEmailIACentral(app) {
     if (!colunaRows[0]) throw new ErroHttp(400, 'Coluna inválida.');
     const { rows } = await query(
       `UPDATE email_ia.suporte_escalado SET status = $1,
-         iniciado_em = CASE WHEN $1 <> 'pendente' THEN coalesce(iniciado_em, now()) ELSE iniciado_em END,
+         iniciado_em = CASE WHEN $1 NOT IN ('pendente', 'pendente_recorrencia') THEN coalesce(iniciado_em, now()) ELSE iniciado_em END,
          finalizado_em = CASE WHEN $1 = 'finalizado' THEN now() ELSE finalizado_em END,
          primeiro_toque_humano_em = coalesce(primeiro_toque_humano_em, now()),
          atualizado_em = now()
