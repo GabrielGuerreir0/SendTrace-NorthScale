@@ -31,6 +31,7 @@
  */
 import { query } from '../../server/db.js';
 import { coletarFase2 } from './dashFase2.js';
+import { coletarFase3, coletarRetencao } from './dashFase3.js';
 
 const TZ = 'America/Sao_Paulo';
 
@@ -746,6 +747,11 @@ async function coletarVisaoGeral(p, comparar, filtros = {}) {
   // Fase 2 do Rodrigo com o dash (R1, R2, R3, C1). Nunca derruba a Home: se falhar, ela volta pra "prévia".
   const dash = await coletarFase2({ ini, fim, pini, filtros })
     .catch((err) => { console.error('  ! dash fase 2:', err.message); return { disponivel: false, motivo: 'erro' }; });
+  // Fase 3 (E1, E2, E3, C3, C4, T7): mesmo formato da prévia, com o dash como fonte. Idem: nunca derruba a Home.
+  const dash3 = await coletarFase3({ ini, fim, pini, filtros })
+    .catch((err) => { console.error('  ! dash fase 3:', err.message); return { disponivel: false, motivo: 'erro' }; });
+  const retencao = await coletarRetencao({ ini, fim, pini, filtros })
+    .catch((err) => { console.error('  ! retenção (R4/G2/G3/G4):', err.message); return { disponivel: false, motivo: 'erro' }; });
 
   return {
     versao: 2,
@@ -760,6 +766,8 @@ async function coletarVisaoGeral(p, comparar, filtros = {}) {
     filtros: { aplicados: filtros, opcoes: R.opcoes.rows[0] },
     alertas,
     dash,
+    dash3,
+    retencao,
     ...bloco,
   };
 }

@@ -602,6 +602,10 @@ function abrirDetalheEscalado(item) {
   notasContainer.className = 'esc-notas';
   notasContainer.textContent = 'Carregando notas…';
 
+  const retencaoContainer = document.createElement('div');
+  retencaoContainer.className = 'esc-retencao';
+  retencaoContainer.textContent = 'Carregando retenção…';
+
   const rotuloStatus = rotularStatus(item.status);
 
   // Botão pra timeline completa (10/09/2026): o resumo abaixo é um texto
@@ -629,11 +633,13 @@ function abrirDetalheEscalado(item) {
       { rotulo: 'Mensagem da cliente — foco da reclamação', valor: item.resumo_conversa || '—', largo: true },
       { rotulo: 'Histórico completo', valor: botaoConversa, largo: true },
       { rotulo: 'Motivo do escalonamento', valor: item.motivo_escalonamento || '—', largo: true },
+      { rotulo: 'Retenção — oferta feita ao cliente', valor: retencaoContainer, largo: true },
       { rotulo: 'Notas internas', valor: notasContainer, largo: true },
     ],
   });
 
   carregarContexto(item, contextoContainer);
+  carregarRetencao(item, retencaoContainer);
   carregarNotas(item.id, notasContainer);
 }
 
@@ -725,6 +731,119 @@ function criarCampoDataEntrega(casoId, dataEntregaIso) {
 
   envolve.append(input, btnSalvar, status);
   return envolve;
+}
+
+/* ═══════════════════════════  retenção (P10)  ═══════════════════════════
+   O CS registra aqui o que ofereceu ao cliente que pediu reembolso (degrau, se aceitou, quanto foi preservado e
+   quanto custou). Vai para `retencao_ofertas`: é o que alimenta R4, G2, G3 e G4 da Home e o que o dash lê. O pedido
+   é o mais recente do cliente; o valor sugerido vem do dash. */
+
+const usdTxt = (v) => (v === null || v === undefined ? '—' : `US$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+
+async function carregarRetencao(item, container) {
+  try {
+    const { ok, dados } = await api(`/api/suporte-escalado/${item.id}/retencao`);
+    if (!ok) throw new Error('falha');
+    renderRetencao(item, container, dados);
+  } catch {
+    container.replaceChildren();
+    const erro = document.createElement('p');
+    erro.className = 'vazio-suave';
+    erro.textContent = 'Não consegui carregar a retenção deste caso.';
+    container.append(erro);
+  }
+}
+
+function renderRetencao(item, container, dados) {
+  container.replaceChildren();
+  const { pedido, ofertas = [], degraus = [] } = dados;
+
+  const resumo = document.createElement('p');
+  resumo.className = 'esc-retencao-pedido';
+  resumo.textContent = pedido
+    ? `Pedido ligado: ${pedido.produto || 'produto'} · ${rotularPlataforma(pedido.plataforma)} · ${pedido.transacao_id}${pedido.valor_usd ? ` · ${usdTxt(pedido.valor_usd)} no dash` : ''}`
+    : 'Não achei um pedido deste cliente: a oferta não pode ser registrada por aqui.';
+  container.append(resumo);
+
+  const recarregar = () => carregarRetencao(item, container);
+
+  if (ofertas.length) {
+    const lista = document.createElement('ul');
+    lista.className = 'esc-retencao-lista';
+    for (const o of ofertas) {
+      const li = document.createElement('li');
+      const partes = [dataHora(o.ocorrido_em), o.degrau_oferecido || '—', o.status,
+        o.valor_preservado_usd !== null && o.valor_preservado_usd !== undefined ? `preservado ${usdTxt(o.valor_preservado_usd)}` : null,
+        o.valor_concedido_usd !== null && o.valor_concedido_usd !== undefined ? `custou ${usdTxt(o.valor_concedido_usd)}` : null,
+        o.protecao ? 'reembolso de proteção' : null].filter(Boolean);
+      li.append(document.createTextNode(partes.join(' · ')));
+      if (o.status === 'oferecido') {
+        for (const [rotulo, novoStatus] of [['Aceitou', 'aceito'], ['Recusou', 'recusado']]) {
+          const b = document.createElement('button');
+          b.type = 'button'; b.className = 'btn btn-fantasma'; b.textContent = rotulo;
+          b.addEventListener('click', async () => {
+            const corpo = { status: novoStatus };
+            if (novoStatus === 'aceito') {
+              const v = window.prompt('Quanto foi preservado (US$)? Deixe em branco para não informar.', pedido?.valor_usd ? String(pedido.valor_usd) : '');
+              if (v === null) return;
+              if (v.trim() !== '') corpo.valor_preservado_usd = Number(v.replace(',', '.'));
+              if (corpo.valor_preservado_usd !== undefined && !(corpo.valor_preservado_usd >= 0)) { window.alert('Valor inválido.'); return; }
+            }
+            b.disabled = true;
+            const { ok, dados: r } = await api(`/api/suporte-escalado/${item.id}/retencao/${o.id}`, { metodo: 'PUT', corpo });
+            if (!ok) { b.disabled = false; window.alert(r?.erro ?? r?.detail ?? 'Não consegui atualizar a oferta.'); return; }
+            recarregar();
+          });
+          li.append(' ', b);
+        }
+      }
+      lista.append(li);
+    }
+    container.append(lista);
+  }
+
+  if (!pedido) return;
+
+  const form = document.createElement('form');
+  form.className = 'esc-retencao-form';
+  const campo = (rotulo, el) => { const l = document.createElement('label'); l.append(document.createTextNode(`${rotulo} `), el); return l; };
+
+  const degrau = document.createElement('input');
+  degrau.type = 'text'; degrau.required = true; degrau.maxLength = 80; degrau.setAttribute('list', `degraus-${item.id}`);
+  degrau.placeholder = 'Ex.: Reembolso parcial';
+  const dl = document.createElement('datalist'); dl.id = `degraus-${item.id}`;
+  for (const d of degraus) { const op = document.createElement('option'); op.value = d; dl.append(op); }
+
+  const status = document.createElement('select');
+  for (const [v, t] of [['oferecido', 'Oferecido (aguardando resposta)'], ['aceito', 'Aceito — o cliente ficou'], ['recusado', 'Recusado']]) {
+    const op = document.createElement('option'); op.value = v; op.textContent = t; status.append(op);
+  }
+  const num = (ph) => { const i = document.createElement('input'); i.type = 'number'; i.min = '0'; i.step = '0.01'; i.placeholder = ph; return i; };
+  const preservado = num(pedido.valor_usd ? String(pedido.valor_usd) : 'US$');
+  const concedido = num('US$ (0 se nada)');
+  const protecao = document.createElement('input'); protecao.type = 'checkbox';
+
+  const btn = document.createElement('button');
+  btn.type = 'submit'; btn.className = 'btn btn-forte'; btn.textContent = 'Registrar oferta';
+
+  form.append(campo('Oferta:', degrau), dl, campo('Situação:', status), campo('Valor preservado:', preservado),
+    campo('Custou:', concedido), campo('Reembolso imediato de proteção', protecao), btn);
+
+  const sincronizar = () => { preservado.parentElement.style.display = status.value === 'aceito' ? '' : 'none'; };
+  status.addEventListener('change', sincronizar); sincronizar();
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const corpo = { degrau_oferecido: degrau.value.trim(), status: status.value, protecao: protecao.checked };
+    if (status.value === 'aceito' && preservado.value !== '') corpo.valor_preservado_usd = Number(preservado.value);
+    if (concedido.value !== '') corpo.valor_concedido_usd = Number(concedido.value);
+    btn.disabled = true;
+    const { ok, dados: r } = await api(`/api/suporte-escalado/${item.id}/retencao`, { metodo: 'POST', corpo });
+    btn.disabled = false;
+    if (!ok) { window.alert(r?.erro ?? r?.detail ?? 'Não consegui registrar a oferta.'); return; }
+    recarregar();
+  });
+  container.append(form);
 }
 
 async function carregarNotas(casoId, container) {

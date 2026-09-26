@@ -84,6 +84,8 @@ function itemRetencao(r) {
     degrau_oferecido: r.degrau_oferecido,
     degrau_aceito: r.degrau_aceito,
     valor_preservado_usd: r.valor_preservado_usd === null ? null : Number(r.valor_preservado_usd),
+    valor_concedido_usd: r.valor_concedido_usd === null || r.valor_concedido_usd === undefined ? null : Number(r.valor_concedido_usd),
+    protecao: Boolean(r.protecao),
     status: r.status,
     ocorrido_em: iso(r.ocorrido_em),
     atualizado_em: iso(r.atualizado_em),
@@ -314,6 +316,8 @@ export default async function rotasDash(app) {
     degrau_oferecido: { type: 'string', maxLength: 80 },
     degrau_aceito: { type: ['string', 'null'], maxLength: 80 },
     valor_preservado_usd: { type: ['number', 'null'], minimum: 0 },
+    valor_concedido_usd: { type: ['number', 'null'], minimum: 0 },
+    protecao: { type: 'boolean' },
     status: { type: 'string', enum: ['oferecido', 'aceito', 'recusado'] },
     ocorrido_em: { type: 'string', description: 'ISO 8601; padrão: agora.' },
   };
@@ -329,11 +333,13 @@ export default async function rotasDash(app) {
     const b = req.body;
     const { rows } = await query(
       `INSERT INTO retencao_ofertas
-         (transacao_id, plataforma, email, degrau_oferecido, degrau_aceito, valor_preservado_usd, status, ocorrido_em, criado_por)
-       VALUES ($1, lower($2), lower($3), $4, $5, $6, coalesce($7, 'oferecido'), coalesce($8::timestamptz, now()), $9)
+         (transacao_id, plataforma, email, degrau_oferecido, degrau_aceito, valor_preservado_usd, status, ocorrido_em, criado_por,
+          valor_concedido_usd, protecao)
+       VALUES ($1, lower($2), lower($3), $4, $5, $6, coalesce($7, 'oferecido'), coalesce($8::timestamptz, now()), $9, $10, coalesce($11, false))
        RETURNING *`,
       [b.transacao_id, b.plataforma, b.email ?? null, b.degrau_oferecido ?? null, b.degrau_aceito ?? null,
-        b.valor_preservado_usd ?? null, b.status ?? null, b.ocorrido_em ?? null, req.usuario.email ?? null],
+        b.valor_preservado_usd ?? null, b.status ?? null, b.ocorrido_em ?? null, req.usuario.email ?? null,
+        b.valor_concedido_usd ?? null, b.protecao ?? null],
     );
     return resposta.code(201).send(itemRetencao(rows[0]));
   });
@@ -349,6 +355,8 @@ export default async function rotasDash(app) {
         properties: {
           degrau_aceito: CORPO_OFERTA.degrau_aceito,
           valor_preservado_usd: CORPO_OFERTA.valor_preservado_usd,
+          valor_concedido_usd: CORPO_OFERTA.valor_concedido_usd,
+          protecao: CORPO_OFERTA.protecao,
           status: CORPO_OFERTA.status,
           degrau_oferecido: CORPO_OFERTA.degrau_oferecido,
         },

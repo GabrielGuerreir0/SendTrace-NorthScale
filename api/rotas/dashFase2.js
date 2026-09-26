@@ -19,8 +19,8 @@
 import { query } from '../../server/db.js';
 import { dashConfigurado, lerEstado } from '../../server/dash.js';
 
-const PLATAFORMAS = ['jvzoo', 'digistore24', 'buygoods'];
-const COMPLETAS = ['jvzoo', 'digistore24'];                    // com dado de estorno confiável
+export const PLATAFORMAS = ['jvzoo', 'digistore24', 'buygoods'];
+export const COMPLETAS = ['jvzoo', 'digistore24'];                    // com dado de estorno confiável
 const MOTIVO_EXCLUIDA = { buygoods: 'sem dado de reembolso/chargeback (o postback da BuyGoods não chega ao dash)' };
 const AVISO_DIGISTORE = 'Digistore24: cerca de 28% dos estornos só entram por reconciliação manual, dias depois — o número dos últimos dias pode subir.';
 const MIN_COORTE = 30;
@@ -30,7 +30,7 @@ const pct = (a, b) => (b > 0 ? a / b : null);
 const num = (v) => (v === null || v === undefined ? 0 : Number(v));
 
 /** Plataforma do filtro da Home ("JVZoo", "DigiStore24"…) → slug do dash; null = sem filtro; undefined = fora do dash. */
-function slugDoFiltro(filtro) {
+export function slugDoFiltro(filtro) {
   if (!filtro) return null;
   const s = String(filtro).trim().toLowerCase();
   return PLATAFORMAS.includes(s) ? s : undefined;

@@ -1774,6 +1774,123 @@ export default async function rotasEmailIACentral(app) {
     return rows[0];
   });
 
+  /* ═══════════  Retenção (P10 do Rodrigo): oferta feita pelo CS, registrada no caso  ═══════════
+     O CS registra o que ofereceu ao cliente que pediu reembolso (degrau, aceito ou não, valor preservado, quanto custou).
+     Vai para `retencao_ofertas` — a mesma tabela que o dash lê em GET /api/retencao e de onde saem R4, G2, G3 e G4 da Home.
+     O pedido é o mais recente do cliente (o que o dash chama de externalId); o valor sugerido vem do dash. */
+
+  const DEGRAUS_SUGERIDOS = [
+    'Orientação de uso (sem concessão)', 'Desconto no próximo pedido', 'Reembolso parcial',
+    'Reenvio do produto', 'Bônus / brinde', 'Reembolso imediato (proteção)',
+  ];
+
+  async function casoParaRetencao(req) {
+    const board = await boardDoCaso(req.params.id);
+    if (!board) throw new ErroHttp(404, 'Caso escalado não encontrado.');
+    if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este caso não é de um board seu.');
+    const { rows } = await query('SELECT id, remetente_email FROM email_ia.suporte_escalado WHERE id = $1', [req.params.id]);
+    if (!rows.length) throw new ErroHttp(404, 'Caso escalado não encontrado.');
+    return rows[0];
+  }
+
+  async function pedidoDoCliente(email) {
+    const { rows } = await query(
+      `SELECT d.transacao_id, lower(btrim(d.plataforma)) AS plataforma, d.produto, d.criado_em,
+              x.external_id AS externo_id, x.valor::float AS valor_usd
+       FROM disparos_pos_venda d
+       LEFT JOIN LATERAL (
+         SELECT p.external_id, v.valor FROM dash_pedidos p
+         JOIN dash_vendas v ON v.plataforma = p.plataforma AND v.external_id = p.external_id
+         WHERE p.plataforma = lower(btrim(d.plataforma))
+           AND ((p.plataforma = 'digistore24' AND p.session_id = d.transacao_id)
+             OR (p.plataforma <> 'digistore24' AND p.external_id = d.transacao_id))
+         ORDER BY p.funnel_step NULLS LAST LIMIT 1) x ON true
+       WHERE lower(d.email) = lower($1) AND d.transacao_id IS NOT NULL AND btrim(d.plataforma) NOT IN ('', 'teste')
+       ORDER BY d.criado_em DESC LIMIT 1`,
+      [email],
+    ).catch(() => ({ rows: [] }));
+    return rows[0] ?? null;
+  }
+
+  const CORPO_RETENCAO = {
+    degrau_oferecido: { type: 'string', minLength: 1, maxLength: 80 },
+    degrau_aceito: { type: ['string', 'null'], maxLength: 80 },
+    status: { type: 'string', enum: ['oferecido', 'aceito', 'recusado'] },
+    valor_preservado_usd: { type: ['number', 'null'], minimum: 0 },
+    valor_concedido_usd: { type: ['number', 'null'], minimum: 0 },
+    protecao: { type: 'boolean' },
+  };
+
+  app.get('/api/suporte-escalado/:id/retencao', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Ofertas de retenção já registradas para o cliente do caso + pedido sugerido',
+      security: [{ bearerAuth: [] }],
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } },
+    },
+  }, async (req) => {
+    const caso = await casoParaRetencao(req);
+    const [pedido, ofertas] = await Promise.all([
+      pedidoDoCliente(caso.remetente_email),
+      query(`SELECT id, transacao_id, plataforma, degrau_oferecido, degrau_aceito, status, valor_preservado_usd,
+                    valor_concedido_usd, protecao, ocorrido_em, criado_por
+             FROM retencao_ofertas WHERE lower(email) = lower($1) ORDER BY ocorrido_em DESC LIMIT 20`, [caso.remetente_email]),
+    ]);
+    return { pedido, degraus: DEGRAUS_SUGERIDOS, ofertas: ofertas.rows };
+  });
+
+  app.post('/api/suporte-escalado/:id/retencao', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Registra a oferta de retenção feita ao cliente do caso',
+      description: 'O pedido é o mais recente do cliente. Conta como toque humano no caso.',
+      security: [{ bearerAuth: [] }],
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } },
+      body: { type: 'object', required: ['degrau_oferecido'], additionalProperties: false, properties: CORPO_RETENCAO },
+    },
+  }, async (req, resposta) => {
+    const caso = await casoParaRetencao(req);
+    const pedido = await pedidoDoCliente(caso.remetente_email);
+    if (!pedido) throw new ErroHttp(422, 'Não achei um pedido deste cliente para ligar a oferta. Registre pelo pedido, se souber o número.');
+    const b = req.body;
+    const status = b.status ?? 'oferecido';
+    const { rows } = await query(
+      `INSERT INTO retencao_ofertas (transacao_id, plataforma, email, degrau_oferecido, degrau_aceito, status,
+                                     valor_preservado_usd, valor_concedido_usd, protecao, criado_por, caso_id)
+       VALUES ($1, $2, lower($3), $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+      [pedido.externo_id ?? pedido.transacao_id, pedido.plataforma, caso.remetente_email, b.degrau_oferecido,
+        status === 'aceito' ? (b.degrau_aceito ?? b.degrau_oferecido) : (b.degrau_aceito ?? null), status,
+        b.valor_preservado_usd ?? null, b.valor_concedido_usd ?? null, b.protecao ?? false,
+        req.usuario.email ?? null, caso.id],
+    );
+    await query(`UPDATE email_ia.suporte_escalado SET primeiro_toque_humano_em = coalesce(primeiro_toque_humano_em, now()),
+                   atualizado_em = now() WHERE id = $1`, [caso.id]);
+    return resposta.code(201).send({ id: rows[0].id });
+  });
+
+  app.put('/api/suporte-escalado/:id/retencao/:oferta', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Atualiza a oferta de retenção (aceite, recusa, valores)',
+      security: [{ bearerAuth: [] }],
+      params: { type: 'object', required: ['id', 'oferta'], properties: { id: { type: 'integer' }, oferta: { type: 'string' } } },
+      body: { type: 'object', minProperties: 1, additionalProperties: false, properties: CORPO_RETENCAO },
+    },
+  }, async (req) => {
+    const caso = await casoParaRetencao(req);
+    const campos = Object.keys(req.body);
+    const sets = campos.map((c, i) => `${c} = $${i + 3}`).join(', ');
+    const { rows } = await query(
+      `UPDATE retencao_ofertas SET ${sets} WHERE id = $1 AND lower(email) = lower($2) RETURNING id, status`,
+      [req.params.oferta, caso.remetente_email, ...campos.map((c) => req.body[c])],
+    );
+    if (!rows.length) throw new ErroHttp(404, 'Oferta não encontrada para este cliente.');
+    return rows[0];
+  });
+
   /* ═══════════════════════  GET /api/suporte-escalado/:id/notas  ══════════════ */
 
   app.get('/api/suporte-escalado/:id/notas', {

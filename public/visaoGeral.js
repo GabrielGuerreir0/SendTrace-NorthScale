@@ -184,12 +184,12 @@ const tomFaixa = (v, ok, limite) => (v <= ok ? 'bom' : (v <= limite ? 'medio' : 
 const usd = (v) => (v >= 1_000_000 ? `US$ ${dec1(v / 1_000_000)} mi` : `US$ ${n(Math.round(v))}`);
 
 /** E3: participação de cada plataforma nos pedidos x nos clientes que falaram com o CS. */
-function pareado(linhas) {
+function pareado(linhas, fonte = 'SendTrace') {
   const w = el('div', 'vg-par');
   for (const l of linhas) {
     const r = el('div', 'vg-par-linha');
     const gap = (l.pct_pedidos ?? 0) - (l.pct_contatos ?? 0);
-    r.append(el('span', 'vg-par-rot', l.plataforma));
+    r.append(el('span', 'vg-par-rot', rotPlat(l.plataforma)));
     const barras = el('div', 'vg-par-barras');
     for (const [chave, pct, txt] of [['ped', l.pct_pedidos, `${pctTxt(l.pct_pedidos, 0)}% dos pedidos`], ['cont', l.pct_contatos, `${pctTxt(l.pct_contatos, 0)}% dos contatos`]]) {
       const b = el('div', `vg-par-barra vg-par-barra--${chave}`);
@@ -200,7 +200,7 @@ function pareado(linhas) {
     if (gap > 0.2) r.append(el('span', 'vg-tag', 'fora do alcance'));
     w.append(r);
   }
-  const leg = el('p', 'vg-card-nota', '% dos pedidos (SendTrace) contra % dos clientes que falaram com o CS. Diferença acima de 20 pontos é alerta.');
+  const leg = el('p', 'vg-card-nota', `% dos pedidos (${fonte}) contra % dos clientes que falaram com o CS. Diferença acima de 20 pontos é alerta.`);
   w.append(leg);
   return w;
 }
@@ -257,6 +257,67 @@ function renderAlertas(s) {
     }
     c.append(w);
   }
+}
+
+/* ═════════════════  Retenção registrada pelo CS (P10): R4, G2, G3, G4  ═════════════════ */
+
+const CONVITE_RETENCAO = 'Ninguém registrou oferta de retenção neste período. O CS registra na ficha do caso (Suporte Escalado → “Retenção — oferta feita ao cliente”).';
+
+/** R4 — receita preservada pelo CS: ofertas aceitas em que o dash não mostra estorno depois. */
+function cardR4(s) {
+  const r = s.retencao;
+  if (!r?.disponivel) return null;
+  if (r.vazio) {
+    return card({ codigo: 'R4', span: 4, titulo: 'Receita preservada pelo CS', valor: 'sem registros', tom: 'neutro',
+      sub: CONVITE_RETENCAO, ref: 'Meta mensal a definir.' });
+  }
+  const serie = r.r4.serie.map((x) => x.usd);
+  return card({
+    codigo: 'R4', span: 4, titulo: 'Receita preservada pelo CS', valor: usd(r.r4.valor), unidade: 'preservados', tom: r.r4.valor > 0 ? 'bom' : 'neutro',
+    sub: `${n(r.r4.aceitas)} ofertas aceitas sem estorno no dash · ${n(r.ofertas)} ofertas feitas${r.r4.reembolsadas_depois ? ` · ${n(r.r4.reembolsadas_depois)} aceitas reembolsadas depois (fora da conta)` : ''} · ${rotuloPeriodo(s)}`,
+    extra: comVariacao(s, null, r.r4.valor, r.r4.valor_ant, { menorMelhor: false }),
+    viz: serie.length > 1 ? sparkline(serie, { cor: 'var(--st-bom, #2e9e6b)' }) : null,
+    ref: 'Meta mensal a definir.',
+    nota: 'Valor informado pelo CS ao registrar a oferta aceita; sai da conta quem foi reembolsado depois (dash). Oferta com menos de 30 dias ainda pode ser reembolsada.',
+  });
+}
+
+/** G2, G3 e G4 — o save-desk. Sem registros, um cartão só com o convite. */
+function cardsRetencao(s) {
+  const r = s.retencao;
+  if (!r?.disponivel) return [];
+  if (r.vazio) {
+    return [card({ codigo: 'G2/G3/G4', span: 12, titulo: 'Retenção: salvamento, custo e reembolsos de proteção', valor: 'sem registros', tom: 'neutro',
+      sub: CONVITE_RETENCAO, ref: 'Teto de custo da retenção: a definir com a controladoria (sugestão 30%).' })];
+  }
+  const g2 = r.g2.map((x) => ({
+    rotulo: x.degrau, valor: razao(x.retidas, x.feitas) ?? 0, texto: `${pctTxt(razao(x.retidas, x.feitas), 0)}%`,
+    sub: `${n(x.retidas)} retidos sem estorno de ${n(x.feitas)} ofertas${x.aceitas !== x.retidas ? ` · ${n(x.aceitas)} aceitas` : ''}`,
+  }));
+  const c2 = card({
+    codigo: 'G2', span: 6, titulo: 'Salvamento por tipo de oferta',
+    sub: `Ofertas aceitas sem estorno no dash ÷ ofertas feitas, por degrau · ${rotuloPeriodo(s)}`,
+    viz: g2.length ? listaTaxas(g2, Math.max(...g2.map((x) => x.valor), 0.01)) : el('p', 'vazio-suave', 'Sem ofertas no período.'),
+    ref: 'Comparar entre degraus.',
+  });
+  const t3 = r.g3.taxa;
+  const c3 = card({
+    codigo: 'G3', span: 3, titulo: 'Custo da retenção',
+    valor: t3 === null ? '—' : pctTxt(t3, 0), unidade: t3 === null ? null : '% da receita preservada',
+    tom: t3 === null ? 'neutro' : (t3 <= r.g3.teto_sugerido ? 'bom' : 'ruim'),
+    sub: `${usd(r.g3.custo)} concedidos para preservar ${usd(r.g3.receita)}`,
+    viz: t3 === null ? null : bullet({ valor: t3 * 100, max: 100, meta: r.g3.teto_sugerido * 100, tom: t3 <= r.g3.teto_sugerido ? 'bom' : 'medio' }),
+    ref: 'Teto: a definir com a controladoria (sugestão 30%).',
+  });
+  const g4 = r.g4;
+  const c4 = card({
+    codigo: 'G4', span: 3, titulo: 'Reembolsos de proteção', valor: n(g4.protecao), unidade: 'reembolsos imediatos',
+    tom: g4.chargebacks_apos_contato > 0 ? 'ruim' : 'bom',
+    sub: `${n(g4.chargebacks_apos_contato)} chargebacks de clientes que já tinham falado com o CS (de ${n(g4.chargebacks)} no período)`,
+    ref: 'Meta: zero chargeback após contato.',
+    nota: 'Reembolso de proteção = marcado pelo CS ao registrar a oferta. Chargeback pelo dash (JVZoo e Digistore24).',
+  });
+  return [c2, c3, c4];
 }
 
 /* ═════════════════════  A · Resultado — dado do dash (Fase 2)  ═════════════════════ */
@@ -327,8 +388,8 @@ function blocoADash(s, d) {
   return bloco({
     id: 'vg-bloco-a', letra: 'A', titulo: 'Resultado', pergunta: 'Estamos perdendo dinheiro?',
     fonte: `Dado do dash · ${d.completas.map(rotPlat).join(' + ') || '—'} · sincronizado às ${dhm(d.atualizado_em)}`,
-    pendencias: 'R4 (receita preservada pelo CS) precisa do registro da oferta feita e do valor concedido (P10). O chat já marca “reembolso evitado”, mas ainda sem casos no período.',
-  }, [c1, c2, c3]);
+    pendencias: s.retencao?.disponivel ? null : 'R4 (receita preservada pelo CS) precisa do registro da oferta feita e do valor concedido (P10). O chat já marca “reembolso evitado”, mas ainda sem casos no período.',
+  }, [c1, c2, c3, cardR4(s)].filter(Boolean));
 }
 
 /* ═════════════════════════  A · Resultado (prévia)  ═════════════════════════ */
@@ -385,13 +446,14 @@ function blocoA(s) {
     fonte: s.dash?.motivo === 'filtro'
       ? 'Prévia com os eventos das plataformas no SendTrace — o dash não tem o recorte de produto, família ou fulfillment'
       : 'Prévia com os eventos das plataformas no SendTrace — o dash não está disponível',
-    pendencias: 'R4 (receita preservada pelo CS) precisa do registro da oferta feita e do valor concedido (P10). O chat já marca “reembolso evitado”, mas ainda sem casos no período.',
-  }, [c1, c2, c3]);
+    pendencias: s.retencao?.disponivel ? null : 'R4 (receita preservada pelo CS) precisa do registro da oferta feita e do valor concedido (P10). O chat já marca “reembolso evitado”, mas ainda sem casos no período.',
+  }, [c1, c2, c3, cardR4(s)].filter(Boolean));
 }
 
 /* ═════════════════════════  B · Eficácia do CS  ═════════════════════════════ */
 
 function blocoB(s) {
+  const f3 = s.dash3?.disponivel ? s.dash3 : null;   // Fase 3: E1, E2 e E3 lidos do dash (sem o selo "prévia")
   const e = s.b.e4;
   const taxa = razao(e.ia, e.resolvidos);
   const taxaAnt = razao(e.ia_ant, e.resolvidos_ant);
@@ -406,11 +468,11 @@ function blocoB(s) {
     nota: 'Quem resolveu (IA ou humano) é registrado no ticket desde 21/09 — deixou de ser aproximação. Ticket resolvido antes disso sem sinal de IA conta como humano; ticket reaberto some da conta até ser resolvido de novo.',
   });
 
-  const e1 = s.b.e1;
+  const e1 = f3 ? f3.e1 : s.b.e1;
   const semC = razao(e1.sem_contato, e1.total);
   const semCAnt = razao(e1.sem_contato_ant, e1.total_ant);
   const c1 = card({
-    codigo: 'E1', span: 4, titulo: 'Reembolsos sem contato prévio', tag: 'prévia',
+    codigo: 'E1', span: 4, titulo: 'Reembolsos sem contato prévio', tag: f3 ? undefined : 'prévia',
     valor: pctTxt(semC, 0), unidade: '% dos reembolsos',
     tom: semC === null ? 'neutro' : (semC <= 0.5 ? 'bom' : (semC <= 0.7 ? 'medio' : 'ruim')),
     sub: `${n(e1.sem_contato)} de ${n(e1.total)} clientes reembolsaram sem nunca falar com o CS antes · ${rotuloPeriodo(s)}`,
@@ -420,19 +482,27 @@ function blocoB(s) {
       { rotulo: 'Com contato', valor: e1.total - e1.sem_contato, tom: 1 },
     ]),
     ref: 'Referência: tendência de queda.',
-    nota: 'Contato = e-mail ou chat do cliente antes da data do estorno.',
+    nota: f3
+      ? `Reembolsos lidos do dash (${f3.completas.map(rotPlat).join(' + ') || '—'}), um cliente por período; contato = e-mail ou chat do cliente antes da data do estorno.${f3.excluidas.length ? ` ${f3.excluidas.map(rotPlat).join(', ')} fora: não manda reembolso ao dash.` : ''}`
+      : 'Contato = e-mail ou chat do cliente antes da data do estorno.',
   });
 
-  const e2 = s.b.e2;
+  const e2 = f3 ? f3.e2 : s.b.e2;
   const ret = razao(e2.retidos, e2.com_pedido);
+  const retAnt = f3 ? razao(e2.retidos_ant, e2.com_pedido_ant) : null;
   const c2 = card({
-    codigo: 'E2', span: 4, titulo: 'Taxa de retenção', tag: 'prévia',
+    codigo: 'E2', span: 4, titulo: 'Taxa de retenção', tag: f3 ? undefined : 'prévia',
     valor: pctTxt(ret, 0), unidade: '% de quem pediu',
     tom: ret === null ? 'neutro' : (ret >= 0.4 ? 'bom' : 'medio'),
-    sub: `${n(e2.retidos)} de ${n(e2.com_pedido)} clientes que pediram reembolso por e-mail não foram reembolsados até agora · desde ${dDesde(s.periodo.desde.reembolso)}`,
+    sub: f3
+      ? `${n(e2.retidos)} de ${n(e2.com_pedido)} clientes que pediram reembolso por e-mail (de ${dDesde(new Date(f3.coorte_e2.de))} a ${dDesde(new Date(f3.coorte_e2.ate))}) não foram estornados em até ${f3.janela_retencao_dias} dias`
+      : `${n(e2.retidos)} de ${n(e2.com_pedido)} clientes que pediram reembolso por e-mail não foram reembolsados até agora · desde ${dDesde(s.periodo.desde.reembolso)}`,
+    extra: f3 ? comVariacao(s, null, ret, retAnt, { pp: true, menorMelhor: false }) : null,
     viz: bullet({ valor: (ret ?? 0) * 100, max: 100, meta: 40, tom: ret !== null && ret >= 0.4 ? 'bom' : 'medio' }),
     ref: 'Meta sugerida: 40%.',
-    nota: 'Não prova que o CS reteve: é quem pediu e ainda não foi reembolsado (pode ainda estar a caminho). Falta registrar a oferta feita (P10).',
+    nota: f3
+      ? 'O dash confirma que o cliente não foi estornado em 30 dias (só entram pedidos de 30 dias atrás, que já tiveram tempo de ser estornados). Não prova que o CS reteve: falta registrar a oferta feita (P10).'
+      : 'Não prova que o CS reteve: é quem pediu e ainda não foi reembolsado (pode ainda estar a caminho). Falta registrar a oferta feita (P10).',
   });
 
   const pizza = el('div', 'vg-pizza');
@@ -445,13 +515,13 @@ function blocoB(s) {
   queueMicrotask(() => desenharPizza(pizza, plat, { tooltip, unidade: 'clientes' }));
 
   const c3 = card({
-    codigo: 'E3', span: 6, titulo: 'Cobertura por plataforma', tag: 'prévia',
-    sub: `Quem compra em cada plataforma contra quem fala com o CS · ${rotuloPeriodo(s)}`,
-    viz: pareado(s.b.e3),
+    codigo: 'E3', span: 6, titulo: 'Cobertura por plataforma', tag: f3 ? undefined : 'prévia',
+    sub: `Quem compra em cada plataforma${f3 ? ' (pedidos do front no dash)' : ''} contra quem fala com o CS · ${rotuloPeriodo(s)}`,
+    viz: pareado(f3 ? f3.e3 : s.b.e3, f3 ? 'dash' : 'SendTrace'),
   });
   return bloco({
     id: 'vg-bloco-b', letra: 'B', titulo: 'Eficácia do CS', pergunta: 'O CS teve chance de agir antes do reembolso?',
-    fonte: 'Fonte: SendTrace (e-mails, chat e eventos das plataformas)',
+    fonte: f3 ? 'Fonte: SendTrace (e-mails e chat) + dash (pedidos e reembolsos)' : 'Fonte: SendTrace (e-mails, chat e eventos das plataformas)',
   }, [c4, c1, c2, c5, c3]);
 }
 
@@ -611,6 +681,7 @@ function tabelaPorArea(linhas) {
 
 function blocoD(s) {
   const d = s.d;
+  const f3 = s.dash3?.disponivel ? s.dash3 : null;   // Fase 3: C3 e C4 com o dash
   const motivos = agruparPorRotulo(d.c2.motivos.map((m) => ({ motivo_devolucao: m.motivo_devolucao, total: m.total })), 'motivo_devolucao', rotularMotivo)
     .filter((m) => m.total > 0);
   const totalMot = motivos.reduce((a, m) => a + m.total, 0);
@@ -683,25 +754,29 @@ function blocoD(s) {
 
   // C4 — reembolso por etapa do funil
   const rotEtapa = { front: 'Front-end', upsell: 'Upsell', downsell: 'Downsell' };
-  const et = ['front', 'upsell', 'downsell'].map((k) => d.c4.etapas.find((x) => x.etapa === k)).filter(Boolean)
+  const c4d = f3 ? f3.c4 : d.c4;
+  const et = ['front', 'upsell', 'downsell'].map((k) => c4d.etapas.find((x) => x.etapa === k)).filter(Boolean)
     .map((x) => ({ rotulo: rotEtapa[x.etapa], valor: razao(x.reembolsadas, x.compras) ?? 0, texto: `${pctTxt(razao(x.reembolsadas, x.compras), 1)}%`, sub: `${n(x.reembolsadas)} de ${n(x.compras)} compras já reembolsadas` }));
   const cFunil = card({
-    codigo: 'C4', span: 4, titulo: 'Reembolso por etapa do funil', tag: 'prévia',
-    sub: `Compras de ${rotuloPeriodo(s)} já reembolsadas até agora, por etapa.`,
+    codigo: 'C4', span: 4, titulo: 'Reembolso por etapa do funil', tag: f3 ? undefined : 'prévia',
+    sub: `Compras de ${rotuloPeriodo(s)} já reembolsadas até agora, por etapa${f3 ? ' (dash)' : ''}.`,
     viz: et.length ? listaTaxas(et, Math.max(...et.map((x) => x.valor), 0.01)) : el('p', 'vazio-suave', 'Sem compras no período.'),
     ref: 'Base: o front-end.',
-    nota: d.c4.parcial ? 'O filtro de produto e de família não vale para upsell e downsell (esses registros não guardam o produto do funil).' : null,
+    nota: f3
+      ? [f3.c4.passos.length ? `Por passo: ${f3.c4.passos.map((x) => `${x.rotulo} ${pctTxt(razao(x.reembolsadas, x.compras), 1)}%`).join(' · ')}.` : '',
+        `Compras recentes ainda podem ser reembolsadas: os números sobem com o tempo. ${f3.excluidas.map(rotPlat).join(', ')}${f3.excluidas.length ? ' fora (sem dado de reembolso no dash).' : ''}`].filter(Boolean).join(' ')
+      : (d.c4.parcial ? 'O filtro de produto e de família não vale para upsell e downsell (esses registros não guardam o produto do funil).' : null),
   });
 
   // C3 — reclamações a cada 100 pedidos, por produto
-  const prod = d.c3.map((x) => ({
+  const prod = (f3 ? f3.c3 : d.c3).map((x) => ({
     rotulo: x.produto, valor: razao(x.reclamantes, x.pedidos) ?? 0,
     texto: `${dec1((razao(x.reclamantes, x.pedidos) ?? 0) * 100)} a cada 100`,
     sub: `${n(x.reclamantes)} clientes reclamaram · ${n(x.pedidos)} pedidos no período`,
   }));
   const cProd = card({
-    codigo: 'C3', span: 12, titulo: 'Reclamações a cada 100 pedidos, por produto', tag: 'prévia',
-    sub: `Clientes que abriram devolução, troca ou reclamação ÷ pedidos do produto · ${rotuloPeriodo(s)}. O produto é o do pedido do cliente, não o texto do e-mail. Produtos com menos de 30 pedidos ficam de fora.`,
+    codigo: 'C3', span: 12, titulo: 'Reclamações a cada 100 pedidos, por produto', tag: f3 ? undefined : 'prévia',
+    sub: `Clientes que abriram devolução, troca ou reclamação ÷ pedidos do produto${f3 ? ' (volume do dash, front-end)' : ''} · ${rotuloPeriodo(s)}. O produto é o do pedido do cliente, não o texto do e-mail. Produtos com menos de 30 pedidos ficam de fora.`,
     viz: prod.length ? listaTaxas(prod, Math.max(...prod.map((x) => x.valor), 0.01)) : el('p', 'vazio-suave', 'Sem produtos com volume suficiente no período.'),
     ref: 'Referência: média da operação.',
   });
@@ -822,19 +897,20 @@ function blocoF(s) {
 
 /** T7 — o cliente pede reembolso antes de receber? Duas curvas no mesmo eixo de dias. */
 function cT7(s) {
-  const t7 = s.f.t7;
+  const f3 = s.dash3?.disponivel ? s.dash3 : null;   // Fase 3: data do reembolso vem do dash
+  const t7 = f3 ? f3.t7 : s.f.t7;
   const antes = razao(t7.antes, t7.reembolsos);
   const antesAnt = razao(t7.antes_ant, t7.reembolsos_ant);
   const pontos = t7.curva.filter((c) => c.expostos_rastreio >= s.d.c1.min_coorte);
   const grafico = el('div', 'vg-linha');
   const c = card({
-    codigo: 'T7', span: 12, titulo: 'O cliente pede reembolso antes de receber?', tag: 'prévia',
+    codigo: 'T7', span: 12, titulo: 'O cliente pede reembolso antes de receber?', tag: f3 ? undefined : 'prévia',
     valor: pctTxt(antes, 0), unidade: '% dos reembolsos antes da entrega',
     tom: antes === null ? 'neutro' : (antes >= 0.5 ? 'ruim' : 'medio'),
     sub: `${n(t7.antes)} de ${n(t7.reembolsos)} reembolsos foram pedidos antes de o cliente receber o produto (ou sem entrega registrada) · ${rotuloPeriodo(s)}`,
     extra: comVariacao(s, 'reembolso', antes, antesAnt, { pp: true, menorMelhor: true }),
     viz: pontos.length > 1 ? grafico : null,
-    ref: 'Referência: tendência de queda. A curva compara, por dia desde a compra, o que já foi reembolsado com o que já foi entregue (pedidos com rastreio).',
+    ref: `Referência: tendência de queda. A curva compara, por dia desde a compra, o que já foi reembolsado${f3 ? ' (data do estorno no dash)' : ''} com o que já foi entregue (pedidos com rastreio).`,
   });
   if (pontos.length > 1) {
     queueMicrotask(() => desenharLinha(
@@ -889,8 +965,8 @@ function blocoG(s) {
   return bloco({
     id: 'vg-bloco-g', letra: 'G', titulo: 'Risco e save-desk', pergunta: 'Quem precisa de atenção agora?',
     fonte: 'Fonte: SendTrace · risco guardado no ticket, recalculado a cada e-mail novo e a cada 10 min',
-    pendencias: 'G2 (salvamento por tipo de oferta), G3 (custo da retenção) e G4 (reembolsos de proteção) dependem do registro da oferta feita e do valor concedido (P10) e do teto de custo da controladoria.',
-  }, [c1, c6, c5, fila]);
+    pendencias: s.retencao?.disponivel ? 'O teto de custo da retenção (G3) ainda precisa ser definido com a controladoria; até lá vale a sugestão de 30%.' : 'G2 (salvamento por tipo de oferta), G3 (custo da retenção) e G4 (reembolsos de proteção) dependem do registro da oferta feita e do valor concedido (P10) e do teto de custo da controladoria.',
+  }, [c1, c6, c5, ...cardsRetencao(s), fila]);
 }
 
 function tabelaFila(fila) {

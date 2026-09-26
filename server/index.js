@@ -1545,6 +1545,23 @@ async function atender(req, res, url, sessao) {
     }
   }
 
+  /* ── retenção (P10): oferta feita pelo CS registrada no caso ── */
+  const rotaRetencao = /^\/api\/suporte-escalado\/(\d+)\/retencao(?:\/([\w-]+))?$/.exec(url.pathname);
+  if (rotaRetencao) {
+    const [, casoId, ofertaId] = rotaRetencao;
+    const tratar = (err) => {
+      if (err instanceof ErroApi && err.status === 404) return json(res, 404, { erro: detalharErroApi(err, 'Caso ou oferta não encontrado.') });
+      if (err instanceof ErroApi && err.status === 403) return json(res, 403, { erro: 'Este caso não é de um board seu.' });
+      if (err instanceof ErroApi) return json(res, err.status || 400, { erro: detalharErroApi(err, 'Não consegui registrar a oferta.') });
+      throw err;
+    };
+    try {
+      if (req.method === 'GET' && !ofertaId) return json(res, 200, await obterApi(`/api/suporte-escalado/${casoId}/retencao`));
+      if (req.method === 'POST' && !ofertaId) return json(res, 201, await criarApi(`/api/suporte-escalado/${casoId}/retencao`, await lerJson(req)));
+      if (req.method === 'PUT' && ofertaId) return json(res, 200, await substituirApi(`/api/suporte-escalado/${casoId}/retencao/${ofertaId}`, await lerJson(req)));
+    } catch (err) { return tratar(err); }
+  }
+
   /* ── colunas do kanban de suporte escalado: criar/renomear/apagar ──
      Só apaga se a coluna estiver vazia — a API já recusa com 409 e uma
      mensagem legível (quantos casos tem, ou "é a coluna Pendente"); aqui só
@@ -1974,6 +1991,30 @@ const servidor = http.createServer(async (req, res) => {
           signal: AbortSignal.timeout(8000),
           headers: {
             Accept: 'application/json',
+            'X-Forwarded-For': req.headers['x-forwarded-for'] || req.socket.remoteAddress || '',
+          },
+        });
+        const corpo = await alvo.text();
+        res.writeHead(alvo.status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        return res.end(corpo);
+      } catch {
+        return json(res, 502, { erro: 'sem conexão com o servidor' });
+      }
+    }
+
+    /*
+     * Retenção (P10/R4) — o DASH lê daqui (pull incremental, `X-Api-Key` = RETENCAO_API_KEY). Mesma rota da API
+     * (api/rotas/dash.js), só repassada por aqui para sair com HTTPS/domínio de verdade. A chave é conferida
+     * na API (sem chave configurada, ela responde 503). ANTES da guarda de sessão: o dash não tem cookie.
+     * Só GET; repassa a chave e o IP de quem chegou (o rate-limit da API é por IP).
+     */
+    if ((url.pathname === '/api/retencao' || url.pathname === '/api/retencao/') && req.method === 'GET') {
+      try {
+        const alvo = await fetch(`${enderecoApi}/api/retencao/${url.search}`, {
+          signal: AbortSignal.timeout(8000),
+          headers: {
+            Accept: 'application/json',
+            'X-Api-Key': String(req.headers['x-api-key'] ?? ''),
             'X-Forwarded-For': req.headers['x-forwarded-for'] || req.socket.remoteAddress || '',
           },
         });
