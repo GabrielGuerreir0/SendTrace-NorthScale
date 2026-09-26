@@ -476,7 +476,7 @@ function blocoB(s) {
     valor: pctTxt(semC, 0), unidade: '% dos reembolsos',
     tom: semC === null ? 'neutro' : (semC <= 0.5 ? 'bom' : (semC <= 0.7 ? 'medio' : 'ruim')),
     sub: `${n(e1.sem_contato)} de ${n(e1.total)} clientes reembolsaram sem nunca falar com o CS antes · ${rotuloPeriodo(s)}`,
-    extra: comVariacao(s, 'reembolso', semC, semCAnt, { pp: true, menorMelhor: true }),
+    extra: comVariacao(s, f3 ? null : 'reembolso', semC, semCAnt, { pp: true, menorMelhor: true }),
     viz: empilhada([
       { rotulo: 'Sem contato', valor: e1.sem_contato, tom: 5 },
       { rotulo: 'Com contato', valor: e1.total - e1.sem_contato, tom: 1 },
@@ -908,7 +908,7 @@ function cT7(s) {
     valor: pctTxt(antes, 0), unidade: '% dos reembolsos antes da entrega',
     tom: antes === null ? 'neutro' : (antes >= 0.5 ? 'ruim' : 'medio'),
     sub: `${n(t7.antes)} de ${n(t7.reembolsos)} reembolsos foram pedidos antes de o cliente receber o produto (ou sem entrega registrada) · ${rotuloPeriodo(s)}`,
-    extra: comVariacao(s, 'reembolso', antes, antesAnt, { pp: true, menorMelhor: true }),
+    extra: comVariacao(s, f3 ? null : 'reembolso', antes, antesAnt, { pp: true, menorMelhor: true }),
     viz: pontos.length > 1 ? grafico : null,
     ref: `Referência: tendência de queda. A curva compara, por dia desde a compra, o que já foi reembolsado${f3 ? ' (data do estorno no dash)' : ''} com o que já foi entregue (pedidos com rastreio).`,
   });
