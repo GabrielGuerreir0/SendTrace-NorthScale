@@ -1,5 +1,6 @@
 /**
- * Suporte Escalado → sub-aba "Relatório de métricas" (recorrência) — pedido da Vitória, 25/09/2026.
+ * Aba "Relatório de Métricas" → seção "Relatório de métricas — recorrência" — pedido da Vitória,
+ * 25/09/2026 (morava como sub-aba do Suporte Escalado; movida pra cá em 28/09/2026 a pedido do Lucas).
  *
  * Só mostra o que /api/recorrencia/relatorio devolve: uma linha por mês, acumulada até o fim dele — quantos
  * clientes com recorrência já entraram em contato, sobre o total acumulado, e a média de dias entre a

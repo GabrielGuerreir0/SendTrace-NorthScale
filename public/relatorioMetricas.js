@@ -10,6 +10,7 @@
 import { $, api, kpiCard, barraHorizontal, tooltip, topMaisOutros, rotularCategoria, rotularMotivo, rotularTipoConteudo } from './emailComum.js';
 import { n, dia } from './format.js';
 import { desenharColunas, desenharPizza } from './charts.js';
+import { carregarRecorrencia } from './recorrenciaEscalado.js';
 
 const pct = (v) => (v === null || v === undefined ? '—' : `${Math.round(v * 1000) / 10}%`);
 const ROTULO_TIPO_REEMBOLSO = { reembolso: 'Reembolso', chargeback: 'Chargeback' };
@@ -165,3 +166,8 @@ $('rel-baixar-pdf')?.addEventListener('click', async () => {
 // Primeira carga — a troca de aba não recarrega (mesma mecânica das outras
 // telas: todas ficam no DOM, só escondidas).
 carregar();
+
+// Recorrência tem seu próprio botão "Atualizar" (o listener já está em
+// recorrenciaEscalado.js) e não depende do período escolhido acima — só
+// precisa da carga inicial, igual às outras seções desta aba.
+carregarRecorrencia();
