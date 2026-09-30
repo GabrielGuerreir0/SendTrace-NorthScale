@@ -1946,6 +1946,16 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 /* Motivo e resumo colapsam do mesmo jeito (3 linhas, expande ao clicar no
    cartão) — antes só o resumo tinha teto, e um motivo comprido sozinho
    deixava os cartões da mesma coluna com alturas bem desiguais. */
+/* Ameaça de chargeback / ameaça legal: card vermelho (texto continua legível nos dois temas) */
+.esc-card[data-ameaca] {
+  background: color-mix(in srgb, #dc2626 14%, var(--superficie-2));
+  border: 1.5px solid #dc2626;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #dc2626 18%, transparent);
+}
+.esc-card-ameaca {
+  align-self: flex-start; font-size: 0.74rem; font-weight: 700; letter-spacing: .02em;
+  padding: 2px 9px; border-radius: 999px; background: #dc2626; color: #fff;
+}
 .esc-card-movimento { font-size: 0.74rem; color: var(--texto-suave, #6b7280); margin: 2px 0 6px; }
 .esc-card-motivo, .esc-card-resumo {
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;

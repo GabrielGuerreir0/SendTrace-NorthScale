@@ -627,6 +627,7 @@ function abrirDetalheEscalado(item) {
       { rotulo: 'Escalado em', valor: item.criado_em ? dataHora(item.criado_em) : '—' },
       { rotulo: 'Iniciado em', valor: item.iniciado_em ? dataHora(item.iniciado_em) : '—' },
       { rotulo: 'Finalizado em', valor: item.finalizado_em ? dataHora(item.finalizado_em) : '—' },
+      { rotulo: 'Alerta', valor: ROTULO_AMEACA[item.alerta_ameaca] ? `🚨 ${ROTULO_AMEACA[item.alerta_ameaca]} — responder em até 2 dias úteis` : '—' },
       { rotulo: 'Última movimentação', valor: item.movido_em ? `${item.movido_de ? 'de ' + item.movido_de + ' ' : ''}por ${item.movido_por || 'Sistema (automação)'} em ${dataHora(item.movido_em)}` : '—' },
       { rotulo: 'Dados do pedido', valor: contextoContainer, largo: true },
       { rotulo: 'Mensagem da cliente — foco da reclamação', valor: item.resumo_conversa || '—', largo: true },
@@ -980,11 +981,16 @@ function criarNotaItem(casoId, container, nota) {
 
 /* ═══════════════════════════════  cartão  ═══════════════════════════════ */
 
+const ROTULO_AMEACA = { chargeback: 'Chargeback', legal: 'Ameaça legal', ambos: 'Chargeback + ameaça legal' };
+
 function criarCard(item) {
   const card = document.createElement('div');
   card.className = 'esc-card';
   card.draggable = true;
   card.dataset.id = String(item.id);
+  // Ameaça de chargeback/ameaça legal: card vermelho com alerta e etiqueta do motivo (só sai quando a equipe troca o status)
+  const rotuloAmeaca = ROTULO_AMEACA[item.alerta_ameaca];
+  if (rotuloAmeaca) card.dataset.ameaca = item.alerta_ameaca;
   if (expandidos.has(item.id)) card.dataset.expandido = 'sim';
 
   card.addEventListener('dragstart', () => {
@@ -995,6 +1001,14 @@ function criarCard(item) {
     arrastandoId = null;
     delete card.dataset.arrastando;
   });
+
+  if (rotuloAmeaca) {
+    const faixa = document.createElement('div');
+    faixa.className = 'esc-card-ameaca';
+    faixa.textContent = `🚨 ${rotuloAmeaca}`;
+    faixa.title = 'Responder dentro do prazo de 2 dias úteis prometido ao cliente';
+    card.append(faixa);
+  }
 
   const nome = document.createElement('div');
   nome.className = 'esc-card-nome';

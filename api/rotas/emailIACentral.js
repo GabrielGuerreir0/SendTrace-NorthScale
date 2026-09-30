@@ -1220,7 +1220,7 @@ export default async function rotasEmailIACentral(app) {
       query(
         `SELECT s.id, s.remetente_email, s.nome, s.resumo_conversa, s.motivo_escalonamento, s.status,
                 s.email_id, s.criado_em, s.atualizado_em, s.iniciado_em, s.finalizado_em,
-                s.board_id, b.nome AS board_nome, mv.produto AS produto_pedido,
+                s.board_id, s.alerta_ameaca, s.alerta_ameaca_em, b.nome AS board_nome, mv.produto AS produto_pedido,
                 ult.movido_por, ult.mudou_em AS movido_em, ult.status_anterior AS movido_de
          FROM email_ia.suporte_escalado s
          LEFT JOIN email_ia.suporte_escalado_boards b ON b.id = s.board_id
@@ -1399,8 +1399,15 @@ export default async function rotasEmailIACentral(app) {
       query(
         `SELECT s.id, s.remetente_email, s.nome, s.resumo_conversa, s.motivo_escalonamento, s.status,
                 s.email_id, s.criado_em, s.atualizado_em, s.iniciado_em, s.finalizado_em,
-                s.data_entrega, mv.produto AS produto_pedido, e.plataforma_origem
+                s.data_entrega, s.alerta_ameaca, s.alerta_ameaca_em, mv.produto AS produto_pedido, e.plataforma_origem,
+                ult.movido_por, ult.mudou_em AS movido_em, ult.status_anterior AS movido_de
          FROM email_ia.suporte_escalado s
+         LEFT JOIN LATERAL (
+           SELECT h.movido_por, h.mudou_em, h.status_anterior
+             FROM email_ia.suporte_escalado_historico h
+            WHERE h.suporte_escalado_id = s.id
+            ORDER BY h.mudou_em DESC, h.id DESC LIMIT 1
+         ) ult ON true
          LEFT JOIN email_ia.mv_emails_x_pedidos mv ON mv.email_id = s.email_id
          LEFT JOIN email_ia.emails e ON e.id = s.email_id
          WHERE ${onde}
