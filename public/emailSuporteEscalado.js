@@ -627,6 +627,7 @@ function abrirDetalheEscalado(item) {
       { rotulo: 'Escalado em', valor: item.criado_em ? dataHora(item.criado_em) : '—' },
       { rotulo: 'Iniciado em', valor: item.iniciado_em ? dataHora(item.iniciado_em) : '—' },
       { rotulo: 'Finalizado em', valor: item.finalizado_em ? dataHora(item.finalizado_em) : '—' },
+      { rotulo: 'Última movimentação', valor: item.movido_em ? `${item.movido_de ? 'de ' + item.movido_de + ' ' : ''}por ${item.movido_por || 'Sistema (automação)'} em ${dataHora(item.movido_em)}` : '—' },
       { rotulo: 'Dados do pedido', valor: contextoContainer, largo: true },
       { rotulo: 'Mensagem da cliente — foco da reclamação', valor: item.resumo_conversa || '—', largo: true },
       { rotulo: 'Histórico completo', valor: botaoConversa, largo: true },
@@ -1035,6 +1036,14 @@ function criarCard(item) {
     motivo.className = 'esc-card-motivo';
     motivo.textContent = `⚠ ${item.motivo_escalonamento}`;
     card.append(motivo);
+  }
+
+  if (item.movido_em) {
+    const mov = document.createElement('div');
+    mov.className = 'esc-card-movimento';
+    const de = item.movido_de ? `de ${item.movido_de} ` : '';
+    mov.textContent = `↪ Movido ${de}por ${item.movido_por || 'Sistema'} · ${dataHora(item.movido_em)}`;
+    card.append(mov);
   }
 
   if (item.resumo_conversa) {

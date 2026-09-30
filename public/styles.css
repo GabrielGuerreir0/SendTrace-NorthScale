@@ -1946,6 +1946,7 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 /* Motivo e resumo colapsam do mesmo jeito (3 linhas, expande ao clicar no
    cartão) — antes só o resumo tinha teto, e um motivo comprido sozinho
    deixava os cartões da mesma coluna com alturas bem desiguais. */
+.esc-card-movimento { font-size: 0.74rem; color: var(--texto-suave, #6b7280); margin: 2px 0 6px; }
 .esc-card-motivo, .esc-card-resumo {
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }

@@ -40,7 +40,8 @@
  * para escrita — e aplicar a mesma regra de dono: só o usuário vinculado ao
  * board (usuario_id) ou um admin pode mexer nos cards/colunas dele.
  */
-import { query } from '../../server/db.js';
+import { pool, query } from '../../server/db.js';
+
 import { ErroHttp } from '../comum.js';
 import {
   filtroEmails, filtroTickets, condicaoProdutoLoja, condicaoPeriodo, resolverEmailsProdutoLoja,
@@ -660,6 +661,29 @@ async function ultimosEmails(qs) {
   return rows;
 }
 
+/** Nome do usuário do painel para o histórico do kanban (movido_por). Token de serviço/integração = null (vale como "Sistema"). */
+function nomeParaHistorico(req) {
+  const u = req.usuario || {};
+  if (u.servico) return null;
+  return String(u.nome || u.email || '').trim().slice(0, 120) || null;
+}
+/** Roda `texto` numa transação com `sendtrace.usuario` definido (set_config local): o gatilho do histórico grava quem moveu. */
+async function queryComoUsuario(req, texto, params) {
+  const cliente = await pool.connect();
+  try {
+    await cliente.query('BEGIN');
+    await cliente.query("SELECT set_config('sendtrace.usuario', $1, true)", [nomeParaHistorico(req) ?? '']);
+    const r = await cliente.query(texto, params);
+    await cliente.query('COMMIT');
+    return r;
+  } catch (e) {
+    await cliente.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    cliente.release();
+  }
+}
+
 export default async function rotasEmailIACentral(app) {
   app.get('/api/dados', {
     onRequest: [app.exigirSessao],
@@ -1196,9 +1220,16 @@ export default async function rotasEmailIACentral(app) {
       query(
         `SELECT s.id, s.remetente_email, s.nome, s.resumo_conversa, s.motivo_escalonamento, s.status,
                 s.email_id, s.criado_em, s.atualizado_em, s.iniciado_em, s.finalizado_em,
-                s.board_id, b.nome AS board_nome, mv.produto AS produto_pedido
+                s.board_id, b.nome AS board_nome, mv.produto AS produto_pedido,
+                ult.movido_por, ult.mudou_em AS movido_em, ult.status_anterior AS movido_de
          FROM email_ia.suporte_escalado s
          LEFT JOIN email_ia.suporte_escalado_boards b ON b.id = s.board_id
+         LEFT JOIN LATERAL (
+           SELECT h.movido_por, h.mudou_em, h.status_anterior
+             FROM email_ia.suporte_escalado_historico h
+            WHERE h.suporte_escalado_id = s.id
+            ORDER BY h.mudou_em DESC, h.id DESC LIMIT 1
+         ) ult ON true
          LEFT JOIN email_ia.mv_emails_x_pedidos mv ON mv.email_id = s.email_id
          ORDER BY s.criado_em DESC`,
       ),
@@ -1462,7 +1493,7 @@ export default async function rotasEmailIACentral(app) {
       'SELECT 1 FROM email_ia.suporte_escalado_colunas WHERE board_id = $1 AND chave = $2', [board.id, status],
     );
     if (!colunaRows[0]) throw new ErroHttp(400, 'Coluna inválida.');
-    const { rows } = await query(
+    const { rows } = await queryComoUsuario(req,
       `UPDATE email_ia.suporte_escalado SET status = $1,
          iniciado_em = CASE WHEN $1 NOT IN ('pendente', 'pendente_recorrencia') THEN coalesce(iniciado_em, now()) ELSE iniciado_em END,
          finalizado_em = CASE WHEN $1 = 'finalizado' THEN now() ELSE finalizado_em END,
@@ -1509,7 +1540,7 @@ export default async function rotasEmailIACentral(app) {
     const { id, board_id: boardIdDestino } = req.body;
     const destino = await boardPorId(boardIdDestino);
     if (!destino) throw new ErroHttp(404, 'Board de destino não encontrado.');
-    const { rows } = await query(
+    const { rows } = await queryComoUsuario(req,
       `UPDATE email_ia.suporte_escalado
        SET board_id = $1, status = 'pendente', iniciado_em = NULL, finalizado_em = NULL,
            primeiro_toque_humano_em = coalesce(primeiro_toque_humano_em, now()), atualizado_em = now()
