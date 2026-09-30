@@ -42,6 +42,44 @@ export function rotuloPasso(tipo, passo) {
   return passo ? `${nome} ${Math.max(passo - 1, 1)}` : nome;
 }
 
+/**
+ * AB21 (Plano D30) — "reembolso sem contato" por plataforma e semana (últimas 6) e por produto (30 dias).
+ * Mesma definição do E1: um cliente por semana (o 1º estorno dele), contato = e-mail (fora os da plataforma) ou chat ANTES do estorno.
+ * Independe do período/filtro da Home (sempre semanas fechadas por data de estorno) e custa ~5 s, então fica em cache de 30 min.
+ * BuyGoods fica de fora (o dash não tem reembolso dela). Chargeback fora, como no E1.
+ */
+let cacheAB21 = { em: 0, valor: null };
+const TTL_AB21_MS = 30 * 60_000;
+export async function coletarAB21() {
+  if (cacheAB21.valor && Date.now() - cacheAB21.em < TTL_AB21_MS) return cacheAB21.valor;
+  const CONTATO = `(EXISTS (SELECT 1 FROM email_ia.emails e WHERE lower(e.remetente_email) = ref.em AND e.plataforma_origem IS NULL AND e.data_email < ref.reemb_em)
+                    OR EXISTS (SELECT 1 FROM chat_atendimentos ch WHERE lower(ch.email) = ref.em AND coalesce(ch.iniciado_em, ch.criado_em) < ref.reemb_em))`;
+  const [semanas, familias] = await Promise.all([
+    query(`
+      WITH ref AS (
+        SELECT v.plataforma, date_trunc('week', v.reemb_em)::date AS semana, lower(p.customer_email) AS em, min(v.reemb_em) AS reemb_em
+        FROM dash_vendas v JOIN dash_pedidos p ON p.plataforma = v.plataforma AND p.external_id = v.external_id
+        WHERE v.plataforma = ANY($1) AND v.reembolsada AND NOT v.chargeback
+          AND v.reemb_em >= date_trunc('week', now()) - interval '5 weeks' AND v.reemb_em < now() AND p.customer_email IS NOT NULL
+        GROUP BY 1, 2, 3)
+      SELECT plataforma, to_char(semana, 'YYYY-MM-DD') AS semana, count(*)::int AS total,
+             count(*) FILTER (WHERE NOT ${CONTATO})::int AS sem_contato
+      FROM ref GROUP BY 1, 2 ORDER BY 2, 1`, [COMPLETAS]),
+    query(`
+      WITH ref AS (
+        SELECT coalesce(v.family, '(sem família)') AS familia, lower(p.customer_email) AS em, min(v.reemb_em) AS reemb_em
+        FROM dash_vendas v JOIN dash_pedidos p ON p.plataforma = v.plataforma AND p.external_id = v.external_id
+        WHERE v.plataforma = ANY($1) AND v.reembolsada AND NOT v.chargeback
+          AND v.reemb_em >= now() - interval '30 days' AND p.customer_email IS NOT NULL
+        GROUP BY 1, 2)
+      SELECT familia, count(*)::int AS total, count(*) FILTER (WHERE NOT ${CONTATO})::int AS sem_contato
+      FROM ref GROUP BY 1 HAVING count(*) >= 20 ORDER BY 2 DESC LIMIT 8`, [COMPLETAS]),
+  ]);
+  const valor = { semanas: semanas.rows, familias: familias.rows, plataformas: COMPLETAS };
+  cacheAB21 = { em: Date.now(), valor };
+  return valor;
+}
+
 export async function coletarFase3({ ini, fim, pini, filtros = {} }) {
   const indisponivel = (motivo) => ({ disponivel: false, motivo });
   if (!dashConfigurado()) return indisponivel('dash_desligado');
@@ -219,6 +257,7 @@ export async function coletarFase3({ ini, fim, pini, filtros = {} }) {
     janela_retencao_dias: JANELA_RETENCAO_DIAS,
     coorte_e2: { de: iniCoorte, ate: fimCoorte },
     e1: e1.rows[0],
+    ab21: await coletarAB21().catch((err) => { console.error('  ! AB21:', err.message); return null; }),
     e2: e2.rows[0],
     e3: (() => {
       const totPed = e3.rows.reduce((a, r) => a + r.pedidos, 0);

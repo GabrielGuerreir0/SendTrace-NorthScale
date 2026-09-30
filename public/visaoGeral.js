@@ -452,6 +452,35 @@ function blocoA(s) {
 
 /* ═════════════════════════  B · Eficácia do CS  ═════════════════════════════ */
 
+/** AB21: tabela "% sem contato" por semana (linhas) e plataforma (colunas) + ranking por produto (30 dias). */
+function tabelaAB21(ab) {
+  const w = el('div', 'vg-ab21');
+  const plats = ab.plataformas.filter((p) => ab.semanas.some((x) => x.plataforma === p));
+  const semanas = [...new Set(ab.semanas.map((x) => x.semana))].sort();
+  const t = el('table', 'vg-ab21-tab');
+  const th = el('tr'); th.append(el('th', '', 'Semana'));
+  for (const p of plats) th.append(el('th', '', rotPlat(p)));
+  t.append(th);
+  semanas.forEach((sem, i) => {
+    const tr = el('tr');
+    const d = new Date(`${sem}T12:00:00`);
+    tr.append(el('td', '', `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}${i === semanas.length - 1 ? ' (parcial)' : ''}`));
+    for (const p of plats) {
+      const c = ab.semanas.find((x) => x.semana === sem && x.plataforma === p);
+      tr.append(el('td', '', c ? `${pctTxt(c.sem_contato / c.total, 0)}% (${n(c.total)})` : '—'));
+    }
+    t.append(tr);
+  });
+  w.append(t);
+  if (ab.familias.length) {
+    w.append(el('p', 'vg-card-sub', 'Por produto · últimos 30 dias'));
+    const ul = el('ul', 'vg-ab21-prod');
+    for (const f of ab.familias) ul.append(el('li', '', `${f.familia}: ${pctTxt(f.sem_contato / f.total, 0)}% sem contato (${n(f.sem_contato)} de ${n(f.total)})`));
+    w.append(ul);
+  }
+  return w;
+}
+
 function blocoB(s) {
   const f3 = s.dash3?.disponivel ? s.dash3 : null;   // Fase 3: E1, E2 e E3 lidos do dash (sem o selo "prévia")
   const e = s.b.e4;
@@ -486,6 +515,14 @@ function blocoB(s) {
       ? `Reembolsos lidos do dash (${f3.completas.map(rotPlat).join(' + ') || '—'}), um cliente por período; contato = e-mail ou chat do cliente antes da data do estorno.${f3.excluidas.length ? ` ${f3.excluidas.map(rotPlat).join(', ')} fora: não manda reembolso ao dash.` : ''}`
       : 'Contato = e-mail ou chat do cliente antes da data do estorno.',
   });
+
+  const cAB21 = f3?.ab21?.semanas?.length ? card({
+    codigo: 'AB21', span: 6, titulo: 'Reembolso sem contato · semana a semana',
+    sub: '% dos clientes reembolsados que nunca falaram com o CS antes do estorno (n = clientes reembolsados)',
+    viz: tabelaAB21(f3.ab21),
+    ref: 'Meta do Plano D30: até 35% (JVZoo hoje passa de 70%).',
+    nota: 'Independe do período escolhido: semanas fechadas pela data do estorno, dado do dash. Contato = e-mail (fora os da própria plataforma) ou chat antes do estorno; quem escreve de outro e-mail não é reconhecido. A última semana é parcial.',
+  }) : null;
 
   const e2 = f3 ? f3.e2 : s.b.e2;
   const ret = razao(e2.retidos, e2.com_pedido);
@@ -522,7 +559,7 @@ function blocoB(s) {
   return bloco({
     id: 'vg-bloco-b', letra: 'B', titulo: 'Eficácia do CS', pergunta: 'O CS teve chance de agir antes do reembolso?',
     fonte: f3 ? 'Fonte: SendTrace (e-mails e chat) + dash (pedidos e reembolsos)' : 'Fonte: SendTrace (e-mails, chat e eventos das plataformas)',
-  }, [c4, c1, c2, c5, c3]);
+  }, [c4, c1, cAB21, c2, c5, c3].filter(Boolean));
 }
 
 /* ═════════════════════════  C · Fila e operação  ════════════════════════════ */
