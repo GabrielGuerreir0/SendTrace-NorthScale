@@ -1220,7 +1220,7 @@ export default async function rotasEmailIACentral(app) {
       query(
         `SELECT s.id, s.remetente_email, s.nome, s.resumo_conversa, s.motivo_escalonamento, s.status,
                 s.email_id, s.criado_em, s.atualizado_em, s.iniciado_em, s.finalizado_em,
-                s.board_id, s.alerta_ameaca, s.alerta_ameaca_em, b.nome AS board_nome, mv.produto AS produto_pedido,
+                s.board_id, s.alerta_ameaca, s.alerta_ameaca_em, s.prioridade, b.nome AS board_nome, mv.produto AS produto_pedido,
                 ult.movido_por, ult.mudou_em AS movido_em, ult.status_anterior AS movido_de
          FROM email_ia.suporte_escalado s
          LEFT JOIN email_ia.suporte_escalado_boards b ON b.id = s.board_id
@@ -1342,6 +1342,7 @@ export default async function rotasEmailIACentral(app) {
           q: { type: 'string' },
           plataforma: { type: 'string' },
           dias: { type: 'integer', description: 'Janela (em dias) das métricas de transição/movimentação — padrão 30.' },
+          ordem: { type: 'string', enum: ['recentes', 'prioridade'], description: "Ordem dos casos: 'recentes' (padrão, mais novos primeiro) ou 'prioridade' (P0→P3 e, dentro de cada uma, o mais antigo primeiro). Cada caso traz `prioridade` (0–3; null nos fechados)." },
         },
       },
     },
@@ -1399,7 +1400,7 @@ export default async function rotasEmailIACentral(app) {
       query(
         `SELECT s.id, s.remetente_email, s.nome, s.resumo_conversa, s.motivo_escalonamento, s.status,
                 s.email_id, s.criado_em, s.atualizado_em, s.iniciado_em, s.finalizado_em,
-                s.data_entrega, s.alerta_ameaca, s.alerta_ameaca_em, mv.produto AS produto_pedido, e.plataforma_origem,
+                s.data_entrega, s.alerta_ameaca, s.alerta_ameaca_em, s.prioridade, mv.produto AS produto_pedido, e.plataforma_origem,
                 ult.movido_por, ult.mudou_em AS movido_em, ult.status_anterior AS movido_de
          FROM email_ia.suporte_escalado s
          LEFT JOIN LATERAL (
@@ -1411,7 +1412,7 @@ export default async function rotasEmailIACentral(app) {
          LEFT JOIN email_ia.mv_emails_x_pedidos mv ON mv.email_id = s.email_id
          LEFT JOIN email_ia.emails e ON e.id = s.email_id
          WHERE ${onde}
-         ORDER BY s.criado_em DESC`,
+         ORDER BY ${req.query.ordem === 'prioridade' ? 's.prioridade ASC NULLS LAST, s.criado_em ASC' : 's.criado_em DESC'}`,
         valores,
       ),
       // Tempo médio/mediano gasto em CADA etapa, uma linha por par
