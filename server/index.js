@@ -2003,6 +2003,28 @@ const servidor = http.createServer(async (req, res) => {
     }
 
     /*
+     * Consulta de rastreio da Recoverly (0800) — `X-Api-Key` exclusivo; a chave é conferida na API
+     * (api/rotas/recoverly.js). Só GET; repassa a chave e o IP de quem chegou. ANTES da guarda de sessão.
+     */
+    if (url.pathname === '/api/v1/recoverly/rastreio' && req.method === 'GET') {
+      try {
+        const alvo = await fetch(`${enderecoApi}/api/v1/recoverly/rastreio${url.search}`, {
+          signal: AbortSignal.timeout(15000),
+          headers: {
+            Accept: 'application/json',
+            'X-Api-Key': String(req.headers['x-api-key'] ?? ''),
+            'X-Forwarded-For': req.headers['x-forwarded-for'] || req.socket.remoteAddress || '',
+          },
+        });
+        const corpo = await alvo.text();
+        res.writeHead(alvo.status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+        return res.end(corpo);
+      } catch {
+        return json(res, 502, { erro: 'sem conexão com o servidor' });
+      }
+    }
+
+    /*
      * Retenção (P10/R4) — o DASH lê daqui (pull incremental, `X-Api-Key` = RETENCAO_API_KEY). Mesma rota da API
      * (api/rotas/dash.js), só repassada por aqui para sair com HTTPS/domínio de verdade. A chave é conferida
      * na API (sem chave configurada, ela responde 503). ANTES da guarda de sessão: o dash não tem cookie.
