@@ -539,6 +539,15 @@ async function coletarVisaoGeral(p, comparar, filtros = {}) {
                  AND NOT EXISTS (SELECT 1 FROM email_ia.suporte_escalado se WHERE lower(se.remetente_email) = lower(d.email))
                  AND NOT EXISTS (SELECT 1 FROM formularios_respostas f WHERE f.email = lower(d.email))
                  AND NOT EXISTS (SELECT 1 FROM email_descadastros x WHERE x.email = lower(d.email)))::int AS regua_atrasada_6h,
+             -- AB2 (Plano D30): SLA da 1ª resposta humana. Caso do Suporte Escalado ainda em Pendente, SEM nenhum toque de uma pessoa
+             -- (primeiro_toque_humano_em; automação não conta) há mais de 3 h. Só casos dos últimos 7 dias: o backlog antigo
+             -- (centenas de pendentes) não é "SLA estourado", é fila acumulada, e esconderia o alerta. Horas corridas (o PDF fala em horário US).
+             (SELECT count(*) FROM email_ia.suporte_escalado s
+               WHERE s.status IN ('pendente', 'pendente_recorrencia') AND s.primeiro_toque_humano_em IS NULL
+                 AND s.criado_em < now() - interval '3 hours' AND s.criado_em >= now() - interval '7 days')::int AS sla_sem_toque_3h,
+             (SELECT coalesce(round(max(extract(epoch FROM (now() - s.criado_em)) / 3600.0)::numeric, 1), 0)::float FROM email_ia.suporte_escalado s
+               WHERE s.status IN ('pendente', 'pendente_recorrencia') AND s.primeiro_toque_humano_em IS NULL
+                 AND s.criado_em < now() - interval '3 hours' AND s.criado_em >= now() - interval '7 days') AS sla_maior_espera_h,
              (SELECT count(*) FROM email_ia.emails WHERE erro_resposta_automatica IS NOT NULL AND plataforma_origem IS NULL AND data_email >= $1 AND data_email < $2${FC('remetente_email')})::int AS smtp_erro,
              (SELECT count(*) FROM email_ia.emails WHERE resposta_automatica IS NOT NULL AND plataforma_origem IS NULL AND data_email >= $1 AND data_email < $2${FC('remetente_email')})::int AS smtp_total,
              -- E-mails de LEADS (Digistore/JVZoo) que a IA não respondeu porque o envio falhou 3 vezes seguidas (erro definitivo),
@@ -856,6 +865,10 @@ function montarAlertas({ bloco, b28, dias, base4sem }) {
   if (e.s1.leads_sem_resposta > 0) {
     add('alerta', 93, `${pt(e.s1.leads_sem_resposta, 0)} e-mails de leads sem resposta por falha de envio`,
       'A IA tentou 3 vezes e o envio falhou, e não há caso aberto no Suporte Escalado: ninguém está com esses clientes. Reprocessar ou passar para uma pessoa.', 'e');
+  }
+  if (e.s1.sla_sem_toque_3h > 0) {
+    add('alerta', 95, `${pt(e.s1.sla_sem_toque_3h, 0)} casos sem primeira resposta humana há mais de 3 h`,
+      `O mais antigo espera há ${pt(e.s1.sla_maior_espera_h, 1)} h no Pendente do Suporte Escalado (só casos dos últimos 7 dias; o backlog antigo não entra). A meta é a primeira resposta em menos de 4 h.`, 'e');
   }
   if (e.s1.regua_atrasada_6h > 0) {
     add('alerta', 94, `${pt(e.s1.regua_atrasada_6h, 0)} disparos da régua atrasados há mais de 6 h`,
