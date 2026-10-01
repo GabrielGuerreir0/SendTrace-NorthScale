@@ -526,6 +526,19 @@ async function coletarVisaoGeral(p, comparar, filtros = {}) {
     s1: query(`
       SELECT (SELECT count(*) FROM disparos_pos_venda d WHERE d.status IN ('ativo', 'processando') AND d.ultimo_erro IS NOT NULL${FO('d')})::int AS regua_erro,
              (SELECT count(*) FROM disparos_pos_venda d WHERE d.status IN ('ativo', 'processando')${FO('d')})::int AS regua_total,
+             -- AB5 (Plano D30): disparo ativo vencido há mais de 6 h que NÃO está segurado para sempre por uma trava do Processador
+             -- (reclamação/cancelamento/ticket de risco, caso no Suporte Escalado, formulário de reembolso, descadastro). Esses não saem
+             -- nunca e não são atraso: a fila está parada de verdade só para quem sobra aqui. Referência: zero.
+             (SELECT count(*) FROM disparos_pos_venda d
+               WHERE d.status = 'ativo' AND d.proximo_disparo < now() - interval '6 hours'${FO('d')}
+                 AND NOT EXISTS (SELECT 1 FROM email_ia.emails m WHERE lower(m.remetente_email) = lower(d.email)
+                                  AND (m.categoria IN ('reclamacao','cancelamento','devolucao','garantia')
+                                       OR m.problema_pagamento IN ('pede_cancelamento_reembolso','reembolso_nao_recebido','compra_nao_reconhecida','cobranca_duplicada','cobranca_valor_maior')
+                                       OR m.resumo ~* '(cancel|reembols|refund|estorno|devolu|chargeback|disputa|dinheiro de volta)'))
+                 AND NOT EXISTS (SELECT 1 FROM email_ia.tickets t WHERE t.remetente_email = lower(d.email) AND t.risco_nivel IN ('alto','critico'))
+                 AND NOT EXISTS (SELECT 1 FROM email_ia.suporte_escalado se WHERE lower(se.remetente_email) = lower(d.email))
+                 AND NOT EXISTS (SELECT 1 FROM formularios_respostas f WHERE f.email = lower(d.email))
+                 AND NOT EXISTS (SELECT 1 FROM email_descadastros x WHERE x.email = lower(d.email)))::int AS regua_atrasada_6h,
              (SELECT count(*) FROM email_ia.emails WHERE erro_resposta_automatica IS NOT NULL AND plataforma_origem IS NULL AND data_email >= $1 AND data_email < $2${FC('remetente_email')})::int AS smtp_erro,
              (SELECT count(*) FROM email_ia.emails WHERE resposta_automatica IS NOT NULL AND plataforma_origem IS NULL AND data_email >= $1 AND data_email < $2${FC('remetente_email')})::int AS smtp_total,
              -- E-mails de LEADS (Digistore/JVZoo) que a IA não respondeu porque o envio falhou 3 vezes seguidas (erro definitivo),
@@ -843,6 +856,10 @@ function montarAlertas({ bloco, b28, dias, base4sem }) {
   if (e.s1.leads_sem_resposta > 0) {
     add('alerta', 93, `${pt(e.s1.leads_sem_resposta, 0)} e-mails de leads sem resposta por falha de envio`,
       'A IA tentou 3 vezes e o envio falhou, e não há caso aberto no Suporte Escalado: ninguém está com esses clientes. Reprocessar ou passar para uma pessoa.', 'e');
+  }
+  if (e.s1.regua_atrasada_6h > 0) {
+    add('alerta', 94, `${pt(e.s1.regua_atrasada_6h, 0)} disparos da régua atrasados há mais de 6 h`,
+      'Sem nenhuma trava de spam/reclamação que explique: a fila não está saindo para esses pedidos. Conferir o Processador no n8n, o saldo do teto e o último erro do disparo.', 'e');
   }
   const s1 = razao(e.s1.regua_erro, e.s1.regua_total);
   if (s1 !== null && s1 > 0.01) {
