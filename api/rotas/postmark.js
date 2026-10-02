@@ -52,7 +52,7 @@ export async function coletarPostmark(dias = 7, consulta = consultaPadrao) {
   const q = async (sql, params = []) => (await consulta(sql, params)).rows;
   const desde = `(date_trunc('day', now() AT TIME ZONE '${TZ}') - ($1::int - 1) * interval '1 day') AT TIME ZONE '${TZ}'`;
 
-  const [cfgRows, uso, saldoRow, serieRegua, serieIA, serieBV, evRows, prob, beat, fila, motivos, ia, spamEmail, bounceTipo, spam24] = await Promise.all([
+  const [cfgRows, uso, saldoRow, serieRegua, serieIA, serieBV, evRows, prob, beat, fila, motivos, ia, spamEmail, bounceTipo, spam24, porEtapa] = await Promise.all([
     tentar(() => q('SELECT chave, valor FROM config_disparos WHERE chave = ANY($1)', [CHAVES]), null),
     tentar(() => q(`WITH cfg AS (SELECT valor::timestamptz AS desde FROM config_disparos WHERE chave = 'orcamento_log_desde')
       SELECT (SELECT count(*) FROM email_envios_log l, cfg WHERE l.quando >= cfg.desde)::int AS regua,
@@ -96,6 +96,16 @@ export async function coletarPostmark(dias = 7, consulta = consultaPadrao) {
       GROUP BY 1 ORDER BY 2 DESC, 1`, [dias]), null),
     tentar(() => q(`SELECT count(*)::int AS n FROM postmark_eventos
       WHERE tipo = 'SpamComplaint' AND coalesce(ocorreu_em, recebido_em) >= now() - interval '24 hours' AND ${SEM_TESTE}`), null),
+    // AB25 (Plano D30): interação por etapa da régua, pela tag 'regua-etapa-N' que o Processador manda ao Postmark (desde 01/10).
+    // Conta e-mails únicos (message_id), não eventos — uma pessoa que abre 5 vezes conta 1.
+    tentar(() => q(`SELECT substring(tag FROM 'regua-etapa-(\\d+)')::int AS etapa,
+      count(DISTINCT message_id) FILTER (WHERE tipo = 'Delivery')::int AS entregues,
+      count(DISTINCT message_id) FILTER (WHERE tipo = 'Open')::int AS abertos,
+      count(DISTINCT message_id) FILTER (WHERE tipo = 'Click')::int AS cliques,
+      count(DISTINCT message_id) FILTER (WHERE tipo = 'SpamComplaint')::int AS spam
+      FROM postmark_eventos WHERE tag ~ '^regua-etapa-[0-9]+$' AND message_id IS NOT NULL
+        AND coalesce(ocorreu_em, recebido_em) >= ${desde} AND ${SEM_TESTE}
+      GROUP BY 1 ORDER BY 1`, [dias]), null),
   ]);
 
   /* ── série por dia ── */
@@ -185,7 +195,7 @@ export async function coletarPostmark(dias = 7, consulta = consultaPadrao) {
   if (!alertas.length) add('ok', 'Tudo em ordem', 'Sem alertas de spam, bounce, cota, fila ou falha de envio no período.');
 
   const lista = (x) => (Array.isArray(x) ? x : []);
-  return { gerado_em: new Date().toISOString(), dias, cota, serie, eventos, webhook, problemas, spam_por_email: lista(spamEmail), bounces_por_tipo: lista(bounceTipo), fila: filaOut, ia: iaOut, alertas };
+  return { gerado_em: new Date().toISOString(), dias, cota, serie, eventos, webhook, problemas, spam_por_email: lista(spamEmail), bounces_por_tipo: lista(bounceTipo), por_etapa: lista(porEtapa), fila: filaOut, ia: iaOut, alertas };
 }
 
 let cache = { em: 0, dias: 0, valor: null };

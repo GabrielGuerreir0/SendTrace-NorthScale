@@ -1720,6 +1720,31 @@
   <section class="cartao">
     <header class="cartao-cabeca">
       <div>
+        <h2>Interação por etapa da régua</h2>
+        <p class="cartao-sub">Entregues, abertos, cliques e reclamações de cada etapa (tag <code>regua-etapa-N</code>, gravada pelo Postmark desde 01/10), no período escolhido. Cada e-mail conta uma vez.</p>
+      </div>
+    </header>
+    <div class="sup-tabela-envolve">
+      <table class="sup-tabela">
+        <thead>
+          <tr>
+            <th scope="col">Etapa</th>
+            <th scope="col">Entregues</th>
+            <th scope="col">Abertos</th>
+            <th scope="col">Cliques</th>
+            <th scope="col">Spam</th>
+          </tr>
+        </thead>
+        <tbody id="pm-por-etapa">
+          <tr><td colspan="5" class="vazio-suave">carregando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
         <h2>Bounces, spam e supressões recentes</h2>
         <p class="cartao-sub">Os 30 mais recentes. O Postmark já bloqueia esses endereços sozinho, e a sequência deles na régua é cancelada. Não reative no Postmark.</p>
       </div>

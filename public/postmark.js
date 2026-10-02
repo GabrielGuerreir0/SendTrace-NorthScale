@@ -155,6 +155,19 @@ function renderSpamEBounces(d) {
   $('pm-bounce-tipo').replaceChildren(...bounces);
 }
 
+/* ── interação por etapa (AB25) ── */
+function renderPorEtapa(d) {
+  const taxa = (parte, todo) => (todo > 0 ? ` (${String(Math.round((parte / todo) * 1000) / 10).replace('.', ',')}%)` : '');
+  const colunas = [
+    { render: (r) => `Etapa ${r.etapa}` },
+    { render: (r) => n(r.entregues) },
+    { render: (r) => `${n(r.abertos)}${taxa(r.abertos, r.entregues)}` },
+    { render: (r) => `${n(r.cliques)}${taxa(r.cliques, r.entregues)}` },
+    { render: (r) => `${n(r.spam)}${taxa(r.spam, r.entregues)}` },
+  ];
+  renderTabela($('pm-por-etapa'), d.por_etapa ?? [], colunas, { vazio: 'Ainda sem eventos com a tag da etapa neste período (ela só existe desde 01/10).' });
+}
+
 /* ── tabela de problemas ── */
 const ROTULO_EVENTO = { Bounce: 'Bounce', SpamComplaint: 'Spam', SubscriptionChange: 'Supressão' };
 
@@ -192,6 +205,7 @@ async function carregar() {
   renderFila(dados);
   renderWebhook(dados);
   renderSpamEBounces(dados);
+  renderPorEtapa(dados);
   renderProblemas(dados);
   $('pm-atualizado').textContent = `atualizado às ${new Date(dados.gerado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
 }
