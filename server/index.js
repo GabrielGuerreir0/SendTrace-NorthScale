@@ -538,6 +538,9 @@ async function servirEstatico(req, res, urlPath) {
 
 /* ─────────────────────────  rotas de acesso  ───────────────────────── */
 
+/** Administrador, ou gestor do Suporte Escalado (papel por página, migração 072). */
+const ehGestorEscalado = (u) => Boolean(u?.admin || (u?.acessos ?? []).some((a) => a.pagina === 'suporteescalado' && a.papel === 'gestor'));
+
 /**
  * Quem é a pessoa por trás deste token.
  *
@@ -1476,12 +1479,16 @@ async function atender(req, res, url, sessao) {
   }
   const rotaBoardEscalado = /^\/api\/suporte-escalado\/boards\/(\d+)$/.exec(url.pathname);
   if (rotaBoardEscalado && req.method === 'PATCH') {
-    if (!usuario.admin) return json(res, 403, { erro: 'Só administradores alteram boards.' });
+    if (!ehGestorEscalado(usuario)) return json(res, 403, { erro: 'Só administradores alteram boards.' });
     const corpo = await lerJson(req);
     const alteracoes = {};
     if (corpo.nome !== undefined) alteracoes.nome = String(corpo.nome ?? '').trim();
     if (corpo.usuario_id !== undefined) alteracoes.usuario_id = corpo.usuario_id;
     if (corpo.ativo !== undefined) alteracoes.ativo = Boolean(corpo.ativo);
+    // O gestor só liga/desliga a disponibilidade; renomear e vincular pessoa é do administrador.
+    if (!usuario.admin && ('nome' in alteracoes || 'usuario_id' in alteracoes)) {
+      return json(res, 403, { erro: 'O gestor só pode ligar ou desligar a disponibilidade do board.' });
+    }
     try {
       return json(res, 200, await remendarApi(`/api/suporte-escalado/boards/${rotaBoardEscalado[1]}`, alteracoes));
     } catch (err) {
@@ -1535,9 +1542,9 @@ async function atender(req, res, url, sessao) {
     }
   }
 
-  /* ── transferir um caso pro board de outro responsável (só admin) ── */
+  /* ── transferir um caso pro board de outro responsável (administrador ou gestor) ── */
   if (url.pathname === '/api/suporte-escalado/transferir' && req.method === 'POST') {
-    if (!usuario.admin) return json(res, 403, { erro: 'Só administradores transferem casos entre boards.' });
+    if (!ehGestorEscalado(usuario)) return json(res, 403, { erro: 'Só administradores e gestores transferem casos entre boards.' });
     const corpo = await lerJson(req);
     if (!Number.isInteger(corpo.id)) return json(res, 400, { erro: 'Informe o id do caso escalado.' });
     if (!Number.isInteger(corpo.board_id)) return json(res, 400, { erro: 'Informe o board de destino.' });

@@ -2,9 +2,9 @@
  * Suporte Escalado — turnos e disponibilidade dos agentes (pedido da Késsia, PDF de 05/10/2026; migração 067).
  *
  *   GET    /api/suporte-escalado/turnos                → turnos (com quem está em cada um) + agentes (com "disponível")
- *   POST   /api/suporte-escalado/turnos                → cria um turno (só admin)
- *   PUT    /api/suporte-escalado/turnos/:id            → renomeia / muda horário (só admin)
- *   DELETE /api/suporte-escalado/turnos/:id            → apaga um turno (só admin)
+ *   POST   /api/suporte-escalado/turnos                → cria um turno (só admin ou gestor)
+ *   PUT    /api/suporte-escalado/turnos/:id            → renomeia / muda horário (só admin ou gestor)
+ *   DELETE /api/suporte-escalado/turnos/:id            → apaga um turno (só admin ou gestor)
  *   PUT    /api/suporte-escalado/turnos/:id/agentes    → define quem trabalha no turno (só admin; substitui a lista)
  *
  * "Disponível para receber tickets" é o `ativo` do board (PATCH /api/suporte-escalado/boards/:id, só admin, já existente).
@@ -17,7 +17,8 @@ import { ErroHttp } from '../comum.js';
 const HORA = '^([01][0-9]|2[0-3]):[0-5][0-9]$';
 
 export default async function rotasSuporteEscaladoTurnos(app) {
-  const soAdmin = (req) => { if (!req.usuario.admin) throw new ErroHttp(403, 'Só administradores alteram turnos.'); };
+  // Administrador ou gestor do Suporte Escalado (papel 072).
+  const soAdmin = (req) => { if (!req.usuario.admin && !req.usuario.gestorEscalado) throw new ErroHttp(403, 'Só administradores e gestores alteram turnos.'); };
   const idTurno = { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } };
 
   const dadosTurnos = async () => {
@@ -43,7 +44,7 @@ export default async function rotasSuporteEscaladoTurnos(app) {
   app.post('/api/suporte-escalado/turnos', {
     onRequest: [app.exigirSessao],
     schema: {
-      tags: ['Central de E-mail IA'], summary: 'Cria um turno (só admin)', security: [{ bearerAuth: [] }],
+      tags: ['Central de E-mail IA'], summary: 'Cria um turno (só admin ou gestor)', security: [{ bearerAuth: [] }],
       body: {
         type: 'object', required: ['nome', 'inicio', 'fim'], additionalProperties: false,
         properties: {
@@ -63,7 +64,7 @@ export default async function rotasSuporteEscaladoTurnos(app) {
   app.put('/api/suporte-escalado/turnos/:id', {
     onRequest: [app.exigirSessao],
     schema: {
-      tags: ['Central de E-mail IA'], summary: 'Muda nome/horário de um turno (só admin)', security: [{ bearerAuth: [] }], params: idTurno,
+      tags: ['Central de E-mail IA'], summary: 'Muda nome/horário de um turno (só admin ou gestor)', security: [{ bearerAuth: [] }], params: idTurno,
       body: {
         type: 'object', additionalProperties: false, minProperties: 1,
         properties: {
@@ -88,7 +89,7 @@ export default async function rotasSuporteEscaladoTurnos(app) {
 
   app.delete('/api/suporte-escalado/turnos/:id', {
     onRequest: [app.exigirSessao],
-    schema: { tags: ['Central de E-mail IA'], summary: 'Apaga um turno (só admin)', security: [{ bearerAuth: [] }], params: idTurno },
+    schema: { tags: ['Central de E-mail IA'], summary: 'Apaga um turno (só admin ou gestor)', security: [{ bearerAuth: [] }], params: idTurno },
   }, async (req) => {
     soAdmin(req);
     const { rowCount } = await query('DELETE FROM email_ia.suporte_escalado_turnos WHERE id = $1', [req.params.id]);

@@ -1016,7 +1016,8 @@ export default async function rotasEmailIACentral(app) {
   }
 
   function podeGerenciarBoard(req, board) {
-    return req.usuario.admin || (board && board.usuario_id === req.usuario.user_id);
+    // Gestor do Suporte Escalado (papel 072) gerencia qualquer board, como o administrador; usuário comum, só o próprio.
+    return req.usuario.admin || req.usuario.gestorEscalado || (board && board.usuario_id === req.usuario.user_id);
   }
 
   /** Board do caso escalado `casoId` — usado pelas rotas que recebem o id do
@@ -1060,8 +1061,9 @@ export default async function rotasEmailIACentral(app) {
     // `admin` vai na resposta pra a tela não depender de descobrir isso por
     // outro caminho — é o mesmo request que já sabe, via a sessão, se pode
     // gerenciar boards ou só ver/usar o próprio.
-    if (req.usuario.admin) {
-      const [{ rows: boards }, { rows: orfaosRows }] = await Promise.all([
+    const veTudo = !!(req.usuario.admin || req.usuario.gestorEscalado);
+    if (veTudo) {
+      const [{ rows: boards }, { rows: orfaosRows }, meu] = await Promise.all([
         query(
           `SELECT b.id, b.nome, b.usuario_id, b.ativo, b.criado_em, u.email AS usuario_email, u.nome AS usuario_nome
            FROM email_ia.suporte_escalado_boards b
@@ -1069,13 +1071,15 @@ export default async function rotasEmailIACentral(app) {
            ORDER BY b.nome`,
         ),
         query('SELECT count(*)::int AS total FROM email_ia.suporte_escalado WHERE board_id IS NULL'),
+        boardPorUsuario(req.usuario.user_id),
       ]);
+      // `gestor`: vê todos os boards sem ser administrador (papel Gestor do Suporte Escalado); `meu_board_id`: o board dele, para abrir nele por padrão.
       return {
-        admin: true, boards, orfaos: orfaosRows[0].total,
+        admin: !!req.usuario.admin, gestor: !req.usuario.admin, boards, orfaos: orfaosRows[0].total, meu_board_id: meu?.id ?? null,
       };
     }
     const board = await boardPorUsuario(req.usuario.user_id);
-    return { admin: false, boards: board ? [board] : [], orfaos: 0 };
+    return { admin: false, gestor: false, boards: board ? [board] : [], orfaos: 0, meu_board_id: board?.id ?? null };
   });
 
   async function boardPorUsuario(usuarioId) {
@@ -1162,11 +1166,11 @@ export default async function rotasEmailIACentral(app) {
   });
 
   app.patch('/api/suporte-escalado/boards/:id', {
-    onRequest: [app.exigirAdmin],
+    onRequest: [app.exigirSessao],
     schema: {
       tags: ['Central de E-mail IA'],
       summary: 'Renomeia, vincula a um usuário ou ativa/desativa um board',
-      description: 'Só administradores. Desativar (`ativo: false`) só tira o board do '
+      description: 'Administradores alteram tudo; o gestor do Suporte Escalado só liga/desliga a disponibilidade (`ativo`). Desativar (`ativo: false`) só tira o board do '
         + 'roteamento automático de casos novos — nunca apaga colunas nem casos. Não existe '
         + 'endpoint para apagar um board.',
       security: [{ bearerAuth: [] }],
@@ -1182,6 +1186,11 @@ export default async function rotasEmailIACentral(app) {
     },
   }, async (req) => {
     const corpo = req.body ?? {};
+    if (!req.usuario.admin) {
+      // Gestor: só a disponibilidade. Renomear e vincular pessoa ao board continuam sendo do administrador.
+      if (!req.usuario.gestorEscalado) throw new ErroHttp(403, 'Só administradores alteram boards.');
+      if (corpo.nome !== undefined || corpo.usuario_id !== undefined) throw new ErroHttp(403, 'O gestor só pode ligar ou desligar a disponibilidade do board.');
+    }
     const campos = [];
     const valores = [];
     let i = 1;
@@ -1364,7 +1373,7 @@ export default async function rotasEmailIACentral(app) {
     const dias = Math.max(1, Number(req.query.dias) || 30);
 
     if (req.query.board_id === 'todos') {
-      if (!req.usuario.admin) throw new ErroHttp(403, 'Só administradores veem a visão geral de todos os boards.');
+      if (!req.usuario.admin && !req.usuario.gestorEscalado) throw new ErroHttp(403, 'Só administradores e gestores veem a visão geral de todos os boards.');
       return visaoGeralBoards(dias);
     }
 
@@ -1542,11 +1551,11 @@ export default async function rotasEmailIACentral(app) {
      board antigo continuam corretas mesmo depois do caso sair de lá. */
 
   app.post('/api/suporte-escalado/transferir', {
-    onRequest: [app.exigirAdmin],
+    onRequest: [app.exigirSessao],
     schema: {
       tags: ['Central de E-mail IA'],
       summary: 'Transfere um caso escalado para o board de outro responsável',
-      description: 'Só administradores. O caso reinicia no board de destino: '
+      description: 'Só administradores e gestores do Suporte Escalado. O caso reinicia no board de destino: '
         + 'volta para a coluna "Pendente" e perde iniciado_em/finalizado_em.',
       security: [{ bearerAuth: [] }],
       body: {
@@ -1559,6 +1568,7 @@ export default async function rotasEmailIACentral(app) {
       },
     },
   }, async (req) => {
+    if (!req.usuario.admin && !req.usuario.gestorEscalado) throw new ErroHttp(403, 'Só administradores e gestores transferem casos entre boards.');
     const { id, board_id: boardIdDestino } = req.body;
     const destino = await boardPorId(boardIdDestino);
     if (!destino) throw new ErroHttp(404, 'Board de destino não encontrado.');

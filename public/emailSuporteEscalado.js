@@ -75,6 +75,8 @@ let colunaEditandoRascunho = { rotulo: '', descricao: '' };
 let boardId = null;
 let boards = [];
 let souAdmin = false;
+let souGestor = false;   // administrador OU gestor do Suporte Escalado (papel por página): vê todos os boards, transfere casos e edita turnos
+let meuBoardId = null;
 let orfaos = 0;
 /** Resumo por board (dono, pendentes, total) — só preenchido quando
  *  `boardId === 'todos'`; é o que renderVisaoGeral() usa no lugar do
@@ -101,7 +103,7 @@ function renderControlesBoard() {
   const avisoOrfaos = $('esc-orfaos-aviso');
 
   sel.replaceChildren();
-  if (souAdmin) {
+  if (souGestor) {
     const optGeral = document.createElement('option');
     optGeral.value = 'todos';
     optGeral.textContent = '▣ Visão geral (todos os boards)';
@@ -118,13 +120,13 @@ function renderControlesBoard() {
   // Usuário comum com um só board nunca precisa escolher; admin sempre pode
   // trocar (mesmo com 1 board só, pra já deixar o controle no lugar quando
   // criar o segundo, e pra sempre poder chegar na visão geral).
-  campoSel.hidden = !(souAdmin || boards.length > 1);
+  campoSel.hidden = !(souGestor || boards.length > 1);
 
   btnNovo.hidden = !souAdmin;
-  $('esc-subaba-btn-turnos').hidden = !souAdmin;
+  $('esc-subaba-btn-turnos').hidden = !souGestor;
   btnEditar.hidden = !(souAdmin && boardId && boardId !== 'todos');
 
-  if (souAdmin && orfaos > 0) {
+  if (souGestor && orfaos > 0) {
     avisoOrfaos.hidden = false;
     avisoOrfaos.textContent = `⚠ ${n(orfaos)} caso${orfaos === 1 ? '' : 's'} escalado${orfaos === 1 ? '' : 's'} `
       + 'sem board (nenhum responsável ativo elegível no momento em que o roteamento automático rodou).';
@@ -261,6 +263,7 @@ async function carregarBoards() {
   if (!ok) {
     boards = [];
     souAdmin = false;
+    souGestor = false;
     orfaos = 0;
     boardId = null;
     renderControlesBoard();
@@ -270,10 +273,12 @@ async function carregarBoards() {
   }
   boards = dados.boards ?? [];
   souAdmin = Boolean(dados.admin);
+  souGestor = Boolean(dados.admin || dados.gestor);
+  meuBoardId = dados.meu_board_id ?? null;
   orfaos = dados.orfaos ?? 0;
 
   const salvoRaw = localStorage.getItem('escBoardId');
-  if (salvoRaw === 'todos' && souAdmin) {
+  if (salvoRaw === 'todos' && souGestor) {
     boardId = 'todos';
   } else {
     const salvo = Number(salvoRaw);
@@ -281,6 +286,8 @@ async function carregarBoards() {
       boardId = salvo;
     } else if (boards.length === 1) {
       boardId = boards[0].id;
+    } else if (souGestor && meuBoardId && boards.some((b) => b.id === meuBoardId)) {
+      boardId = meuBoardId;   // gestor com board próprio abre nele; os demais ficam no seletor
     } else {
       boardId = null;
     }
@@ -1135,11 +1142,11 @@ function abrirAjudaRecebida(p) {
 
 async function carregarTurnos() {
   const raiz = $('esc-subaba-turnos');
-  if (!souAdmin) {
+  if (!souGestor) {
     raiz.replaceChildren();
     const p = document.createElement('p');
     p.className = 'vazio-suave';
-    p.textContent = 'Só administradores veem e alteram turnos e disponibilidade.';
+    p.textContent = 'Só administradores e gestores veem e alteram turnos e disponibilidade.';
     raiz.append(p);
     return;
   }
@@ -1579,10 +1586,10 @@ function criarCard(item) {
 
   acoesEl.append(btnDetalhes, sel, btnAbrir, btnWebmail, btnReativar);
 
-  // Transferir pra outro board — só admin, e só faz sentido existindo pra
+  // Transferir pra outro board — administrador ou gestor, e só faz sentido existindo pra
   // onde mandar (outro board além do que já está aberto). Igual ao select
   // de mover coluna: some no card sem virar um modal à parte.
-  if (souAdmin && boards.length > 1) {
+  if (souGestor && boards.length > 1) {
     const selTransferir = document.createElement('select');
     selTransferir.className = 'esc-card-transferir-select';
     selTransferir.setAttribute('aria-label', `Transferir ${item.nome || item.remetente_email} para outro board`);
@@ -1956,10 +1963,10 @@ function renderSemBoard() {
   board.replaceChildren();
   const p = document.createElement('p');
   p.className = 'vazio-suave';
-  if (!souAdmin && !boards.length) {
+  if (!souGestor && !boards.length) {
     p.textContent = 'Você ainda não tem um kanban vinculado — peça a um administrador para criar um board para você.';
-  } else if (souAdmin && !boards.length) {
-    p.textContent = 'Nenhum board criado ainda — use "+ Novo board" para criar o primeiro.';
+  } else if (souGestor && !boards.length) {
+    p.textContent = souAdmin ? 'Nenhum board criado ainda — use "+ Novo board" para criar o primeiro.' : 'Nenhum board criado ainda — peça a um administrador para criar o primeiro.';
   } else {
     p.textContent = 'Escolha um board acima para ver o kanban.';
   }

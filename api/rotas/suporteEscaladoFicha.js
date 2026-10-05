@@ -57,7 +57,8 @@ export default async function rotasSuporteEscaladoFicha(app) {
     return rows[0] ?? null;
   }
 
-  const ehDono = (req, caso) => !!req.usuario.admin || (caso.dono_id != null && caso.dono_id === req.usuario.user_id);
+  // Dono do board, administrador ou gestor do Suporte Escalado (papel 072): lê e edita o caso.
+  const ehDono = (req, caso) => !!req.usuario.admin || !!req.usuario.gestorEscalado || (caso.dono_id != null && caso.dono_id === req.usuario.user_id);
 
   async function recebeuAjuda(req, casoId) {
     if (req.usuario.user_id == null) return false;
@@ -144,7 +145,7 @@ export default async function rotasSuporteEscaladoFicha(app) {
     schema: {
       tags: ['Central de E-mail IA'],
       summary: 'Salva os campos do agente enviados no corpo (os ausentes não mudam; null limpa)',
-      description: 'Dono do board ou admin. Listas fechadas: ver GET /api/suporte-escalado/opcoes.',
+      description: 'Dono do board, administrador ou gestor. Listas fechadas: ver GET /api/suporte-escalado/opcoes.',
       security: [{ bearerAuth: [] }],
       params: idCaso,
       body: {
