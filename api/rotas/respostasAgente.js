@@ -3,6 +3,7 @@
  *
  *   GET /api/respostas-agente?email=…   → as respostas humanas enviadas a esse cliente, em ordem cronológica
  *
+ * `agente` = dono do board do caso na hora da resposta (a caixa é única, não dá para saber de quem foi o clique no webmail).
  * Alimenta a "conversa completa" da ficha do caso (balões do agente ao lado dos do cliente e da IA). O corpo já vem sem a parte citada.
  */
 
@@ -25,10 +26,11 @@ export default async function rotasRespostasAgente(app) {
     const email = String(req.query.email).trim().toLowerCase();
     if (!email.includes('@')) throw new ErroHttp(400, 'E-mail inválido.');
     const { rows } = await query(
-      `SELECT id, enviado_em, assunto, corpo_texto
-         FROM email_ia.respostas_agente
-        WHERE lower(para_email) = $1
-        ORDER BY enviado_em ASC LIMIT 200`,
+      `SELECT r.id, r.enviado_em, r.assunto, r.corpo_texto, b.nome AS agente
+         FROM email_ia.respostas_agente r
+         LEFT JOIN email_ia.suporte_escalado_boards b ON b.id = r.board_id
+        WHERE lower(r.para_email) = $1
+        ORDER BY r.enviado_em ASC LIMIT 200`,
       [email],
     );
     return { respostas: rows };

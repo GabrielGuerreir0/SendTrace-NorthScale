@@ -70,6 +70,7 @@ let emailsModalTodos = [];
 let emailsModalPagina = 1;
 let emailsModalModo = 'tabela'; // 'tabela' | 'conversa'
 let respostasAgenteModal = []; // respostas humanas (pasta Enviados) do cliente aberto, p/ a conversa completa
+let conversaFiltro = 'tudo'; // 'tudo' | 'ia' | 'agente' — o que acompanhar na conversa completa
 const EM_POR_PAGINA = 15;
 
 function renderEmailsModal() {
@@ -175,27 +176,44 @@ function renderConversa() {
   for (const e of emOrdem) {
     const mensagemCliente = textoReal(e.corpo_texto);
     if (mensagemCliente) {
-      itens.push({ t: new Date(e.data_email ?? 0), b: balaoConversa('cliente', e.remetente_nome || e.remetente_email || 'Cliente', mensagemCliente, e.data_email) });
+      itens.push({ papel: 'cliente', t: new Date(e.data_email ?? 0), b: balaoConversa('cliente', e.remetente_nome || e.remetente_email || 'Cliente', mensagemCliente, e.data_email) });
     }
     if (e.resposta_automatica && e.resposta_sugerida) {
       const quando = e.resposta_enviada_em ?? e.data_email;
-      itens.push({ t: new Date(quando ?? 0), b: balaoConversa('ia', 'IA (resposta automática)', e.resposta_sugerida, quando) });
+      itens.push({ papel: 'ia', t: new Date(quando ?? 0), b: balaoConversa('ia', '🤖 IA (resposta automática)', e.resposta_sugerida, quando) });
     }
   }
   // Respostas dos agentes (lidas da pasta Enviados de support@): entram na ordem do tempo, ao lado do cliente e da IA.
   for (const r of respostasAgenteModal) {
-    if (r.corpo_texto) itens.push({ t: new Date(r.enviado_em ?? 0), b: balaoConversa('agente', 'Agente (resposta pelo webmail)', r.corpo_texto, r.enviado_em) });
+    if (r.corpo_texto) {
+      const quem = r.agente ? `👤 Agente (${r.agente})` : '👤 Agente';
+      itens.push({ papel: 'agente', t: new Date(r.enviado_em ?? 0), b: balaoConversa('agente', quem, r.corpo_texto, r.enviado_em) });
+    }
   }
   itens.sort((x, y) => x.t - y.t);
-  const balões = itens.map((i) => i.b);
+  const qIA = itens.filter((i) => i.papel === 'ia').length;
+  const qAgente = itens.filter((i) => i.papel === 'agente').length;
+  // Filtro: "Só IA" mostra cliente + IA; "Só agente" mostra cliente + agente (o cliente fica sempre, para dar contexto).
+  const visiveis = itens.filter((i) => conversaFiltro === 'tudo' || i.papel === 'cliente' || i.papel === conversaFiltro);
+  const balões = visiveis.map((i) => i.b);
+
+  const barra = document.createElement('div');
+  barra.className = 'ch-filtros';
+  for (const [chave, rotulo] of [['tudo', `Tudo (${itens.length})`], ['ia', `🤖 IA (${qIA})`], ['agente', `👤 Agentes (${qAgente})`]]) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'ch-filtro'; b.textContent = rotulo;
+    b.setAttribute('aria-pressed', String(conversaFiltro === chave));
+    b.addEventListener('click', () => { conversaFiltro = chave; renderConversa(); });
+    barra.append(b);
+  }
   if (!balões.length) {
     const vazio = document.createElement('p');
     vazio.className = 'vazio-suave';
     vazio.textContent = 'Nenhuma mensagem com texto disponível para este cliente ainda.';
-    alvo.replaceChildren(vazio);
+    alvo.replaceChildren(barra, vazio);
     return;
   }
-  alvo.replaceChildren(...balões);
+  alvo.replaceChildren(barra, ...balões);
 }
 
 function aplicarModoVisualEmailsModal(modo) {

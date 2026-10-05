@@ -2144,10 +2144,17 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
   padding: 9px 15px; border-radius: 18px; border-bottom-left-radius: 5px;
   background: var(--superficie-2); border: 1px solid var(--borda); color: var(--tinta);
 }
-.ch-balao[data-papel="ia"] .ch-balao-corpo, .ch-balao[data-papel="agente"] .ch-balao-corpo {
+.ch-balao[data-papel="ia"] .ch-balao-corpo {
   padding: 9px 15px; border-radius: 18px; border-bottom-right-radius: 5px;
   background: var(--st-em-dia); border: 1px solid var(--st-em-dia); color: #fff;
 }
+.ch-balao[data-papel="agente"] .ch-balao-corpo {
+  padding: 9px 15px; border-radius: 18px; border-bottom-right-radius: 5px;
+  background: var(--st-processando); border: 1px solid var(--st-processando); color: #fff;
+}
+.ch-filtros { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; position: sticky; top: 0; background: var(--superficie); padding: 4px 0; z-index: 1; }
+.ch-filtro { font: inherit; font-size: 12.5px; padding: 3px 11px; border-radius: 999px; border: 1px solid var(--borda); background: var(--superficie-2); color: var(--tinta-2); cursor: pointer; }
+.ch-filtro[aria-pressed="true"] { background: var(--tinta); color: var(--superficie); border-color: var(--tinta); }
 .ch-balao-remetente { display: block; margin-bottom: 3px; font-size: 11.5px; font-weight: 650; opacity: .8; }
 .ch-balao-hora { display: block; margin-top: 5px; font-size: 11px; opacity: .7; }
 
