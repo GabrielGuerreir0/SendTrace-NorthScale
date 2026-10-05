@@ -1461,8 +1461,12 @@ async function atender(req, res, url, sessao) {
   if (url.pathname === '/api/suporte-escalado/boards' && req.method === 'GET') {
     return json(res, 200, await obterApi('/api/suporte-escalado/boards'));
   }
+  if (url.pathname === '/api/suporte-escalado/usuarios' && req.method === 'GET') {
+    if (!ehGestorEscalado(usuario)) return json(res, 403, { erro: 'Só administradores e gestores.' });
+    return json(res, 200, await obterApi('/api/suporte-escalado/usuarios'));
+  }
   if (url.pathname === '/api/suporte-escalado/boards' && req.method === 'POST') {
-    if (!usuario.admin) return json(res, 403, { erro: 'Só administradores criam boards.' });
+    if (!ehGestorEscalado(usuario)) return json(res, 403, { erro: 'Só administradores e gestores criam boards.' });
     const corpo = await lerJson(req);
     const nome = String(corpo.nome ?? '').trim();
     if (!nome) return json(res, 400, { erro: 'Dê um nome para o board.' });
@@ -1479,16 +1483,13 @@ async function atender(req, res, url, sessao) {
   }
   const rotaBoardEscalado = /^\/api\/suporte-escalado\/boards\/(\d+)$/.exec(url.pathname);
   if (rotaBoardEscalado && req.method === 'PATCH') {
-    if (!ehGestorEscalado(usuario)) return json(res, 403, { erro: 'Só administradores alteram boards.' });
+    if (!ehGestorEscalado(usuario)) return json(res, 403, { erro: 'Só administradores e gestores alteram boards.' });
     const corpo = await lerJson(req);
     const alteracoes = {};
     if (corpo.nome !== undefined) alteracoes.nome = String(corpo.nome ?? '').trim();
     if (corpo.usuario_id !== undefined) alteracoes.usuario_id = corpo.usuario_id;
     if (corpo.ativo !== undefined) alteracoes.ativo = Boolean(corpo.ativo);
-    // O gestor só liga/desliga a disponibilidade; renomear e vincular pessoa é do administrador.
-    if (!usuario.admin && ('nome' in alteracoes || 'usuario_id' in alteracoes)) {
-      return json(res, 403, { erro: 'O gestor só pode ligar ou desligar a disponibilidade do board.' });
-    }
+
     try {
       return json(res, 200, await remendarApi(`/api/suporte-escalado/boards/${rotaBoardEscalado[1]}`, alteracoes));
     } catch (err) {

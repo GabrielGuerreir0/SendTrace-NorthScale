@@ -1126,12 +1126,22 @@ export default async function rotasEmailIACentral(app) {
     }
   }
 
+  /** Pessoas do painel que podem ser vinculadas a um board (id, nome, e-mail; só ativas) — para o formulário de board do administrador/gestor. */
+  app.get('/api/suporte-escalado/usuarios', {
+    onRequest: [app.exigirSessao],
+    schema: { tags: ['Central de E-mail IA'], summary: 'Usuários ativos do painel, para vincular a um board (admin ou gestor)', security: [{ bearerAuth: [] }] },
+  }, async (req) => {
+    if (!req.usuario.admin && !req.usuario.gestorEscalado) throw new ErroHttp(403, 'Só administradores e gestores.');
+    const { rows } = await query('SELECT id, email, nome FROM public.painel_usuarios WHERE ativo ORDER BY lower(coalesce(nome, email))');
+    return { usuarios: rows };
+  });
+
   app.post('/api/suporte-escalado/boards', {
-    onRequest: [app.exigirAdmin],
+    onRequest: [app.exigirSessao],
     schema: {
       tags: ['Central de E-mail IA'],
       summary: 'Cria um board novo no kanban de suporte escalado',
-      description: 'Só administradores. Nasce com as mesmas 7 colunas padrão (incluindo a '
+      description: 'Administradores e gestores do Suporte Escalado. Nasce com as mesmas 7 colunas padrão (incluindo a '
         + '"Pendente", fixa) e pode já vir vinculado a um usuário — cada usuário só pode ter '
         + 'um board.',
       security: [{ bearerAuth: [] }],
@@ -1145,6 +1155,7 @@ export default async function rotasEmailIACentral(app) {
       },
     },
   }, async (req) => {
+    if (!req.usuario.admin && !req.usuario.gestorEscalado) throw new ErroHttp(403, 'Só administradores e gestores criam boards.');
     const nome = req.body.nome.trim();
     if (!nome) throw new ErroHttp(400, 'Dê um nome para o board.');
     const usuarioId = req.body.usuario_id ?? null;
@@ -1170,7 +1181,7 @@ export default async function rotasEmailIACentral(app) {
     schema: {
       tags: ['Central de E-mail IA'],
       summary: 'Renomeia, vincula a um usuário ou ativa/desativa um board',
-      description: 'Administradores alteram tudo; o gestor do Suporte Escalado só liga/desliga a disponibilidade (`ativo`). Desativar (`ativo: false`) só tira o board do '
+      description: 'Administradores e gestores do Suporte Escalado. Desativar (`ativo: false`) só tira o board do '
         + 'roteamento automático de casos novos — nunca apaga colunas nem casos. Não existe '
         + 'endpoint para apagar um board.',
       security: [{ bearerAuth: [] }],
@@ -1186,11 +1197,7 @@ export default async function rotasEmailIACentral(app) {
     },
   }, async (req) => {
     const corpo = req.body ?? {};
-    if (!req.usuario.admin) {
-      // Gestor: só a disponibilidade. Renomear e vincular pessoa ao board continuam sendo do administrador.
-      if (!req.usuario.gestorEscalado) throw new ErroHttp(403, 'Só administradores alteram boards.');
-      if (corpo.nome !== undefined || corpo.usuario_id !== undefined) throw new ErroHttp(403, 'O gestor só pode ligar ou desligar a disponibilidade do board.');
-    }
+    if (!req.usuario.admin && !req.usuario.gestorEscalado) throw new ErroHttp(403, 'Só administradores e gestores alteram boards.');
     const campos = [];
     const valores = [];
     let i = 1;

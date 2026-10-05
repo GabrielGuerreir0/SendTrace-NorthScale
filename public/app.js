@@ -1699,7 +1699,7 @@ function painelAcessos(u) {
     linha.append(cb, document.createTextNode(` ${rotulo}`));
     if (chave === 'suporteescalado') {
       papel = document.createElement('select');
-      papel.title = 'Usuário: vê só o seu board e os seus casos. Gestor: vê todos os boards, transfere casos e edita turnos.';
+      papel.title = 'Usuário: vê só o seu board e os seus casos. Gestor: vê todos os boards, cria e edita boards, transfere casos e edita turnos.';
       for (const [v, t] of [['usuario', 'Usuário (só o que é seu)'], ['gestor', 'Gestor (vê tudo)']]) {
         const o = document.createElement('option'); o.value = v; o.textContent = t; papel.append(o);
       }

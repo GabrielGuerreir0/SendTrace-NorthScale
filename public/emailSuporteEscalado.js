@@ -84,13 +84,13 @@ let orfaos = 0;
 let boardsResumo = null;
 /** null = formulário fechado; 'novo' = criando; um id = editando aquele board. */
 let boardFormAberto = null;
-/** Lista de usuários pro <select> de vincular — carregada uma vez (admin),
+/** Lista de usuários pro <select> de vincular — carregada uma vez (admin ou gestor),
  *  cacheada porque não muda durante a sessão do jeito que os boards mudam. */
 let usuariosCache = null;
 
 async function usuariosParaSelect() {
   if (usuariosCache) return usuariosCache;
-  const { ok, dados } = await api('/api/usuarios');
+  const { ok, dados } = await api('/api/suporte-escalado/usuarios');
   usuariosCache = ok ? (dados.usuarios ?? []) : [];
   return usuariosCache;
 }
@@ -122,9 +122,9 @@ function renderControlesBoard() {
   // criar o segundo, e pra sempre poder chegar na visão geral).
   campoSel.hidden = !(souGestor || boards.length > 1);
 
-  btnNovo.hidden = !souAdmin;
+  btnNovo.hidden = !souGestor;
   $('esc-subaba-btn-turnos').hidden = !souGestor;
-  btnEditar.hidden = !(souAdmin && boardId && boardId !== 'todos');
+  btnEditar.hidden = !(souGestor && boardId && boardId !== 'todos');
 
   if (souGestor && orfaos > 0) {
     avisoOrfaos.hidden = false;
@@ -1966,7 +1966,7 @@ function renderSemBoard() {
   if (!souGestor && !boards.length) {
     p.textContent = 'Você ainda não tem um kanban vinculado — peça a um administrador para criar um board para você.';
   } else if (souGestor && !boards.length) {
-    p.textContent = souAdmin ? 'Nenhum board criado ainda — use "+ Novo board" para criar o primeiro.' : 'Nenhum board criado ainda — peça a um administrador para criar o primeiro.';
+    p.textContent = 'Nenhum board criado ainda — use "+ Novo board" para criar o primeiro.';
   } else {
     p.textContent = 'Escolha um board acima para ver o kanban.';
   }
