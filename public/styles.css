@@ -1480,6 +1480,7 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
 .usuario-meta { grid-column: 1; font-size: 10.5px; color: var(--tinta-fraca); line-height: 1.5; }
 .usuario-acoes { grid-row: 1 / span 2; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .usuario-acessos { grid-column: 1 / -1; margin-top: 8px; padding: 10px 12px; border: 1px dashed var(--borda); border-radius: 10px; background: var(--superficie); }
+.usuario-acessos-dica { margin-top: 2px; font-size: 10.5px; color: var(--tinta-fraca); font-style: italic; }
 .usuario-acessos-titulo { margin: 0 0 8px; font-size: 12px; font-weight: 600; }
 .usuario-acessos-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px 14px; }
 .usuario-acesso { font-size: 12.5px; display: flex; align-items: center; gap: 4px; }

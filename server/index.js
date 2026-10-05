@@ -2197,6 +2197,10 @@ const servidor = http.createServer(async (req, res) => {
        * piscando "sem conexão" para sempre, quando o conserto é entrar de
        * novo. O cookie some junto, senão o navegador insistiria com ele.
        */
+      // Sem acesso a ESTA página (072) não é sessão perdida: a pessoa está logada, só não tem a página. Devolve 403 e segue logada.
+      if (err.status === 403 && String(err.corpo?.detail ?? '').includes('acesso a esta página')) {
+        return json(res, 403, { erro: 'Você não tem acesso a esta página.' });
+      }
       if (err.status === 401 || err.status === 403) {
         limparCookieSessao(req, res);
         fecharSessao(lerCookie(req, COOKIE));

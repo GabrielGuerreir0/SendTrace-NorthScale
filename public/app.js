@@ -1831,6 +1831,12 @@ function renderUsuarios({ usuarios, eu, emailConfigurado, conviteDias, somenteLe
       },
     ));
 
+    if (u.admin && !soLeitura) {
+      const dica = document.createElement('div');
+      dica.className = 'usuario-acessos-dica';
+      dica.textContent = 'Administrador vê todas as páginas. Para escolher só algumas, clique em "Remover admin" e depois em "✎ Acessos".';
+      meta.append(document.createElement('br'), dica);
+    }
     let painel = null;
     if (!u.admin && !soLeitura) {
       painel = painelAcessos(u);

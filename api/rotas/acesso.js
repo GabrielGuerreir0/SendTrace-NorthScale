@@ -399,10 +399,11 @@ export default async function rotasAcesso(app) {
     }
     if ('admin' in corpo) await definirAdmin(alvo, corpo.admin);
     if (corpo.admin === false) {
-      // Quem deixa de ser admin não pode ficar sem nenhuma página: garante ao menos a Visão Geral (o admin ajusta depois).
+      // Quem deixa de ser admin continua vendo as mesmas páginas de antes (todas): o admin restringe depois pelo ✎ Acessos.
       await query(
         `INSERT INTO painel_usuarios_acessos (usuario_id, pagina, papel)
-         SELECT $1, 'visaogeral', 'usuario' WHERE NOT EXISTS (SELECT 1 FROM painel_usuarios_acessos WHERE usuario_id = $1)`, [alvo]);
+         SELECT $1, p, 'usuario' FROM unnest($2::text[]) AS p
+          WHERE NOT EXISTS (SELECT 1 FROM painel_usuarios_acessos WHERE usuario_id = $1)`, [alvo, CHAVES]);
       esquecerAcessos(alvo);
     }
 

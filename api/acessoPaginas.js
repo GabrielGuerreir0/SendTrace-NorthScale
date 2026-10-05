@@ -31,7 +31,7 @@ export const papeisDaPagina = (pagina) => PAPEIS[pagina] ?? ['usuario'];
  */
 const REGUA_E_RASTREIO = ['regua', 'rastreio'];
 const MAPA = [
-  ['/api/visao-geral', ['visaogeral']],
+  ['/api/visao-geral', ['visaogeral', 'regua']],   // a lista de pedidos da Régua também sai daqui
   ['/api/dash', ['visaogeral']],
   ['/api/suporte-escalado/insights', ['suporteescalado', 'visaogeral']],
   ['/api/suporte-escalado', ['suporteescalado']],
