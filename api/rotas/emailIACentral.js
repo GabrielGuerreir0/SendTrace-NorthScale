@@ -1107,6 +1107,7 @@ export default async function rotasEmailIACentral(app) {
       ['formulario', 'Formulário', 'Esperando responder formulário.', 2],
       ['iniciado', 'Iniciado', 'Um humano já está atendendo este caso.', 3],
       ['esperando_resposta', 'Esperando resposta', 'A bola está com o cliente — aguardando ele responder.', 4],
+      ['lead_respondeu', 'Lead respondeu', 'O cliente respondeu — a bola está com o agente.', 4],
       ['reembolsado', 'Reembolsado', 'O reembolso já foi processado.', 5],
       ['finalizado', 'Finalizado', 'Atendimento concluído.', 6],
     ];
