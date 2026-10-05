@@ -1323,6 +1323,15 @@ async function atender(req, res, url, sessao) {
     }));
   }
 
+  if (url.pathname === '/api/respostas-agente' && req.method === 'GET') {
+    try {
+      return json(res, 200, await obterApi('/api/respostas-agente', { email: url.searchParams.get('email') }));
+    } catch (err) {
+      if (err instanceof ErroApi) return json(res, err.status || 400, { erro: detalharErroApi(err, 'Não consegui carregar as respostas dos agentes.') });
+      throw err;
+    }
+  }
+
   if (url.pathname === '/api/automacao') {
     return json(res, 200, await obterApi('/api/automacao'));
   }

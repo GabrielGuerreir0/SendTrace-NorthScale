@@ -69,6 +69,7 @@ let emailsModalGeracao = 0;
 let emailsModalTodos = [];
 let emailsModalPagina = 1;
 let emailsModalModo = 'tabela'; // 'tabela' | 'conversa'
+let respostasAgenteModal = []; // respostas humanas (pasta Enviados) do cliente aberto, p/ a conversa completa
 const EM_POR_PAGINA = 15;
 
 function renderEmailsModal() {
@@ -170,16 +171,23 @@ function renderConversa() {
   const emOrdem = [...emailsModalTodos].sort(
     (a, b) => new Date(a.data_email ?? 0) - new Date(b.data_email ?? 0),
   );
-  const balões = [];
+  const itens = [];
   for (const e of emOrdem) {
     const mensagemCliente = textoReal(e.corpo_texto);
     if (mensagemCliente) {
-      balões.push(balaoConversa('cliente', e.remetente_nome || e.remetente_email || 'Cliente', mensagemCliente, e.data_email));
+      itens.push({ t: new Date(e.data_email ?? 0), b: balaoConversa('cliente', e.remetente_nome || e.remetente_email || 'Cliente', mensagemCliente, e.data_email) });
     }
     if (e.resposta_automatica && e.resposta_sugerida) {
-      balões.push(balaoConversa('ia', 'IA (resposta automática)', e.resposta_sugerida, e.resposta_enviada_em ?? e.data_email));
+      const quando = e.resposta_enviada_em ?? e.data_email;
+      itens.push({ t: new Date(quando ?? 0), b: balaoConversa('ia', 'IA (resposta automática)', e.resposta_sugerida, quando) });
     }
   }
+  // Respostas dos agentes (lidas da pasta Enviados de support@): entram na ordem do tempo, ao lado do cliente e da IA.
+  for (const r of respostasAgenteModal) {
+    if (r.corpo_texto) itens.push({ t: new Date(r.enviado_em ?? 0), b: balaoConversa('agente', 'Agente (resposta pelo webmail)', r.corpo_texto, r.enviado_em) });
+  }
+  itens.sort((x, y) => x.t - y.t);
+  const balões = itens.map((i) => i.b);
   if (!balões.length) {
     const vazio = document.createElement('p');
     vazio.className = 'vazio-suave';
@@ -237,6 +245,14 @@ export async function abrirModalEmails(tipo, valor, rotulo, ficha = null, modoIn
     if (meu !== emailsModalGeracao) return;
     if (!ok) throw new Error(resp?.erro ?? resp?.detail ?? 'falha ao carregar');
     emailsModalTodos = resp.itens ?? [];
+    respostasAgenteModal = [];
+    if (tipo === 'email') {
+      try {
+        const { ok: okR, dados: dr } = await api(`/api/respostas-agente?email=${encodeURIComponent(valor)}`);
+        if (okR) respostasAgenteModal = dr.respostas ?? [];
+      } catch { /* a conversa abre sem as respostas dos agentes */ }
+      if (meu !== emailsModalGeracao) return;
+    }
     emailsModalPagina = 1;
     if (emailsModalModo === 'conversa') renderConversa(); else renderEmailsModal();
   } catch (err) {

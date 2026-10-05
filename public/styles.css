@@ -2139,12 +2139,12 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
    "ia" usa o azul de marca (--st-em-dia) em vez do cinza neutro do chat de BI,
    pra ficar claro que é o lado da empresa, tipo WhatsApp/Telegram. */
 .ch-balao[data-papel="cliente"] { justify-content: flex-start; }
-.ch-balao[data-papel="ia"] { justify-content: flex-end; }
+.ch-balao[data-papel="ia"], .ch-balao[data-papel="agente"] { justify-content: flex-end; }
 .ch-balao[data-papel="cliente"] .ch-balao-corpo {
   padding: 9px 15px; border-radius: 18px; border-bottom-left-radius: 5px;
   background: var(--superficie-2); border: 1px solid var(--borda); color: var(--tinta);
 }
-.ch-balao[data-papel="ia"] .ch-balao-corpo {
+.ch-balao[data-papel="ia"] .ch-balao-corpo, .ch-balao[data-papel="agente"] .ch-balao-corpo {
   padding: 9px 15px; border-radius: 18px; border-bottom-right-radius: 5px;
   background: var(--st-em-dia); border: 1px solid var(--st-em-dia); color: #fff;
 }
