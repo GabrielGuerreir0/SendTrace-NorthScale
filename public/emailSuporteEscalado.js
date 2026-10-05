@@ -917,6 +917,7 @@ function montarBlocoFicha({ casoId, container, ficha, podeEditar, definicao, rec
   const form = document.createElement('form');
   form.className = 'esc-ficha-form';
   const controles = {};
+  const rotulos = {};
   for (const d of definicao) {
     let el;
     if (d.tipo === 'lista') el = selectLista(d.opcoes, ficha[d.chave]);
@@ -924,8 +925,16 @@ function montarBlocoFicha({ casoId, container, ficha, podeEditar, definicao, rec
     else { el = document.createElement('input'); el.type = 'text'; el.value = ficha[d.chave] ?? ''; el.maxLength = d.max; }
     el.disabled = !podeEditar;
     controles[d.chave] = el;
-    form.append(rotuloDe(d.rotulo, el));
+    rotulos[d.chave] = rotuloDe(d.rotulo, el);
+    form.append(rotulos[d.chave]);
   }
+  // Campo condicional (ex.: percentual do reembolso só aparece com "Reembolso parcial"): mostra ao lado do campo que o controla.
+  const visivel = (d) => !d.visivelSe || controles[d.visivelSe.chave].value === d.visivelSe.valor;
+  const atualizarVisibilidade = () => {
+    for (const d of definicao) if (d.visivelSe) rotulos[d.chave].hidden = !visivel(d);
+  };
+  for (const d of definicao) if (d.visivelSe) controles[d.visivelSe.chave].addEventListener('change', atualizarVisibilidade);
+  atualizarVisibilidade();
   if (podeEditar) {
     const btn = document.createElement('button');
     btn.type = 'submit'; btn.className = 'btn btn-forte'; btn.textContent = 'Salvar';
@@ -934,7 +943,7 @@ function montarBlocoFicha({ casoId, container, ficha, podeEditar, definicao, rec
       e.preventDefault();
       const corpo = {};
       for (const d of definicao) {
-        const v = controles[d.chave].value.trim();
+        const v = visivel(d) ? controles[d.chave].value.trim() : '';
         corpo[d.chave] = v === '' ? null : (d.numero ? Number(v) : v);
       }
       btn.disabled = true;
@@ -1044,6 +1053,8 @@ async function carregarFichaAgente(item, contProp, contLog, contAjuda) {
         { chave: 'motivo_contato', rotulo: 'Motivo do contato', tipo: 'lista', opcoes: opc.motivo_contato },
         { chave: 'detalhamento_motivo', rotulo: 'Detalhamento do motivo do contato', tipo: 'lista', opcoes: opc.detalhamento_motivo },
         { chave: 'tipo_resolucao', rotulo: 'Tipo de resolução', tipo: 'lista', opcoes: opc.tipo_resolucao },
+        { chave: 'percentual_reembolso', rotulo: 'Percentual do reembolso', tipo: 'lista', numero: true,
+          opcoes: (opc.percentual_reembolso ?? []).map((p) => [p, `${p}%`]), visivelSe: { chave: 'tipo_resolucao', valor: 'Reembolso parcial' } },
         { chave: 'status_ticket', rotulo: 'Status do ticket', tipo: 'lista', opcoes: opc.status_ticket },
       ],
     });

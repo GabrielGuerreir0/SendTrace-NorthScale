@@ -24,15 +24,17 @@ export const OPCOES = {
     'Logística - pedido incompleto', 'Logística - pedido quebrado', 'Logística - divergência no produto', 'Cliente não retornou',
   ],
   tipo_resolucao: [
-    'Verificando - Ag. Cliente', 'Reversão total do reembolso', 'Reembolso parcial', '% do reembolso', 'Não revertido',
+    'Verificando - Ag. Cliente', 'Reversão total do reembolso', 'Reembolso parcial', 'Não revertido',
     'Virou chargeback', 'Cliente não retornou',
   ],
+  // Aparece ao lado quando o tipo de resolução é "Reembolso parcial" (15% a 90%, de 5 em 5).
+  percentual_reembolso: Array.from({ length: 16 }, (_, i) => 15 + i * 5),
   status_ticket: ['Aberto', 'Pendente', 'Resolvido', 'Fechado'],
   motivo_reenvio: ['Itens quebrados', 'Pedido incompleto', 'Pedido não entregue', 'Cortesia'],
 };
 
 const CAMPOS_FICHA = [
-  'motivo_contato', 'detalhamento_motivo', 'tipo_resolucao', 'status_ticket',
+  'motivo_contato', 'detalhamento_motivo', 'tipo_resolucao', 'percentual_reembolso', 'status_ticket',
   'motivo_reenvio', 'quantidade_reenvio', 'produto_reenvio', 'observacao_reenvio',
   'endereco_divergencia', 'novo_rastreio', 'responsavel_board_id',
 ];
@@ -153,6 +155,7 @@ export default async function rotasSuporteEscaladoFicha(app) {
           motivo_contato: lista(OPCOES.motivo_contato),
           detalhamento_motivo: lista(OPCOES.detalhamento_motivo),
           tipo_resolucao: lista(OPCOES.tipo_resolucao),
+          percentual_reembolso: { type: ['integer', 'null'], enum: [...OPCOES.percentual_reembolso, null] },
           status_ticket: lista(OPCOES.status_ticket),
           motivo_reenvio: lista(OPCOES.motivo_reenvio),
           quantidade_reenvio: { type: ['integer', 'null'], minimum: 1, maximum: 30 },
@@ -168,19 +171,30 @@ export default async function rotasSuporteEscaladoFicha(app) {
     await exigirEscrita(req, req.params.id);
     const campos = CAMPOS_FICHA.filter((c) => Object.prototype.hasOwnProperty.call(req.body, c));
     if (!campos.length) throw new ErroHttp(400, 'Nenhum campo reconhecido no corpo.');
+    // O percentual só existe com "Reembolso parcial": se o tipo muda para outro, o percentual é zerado; sem esse tipo, não aceita percentual.
+    const corpo = { ...req.body };
+    if (Object.prototype.hasOwnProperty.call(corpo, 'tipo_resolucao') || corpo.percentual_reembolso != null) {
+      const { rows: atual } = await query('SELECT tipo_resolucao FROM email_ia.suporte_escalado_ficha WHERE suporte_escalado_id = $1', [req.params.id]);
+      const tipo = Object.prototype.hasOwnProperty.call(corpo, 'tipo_resolucao') ? corpo.tipo_resolucao : (atual[0]?.tipo_resolucao ?? null);
+      if (tipo !== 'Reembolso parcial') {
+        if (corpo.percentual_reembolso != null) throw new ErroHttp(400, 'O percentual só vale para o tipo de resolução "Reembolso parcial".');
+        corpo.percentual_reembolso = null;
+      }
+    }
+    const campos2 = CAMPOS_FICHA.filter((c) => Object.prototype.hasOwnProperty.call(corpo, c));
     if (req.body.responsavel_board_id != null) {
       const { rows } = await query(
         'SELECT 1 FROM email_ia.suporte_escalado_boards WHERE id = $1 AND usuario_id IS NOT NULL', [req.body.responsavel_board_id],
       );
       if (!rows.length) throw new ErroHttp(400, 'Responsável inválido.');
     }
-    const valores = campos.map((c) => {
-      const v = req.body[c];
+    const valores = campos2.map((c) => {
+      const v = corpo[c];
       return typeof v === 'string' ? (v.trim() === '' ? null : v.trim()) : v;
     });
-    const colunas = campos.join(', ');
-    const marcas = campos.map((_, i) => `$${i + 3}`).join(', ');
-    const atualiza = campos.map((c) => `${c} = EXCLUDED.${c}`).join(', ');
+    const colunas = campos2.join(', ');
+    const marcas = campos2.map((_, i) => `$${i + 3}`).join(', ');
+    const atualiza = campos2.map((c) => `${c} = EXCLUDED.${c}`).join(', ');
     const { rows } = await query(
       `INSERT INTO email_ia.suporte_escalado_ficha (suporte_escalado_id, atualizado_por, ${colunas})
        VALUES ($1, $2, ${marcas})
