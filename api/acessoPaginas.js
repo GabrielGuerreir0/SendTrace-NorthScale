@@ -57,6 +57,9 @@ const MAPA = [
   ['/api/topicos', ['suporte']],
   ['/api/perguntas-sem-resposta', ['suporte']],
   ['/api/metricas', ['regua', 'rastreio', 'suporte']],
+  // A Visão Geral lê estes dois resumos (régua e suporte) para montar o painel dela.
+  ['/api/metricas/estados', ['regua', 'rastreio', 'suporte', 'visaogeral']],
+  ['/api/metricas/suporte', ['regua', 'rastreio', 'suporte', 'visaogeral']],
   ['/api/disparos', REGUA_E_RASTREIO],
   ['/api/upsell-downsell', REGUA_E_RASTREIO],
   ['/api/etapas', REGUA_E_RASTREIO],

@@ -932,6 +932,8 @@ async function atender(req, res, url, sessao) {
      literalmente ensinando o chatbot sobre o produto: ele baixa os readmes
      ativos e os injeta no próprio prompt a cada conversa. */
   if (url.pathname === '/api/produtos-ia' && req.method === 'GET') {
+    // A tela "Produtos IA" é só de administrador (o botão já some para os outros): a leitura também.
+    if (!usuario.admin) return json(res, 403, { erro: 'Só administradores veem os readmes dos produtos.' });
     const r = await obterApi('/api/produto-readmes/', { page_size: 200 });
     return json(res, 200, { readmes: r.results ?? [] });
   }
