@@ -672,6 +672,11 @@ export const PainelUsuario = {
     falhas: { type: 'integer' },
     bloqueado_ate: { type: ['string', 'null'], format: 'date-time' },
     senha_expira_em: { type: ['string', 'null'], format: 'date-time' },
+    acessos: {
+      type: 'array',
+      description: 'Páginas do painel que a pessoa pode abrir e o papel em cada uma (administrador: todas, como gestor).',
+      items: { type: 'object', properties: { pagina: { type: 'string' }, papel: { type: 'string', enum: ['usuario', 'gestor'] } } },
+    },
   },
   required: ['id', 'email'],
 };

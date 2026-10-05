@@ -58,7 +58,41 @@ const TITULOS = {
   postmark: 'Postmark',
 };
 
+/** Páginas liberadas ao usuário (Set), ou null = todas (administrador). */
+let paginasPermitidas = null;
+
+/**
+ * Esconde do menu as páginas que o usuário não tem (o administrador tem todas) e leva para a primeira liberada se a aberta não é dele.
+ * A API também recusa (403) quem chamar uma página sem acesso: isto aqui só evita mostrar botão que não abre.
+ */
+export function aplicarAcessos(usuario) {
+  paginasPermitidas = usuario?.admin ? null : new Set((usuario?.acessos ?? []).map((a) => a.pagina));
+  for (const nome of Object.keys(ABAS)) {
+    const liberada = paginasPermitidas === null || paginasPermitidas.has(nome);
+    $(`aba-btn-${nome}`).hidden = !liberada;
+    if (!liberada) $(ABAS[nome]).hidden = true;
+  }
+  let aviso = document.getElementById('sem-paginas-aviso');
+  if (paginasPermitidas !== null && paginasPermitidas.size === 0) {
+    if (!aviso) {
+      aviso = document.createElement('p');
+      aviso.id = 'sem-paginas-aviso';
+      aviso.className = 'vazio-suave';
+      aviso.style.cssText = 'margin: 32px auto; max-width: 520px; text-align: center;';
+      aviso.textContent = 'Você ainda não tem nenhuma página liberada. Peça a um administrador para marcar o seu acesso.';
+      document.querySelector('main')?.before(aviso);
+    }
+    return;
+  }
+  aviso?.remove();
+  const atual = localStorage.getItem('aba');
+  if (paginasPermitidas !== null && !paginasPermitidas.has(atual)) {
+    mostrarAba(Object.keys(ABAS).find((n) => paginasPermitidas.has(n)));
+  }
+}
+
 function mostrarAba(qual) {
+  if (paginasPermitidas !== null && !paginasPermitidas.has(qual)) return;   // sem acesso a esta página
   for (const [nome, id] of Object.entries(ABAS)) {
     $(id).hidden = nome !== qual;
     $(`aba-btn-${nome}`).setAttribute('aria-selected', String(nome === qual));

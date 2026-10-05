@@ -39,6 +39,7 @@ import rotasEmailIACentral from './rotas/emailIACentral.js';
 import rotasSuporteEscaladoFicha from './rotas/suporteEscaladoFicha.js';
 import rotasSuporteEscaladoTurnos from './rotas/suporteEscaladoTurnos.js';
 import rotasRespostasAgente from './rotas/respostasAgente.js';
+import { verificarAcessoPagina } from './acessoPaginas.js';
 import rotasGaleriaExportar from './rotas/galeriaExportar.js';
 import rotasRelatorio from './rotas/relatorio.js';
 import rotasPixel from './rotas/pixel.js';
@@ -163,6 +164,7 @@ app.decorate('exigirSessao', async (req) => {
   if (req.usuario.tipo !== 'access') {
     throw new ErroHttp(401, 'Use o token de access, não o de refresh.');
   }
+  await verificarAcessoPagina(req);   // páginas do usuário (072); recusa com 403 quem não tem a página da rota
 });
 
 /**

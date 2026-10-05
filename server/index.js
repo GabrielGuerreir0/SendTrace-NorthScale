@@ -562,6 +562,7 @@ async function perfilDoToken(credencial) {
       admin: Boolean(u.admin),
       ativo: u.ativo !== false,
       trocar_senha: Boolean(u.trocar_senha),
+      acessos: Array.isArray(u.acessos) ? u.acessos : [],
     };
   } catch (err) {
     console.error('[auth] token válido, perfil não carregou:', err.message);
@@ -618,6 +619,15 @@ async function rotasAuth(req, res, url, sessao) {
 
   if (p === '/api/auth/eu') {
     if (!sessao) return json(res, 401, { erro: 'sem sessão' });
+    // Ao abrir o painel, as páginas e o admin vêm frescos da API (o menu depende deles).
+    if (sessao.usuario.id != null) {
+      try {
+        const fresco = await obterApi('/api/usuarios/eu/');
+        sessao.usuario.admin = Boolean(fresco.admin);
+        sessao.usuario.acessos = Array.isArray(fresco.acessos) ? fresco.acessos : [];
+        sessao.acessosEm = Date.now();
+      } catch { /* segue com o que a sessão já tem */ }
+    }
     return json(res, 200, { usuario: sessao.usuario });
   }
 
@@ -773,6 +783,20 @@ async function rotasUsuarios(req, res, url, sessao) {
     return json(res, 201, { usuario: novo, email: envio, conviteDias: CONVITE_DIAS });
   }
 
+  const mAcessos = /^\/api\/usuarios\/(\d+)\/acessos$/.exec(url.pathname);
+  if (mAcessos && req.method === 'PUT') {
+    const corpo = await lerJson(req);
+    try {
+      await substituirApi(`/api/usuarios/${mAcessos[1]}/acessos/`, { acessos: Array.isArray(corpo.acessos) ? corpo.acessos : [] });
+    } catch (err) {
+      if (err instanceof ErroApi && (err.status === 400 || err.status === 404)) {
+        return json(res, err.status, { erro: detalharErroApi(err, 'Não consegui salvar os acessos.') });
+      }
+      throw err;
+    }
+    return json(res, 200, await cargaUsuarios());
+  }
+
   const m = /^\/api\/usuarios\/(\d+)$/.exec(url.pathname);
   if (m && req.method === 'PATCH') {
     const corpo = await lerJson(req);
@@ -862,6 +886,16 @@ async function atender(req, res, url, sessao) {
     }
     await servirEstatico(req, res, '/login.html');
     return ATENDIDO;
+  }
+
+  // Páginas e papel do usuário: relidos da API a cada 60 s (o admin pode ter mudado o acesso; vale sem precisar sair e entrar de novo).
+  if (usuario.id != null && !(url.pathname.startsWith('/api/auth/')) && Date.now() - (sessao.acessosEm ?? 0) > 60_000) {
+    sessao.acessosEm = Date.now();
+    try {
+      const fresco = await obterApi('/api/usuarios/eu/');
+      usuario.admin = Boolean(fresco.admin);
+      usuario.acessos = Array.isArray(fresco.acessos) ? fresco.acessos : [];
+    } catch { /* mantém o que já tinha: a API é quem barra de verdade */ }
   }
 
   // Senha provisória: o painel fica fechado até ela ser trocada. Só as rotas

@@ -13,6 +13,7 @@ import {
 } from '../../server/auth.js';
 import { query } from '../../server/db.js';
 import { ErroHttp, fatiar, montarBusca, montarOrdem } from '../comum.js';
+import { CHAVES, papeisDaPagina, acessosParaTela, esquecerAcessos } from '../acessoPaginas.js';
 
 /** Colunas do usuário que podem sair daqui. O hash da senha nunca entra. */
 const COLUNAS_USUARIO = `id, email, nome, admin, ativo, trocar_senha, criado_em,
@@ -245,7 +246,8 @@ export default async function rotasAcesso(app) {
        LIMIT $${valores.length + 1} OFFSET $${valores.length + 2}`,
       [...valores, limit, offset],
     );
-    return envelope(rows);
+    const itens = await Promise.all(rows.map(async (u) => ({ ...u, acessos: await acessosParaTela(u) })));
+    return envelope(itens);
   });
 
   app.get('/api/usuarios/:id/', {
@@ -268,7 +270,7 @@ export default async function rotasAcesso(app) {
       `SELECT ${COLUNAS_USUARIO} FROM painel_usuarios WHERE id = $1`, [alvo],
     );
     if (!rows[0]) throw new ErroHttp(404, 'Usuário não encontrado.');
-    return rows[0];
+    return { ...rows[0], acessos: await acessosParaTela(rows[0]) };
   });
 
   app.get('/api/usuarios/eu/', {
@@ -285,7 +287,7 @@ export default async function rotasAcesso(app) {
       `SELECT ${COLUNAS_USUARIO} FROM painel_usuarios WHERE id = $1`, [req.usuario.user_id],
     );
     if (!rows[0]) throw new ErroHttp(404, 'Usuário não encontrado.');
-    return rows[0];
+    return { ...rows[0], acessos: await acessosParaTela(rows[0]) };
   });
 
   /*
@@ -335,8 +337,11 @@ export default async function rotasAcesso(app) {
         admin: !!req.body.admin,
         criadoPor: req.usuario.user_id,
       });
+      if (!novo.admin) {
+        await query(`INSERT INTO painel_usuarios_acessos (usuario_id, pagina, papel) VALUES ($1, 'visaogeral', 'usuario') ON CONFLICT DO NOTHING`, [novo.id]);
+      }
       resposta.code(201);
-      return novo;
+      return { ...novo, acessos: await acessosParaTela(novo) };
     } catch (err) {
       if (err.code === '23505') throw new ErroHttp(409, 'Já existe um usuário com esse e-mail.');
       throw err;
@@ -393,6 +398,13 @@ export default async function rotasAcesso(app) {
       }
     }
     if ('admin' in corpo) await definirAdmin(alvo, corpo.admin);
+    if (corpo.admin === false) {
+      // Quem deixa de ser admin não pode ficar sem nenhuma página: garante ao menos a Visão Geral (o admin ajusta depois).
+      await query(
+        `INSERT INTO painel_usuarios_acessos (usuario_id, pagina, papel)
+         SELECT $1, 'visaogeral', 'usuario' WHERE NOT EXISTS (SELECT 1 FROM painel_usuarios_acessos WHERE usuario_id = $1)`, [alvo]);
+      esquecerAcessos(alvo);
+    }
 
     if (corpo.ativo === false) {
       if (alvo === req.usuario.user_id) {
@@ -413,6 +425,59 @@ export default async function rotasAcesso(app) {
     const { rows: fim } = await query(
       `SELECT ${COLUNAS_USUARIO} FROM painel_usuarios WHERE id = $1`, [alvo],
     );
-    return fim[0];
+    return { ...fim[0], acessos: await acessosParaTela(fim[0]) };
+  });
+
+  /*
+   * Gerenciar acessos — só administrador. Substitui a lista de páginas (e o papel em cada uma) de um usuário NÃO administrador.
+   * Administrador vê tudo e não tem lista. Uma página só vale com papéis que ela aceita (hoje 'gestor' só no Suporte Escalado).
+   */
+  app.put('/api/usuarios/:id/acessos/', {
+    schema: {
+      tags: ['Usuários'],
+      summary: 'Define as páginas do painel que um usuário pode abrir',
+      description: 'Só administradores. Substitui a lista inteira. `papel`: usuario (vê só o que é seu) ou gestor (vê tudo na página; hoje só no Suporte Escalado).',
+      security: [{ bearerAuth: [] }],
+      params: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] },
+      body: {
+        type: 'object', required: ['acessos'], additionalProperties: false,
+        properties: {
+          acessos: {
+            type: 'array', maxItems: 20,
+            items: {
+              type: 'object', required: ['pagina'], additionalProperties: false,
+              properties: { pagina: { type: 'string' }, papel: { type: 'string', enum: ['usuario', 'gestor'], default: 'usuario' } },
+            },
+          },
+        },
+      },
+      response: { 200: { $ref: 'PainelUsuario#' }, 400: { $ref: 'Erro#' }, 404: { $ref: 'Erro#' } },
+    },
+    onRequest: [app.exigirAdmin],
+  }, async (req) => {
+    const alvo = Number(req.params.id);
+    const { rows } = await query(`SELECT ${COLUNAS_USUARIO} FROM painel_usuarios WHERE id = $1`, [alvo]);
+    if (!rows[0]) throw new ErroHttp(404, 'Usuário não encontrado.');
+    if (rows[0].admin) throw new ErroHttp(400, 'Administrador vê todas as páginas: não há lista para editar.');
+    const vistos = new Set();
+    const paginas = []; const papeis = [];
+    for (const a of req.body.acessos) {
+      if (!CHAVES.includes(a.pagina)) throw new ErroHttp(400, `Página desconhecida: ${a.pagina}.`);
+      if (vistos.has(a.pagina)) throw new ErroHttp(400, `Página repetida: ${a.pagina}.`);
+      vistos.add(a.pagina);
+      const papel = a.papel ?? 'usuario';
+      if (!papeisDaPagina(a.pagina).includes(papel)) throw new ErroHttp(400, `A página ${a.pagina} não aceita o papel ${papel}.`);
+      paginas.push(a.pagina); papeis.push(papel);
+    }
+    // Uma instrução só (atômica): tira o que saiu e grava o que ficou/entrou.
+    await query(
+      `WITH tirar AS (DELETE FROM painel_usuarios_acessos WHERE usuario_id = $1 AND NOT (pagina = ANY($2::text[])))
+       INSERT INTO painel_usuarios_acessos (usuario_id, pagina, papel)
+       SELECT $1, p, r FROM unnest($2::text[], $3::text[]) AS t(p, r)
+       ON CONFLICT (usuario_id, pagina) DO UPDATE SET papel = EXCLUDED.papel`,
+      [alvo, paginas, papeis],
+    );
+    esquecerAcessos(alvo);
+    return { ...rows[0], acessos: await acessosParaTela(rows[0]) };
   });
 }

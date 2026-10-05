@@ -9,7 +9,7 @@ import { renderFicha, setUsuarioAtual, atualizarBotoesContextuais } from './emai
 // A aba principal (Suporte IA) vive em módulo próprio; importá-lo também liga
 // os botões de aba — de TODAS as abas, régua e Central de E-mail IA incluídas
 // (ver suporte.js). Aqui só acoplamos o carregamento aos ciclos do painel.
-import { carregarSuporte } from './suporte.js';
+import { carregarSuporte, aplicarAcessos } from './suporte.js';
 // As 4 telas da Central de E-mail IA são autossuficientes: cada uma carrega
 // seus próprios dados e mantém seu próprio timer assim que o módulo é
 // importado — não precisam de nenhum acoplamento aqui, só do import.
@@ -1612,6 +1612,7 @@ function renderUsuario(u) {
   $('usuario-chip').hidden = false;
   $('btn-usuarios').hidden = !u.admin;
   $('btn-produtos').hidden = !u.admin;
+  aplicarAcessos(u);   // menu só com as páginas liberadas a esta pessoa
   // "Tempos" só faz sentido na aba Régua (edita a espera entre etapas dela) —
   // além de admin, também depende de qual aba está aberta agora. Ver
   // BOTOES_POR_ABA/atualizarBotoesContextuais em emailComum.js.
@@ -1666,6 +1667,80 @@ function relatarConvite({ email: envio, conviteDias }, senha, quem) {
   }
 }
 
+/** Páginas do painel que o administrador libera a cada usuário (mesmas chaves do menu e de api/acessoPaginas.js). */
+const PAGINAS_ACESSO = [
+  ['visaogeral', 'Visão Geral'], ['suporte', 'Suporte IA'], ['regua', 'Régua de pós-venda'], ['rastreio', 'Rastreio de Pedidos'],
+  ['postmark', 'Postmark'], ['ticketsia', 'Tickets de Atendimento'], ['detalhesia', 'Mais Detalhes'], ['chatia', 'Chat com IA'],
+  ['galeriaia', 'Galeria de Imagens'], ['suporteescalado', 'Suporte Escalado'], ['relatorioia', 'Relatório de Métricas'],
+];
+
+/** Seção "Gerenciar acessos" de um usuário: caixas por página (pode marcar várias) e, no Suporte Escalado, o papel Usuário/Gestor. */
+function painelAcessos(u) {
+  const atuais = new Map((u.acessos ?? []).map((a) => [a.pagina, a.papel]));
+  const caixa = document.createElement('div');
+  caixa.className = 'usuario-acessos';
+
+  const titulo = document.createElement('p');
+  titulo.className = 'usuario-acessos-titulo';
+  titulo.textContent = 'Gerenciar acessos — marque as páginas que esta pessoa pode ver';
+  caixa.append(titulo);
+
+  const grade = document.createElement('div');
+  grade.className = 'usuario-acessos-grade';
+  const marcas = {};
+  let papel;
+  for (const [chave, rotulo] of PAGINAS_ACESSO) {
+    const linha = document.createElement('label');
+    linha.className = 'usuario-acesso';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = atuais.has(chave);
+    marcas[chave] = cb;
+    linha.append(cb, document.createTextNode(` ${rotulo}`));
+    if (chave === 'suporteescalado') {
+      papel = document.createElement('select');
+      papel.title = 'Usuário: vê só o seu board e os seus casos. Gestor: vê todos os boards, transfere casos e edita turnos.';
+      for (const [v, t] of [['usuario', 'Usuário (só o que é seu)'], ['gestor', 'Gestor (vê tudo)']]) {
+        const o = document.createElement('option'); o.value = v; o.textContent = t; papel.append(o);
+      }
+      papel.value = atuais.get('suporteescalado') === 'gestor' ? 'gestor' : 'usuario';
+      papel.disabled = !cb.checked;
+      cb.addEventListener('change', () => { papel.disabled = !cb.checked; });
+      linha.append(' ', papel);
+    }
+    grade.append(linha);
+  }
+  caixa.append(grade);
+
+  const botoes = document.createElement('div');
+  botoes.className = 'usuario-acessos-botoes';
+  const mini = (rotulo, aoClicar, classe = 'btn btn-fantasma') => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = classe; b.textContent = rotulo; b.addEventListener('click', aoClicar);
+    return b;
+  };
+  const salvar = mini('Salvar acessos', async () => {
+    const acessos = PAGINAS_ACESSO.filter(([c]) => marcas[c].checked)
+      .map(([c]) => ({ pagina: c, papel: c === 'suporteescalado' ? papel.value : 'usuario' }));
+    salvar.disabled = true;
+    try {
+      const r = await api(`/api/usuarios/${u.id}/acessos`, { metodo: 'PUT', corpo: { acessos } });
+      if (!r.ok) { msgUsuarios(r.dados.erro ?? 'Não foi possível salvar os acessos.'); return; }
+      renderUsuarios(r.dados);
+      msgUsuarios(`Acessos de ${u.nome || u.email} salvos. Valem em até 1 minuto, sem precisar sair e entrar.`, 'ok');
+    } catch { /* 401 já redirecionou */ } finally { salvar.disabled = false; }
+  }, 'btn btn-forte');
+  botoes.append(
+    salvar,
+    mini('Marcar todas', () => { for (const c of Object.values(marcas)) c.checked = true; papel.disabled = false; }),
+    mini('Limpar', () => { for (const c of Object.values(marcas)) c.checked = false; papel.disabled = true; }),
+    mini('Fechar', () => { caixa.hidden = true; }),
+  );
+  caixa.append(botoes);
+  caixa.hidden = true;
+  return caixa;
+}
+
 function renderUsuarios({ usuarios, eu, emailConfigurado, conviteDias, somenteLeitura }) {
   if (emailConfigurado !== undefined) {
     estado.emailConfigurado = emailConfigurado;
@@ -1705,7 +1780,7 @@ function renderUsuarios({ usuarios, eu, emailConfigurado, conviteDias, somenteLe
 
     const meta = document.createElement('div');
     meta.className = 'usuario-meta';
-    const partes = [u.admin ? 'administrador' : 'acesso de leitura'];
+    const partes = [u.admin ? 'administrador (vê todas as páginas)' : `${(u.acessos ?? []).length} página(s) liberada(s)`];
     if (!u.ativo) partes.push('desativado');
     if (u.trocar_senha) partes.push('senha provisória pendente');
     partes.push(u.ultimo_acesso ? `último acesso ${relativo(u.ultimo_acesso)}` : 'nunca entrou');
@@ -1756,7 +1831,14 @@ function renderUsuarios({ usuarios, eu, emailConfigurado, conviteDias, somenteLe
       },
     ));
 
+    let painel = null;
+    if (!u.admin && !soLeitura) {
+      painel = painelAcessos(u);
+      acoes.prepend(botao('✎ Acessos', 'Escolher quais páginas do painel esta pessoa vê', () => { painel.hidden = !painel.hidden; }));
+    }
+
     li.append(email, meta, acoes);
+    if (painel) li.append(painel);
     return li;
   }));
 }
