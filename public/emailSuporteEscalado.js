@@ -627,6 +627,8 @@ function abrirDetalheEscalado(item) {
       { rotulo: 'Escalado em', valor: item.criado_em ? dataHora(item.criado_em) : '—' },
       { rotulo: 'Iniciado em', valor: item.iniciado_em ? dataHora(item.iniciado_em) : '—' },
       { rotulo: 'Finalizado em', valor: item.finalizado_em ? dataHora(item.finalizado_em) : '—' },
+      { rotulo: 'Tag do motivo do contato', valor: ROTULO_TAG[item.tag_motivo] || '—' },
+      { rotulo: 'Prioridade', valor: ROTULO_NIVEL[item.prioridade_nivel] || '—' },
       { rotulo: 'Alerta', valor: ROTULO_AMEACA[item.alerta_ameaca] ? `🚨 ${ROTULO_AMEACA[item.alerta_ameaca]} — responder em até 2 dias úteis` : '—' },
       { rotulo: 'Última movimentação', valor: item.movido_em ? `${item.movido_de ? 'de ' + item.movido_de + ' ' : ''}por ${item.movido_por || 'Sistema (automação)'} em ${dataHora(item.movido_em)}` : '—' },
       { rotulo: 'Dados do pedido', valor: contextoContainer, largo: true },
@@ -689,6 +691,18 @@ function renderContexto(item, container, ctx) {
   linha('Produto', produtos.length ? produtos.join(', ') : (principal?.produto || '—'));
   linha('Plataforma', principal?.plataforma ? rotularPlataforma(principal.plataforma) : '—');
   linha('Status do pedido', principal?.status_pedido || '—');
+  const detalhe = pedidos.find((p) => p.transacao_id === principal?.transacao_id) ?? pedidos[0] ?? null;
+  linha('Valor do pedido', detalhe?.valor != null ? `${(detalhe.moeda || 'USD') === 'USD' ? 'US$' : detalhe.moeda} ${Number(detalhe.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—');
+  linha('Status da entrega', detalhe?.rastreio_status ? (ROTULO_RASTREIO[detalhe.rastreio_status] || detalhe.rastreio_status) : '—');
+  linha('Transportadora', detalhe?.carrier_code || '—');
+  if (detalhe?.tracking_number && /^https?:\/\//i.test(detalhe.tracking_url || '')) {
+    const a = document.createElement('a');
+    a.href = detalhe.tracking_url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+    a.textContent = detalhe.tracking_number;
+    linha('Rastreio', a);
+  } else {
+    linha('Rastreio', detalhe?.tracking_number || '—');
+  }
   linha('Data do primeiro e-mail', ctx.primeiro_email_em ? dataHora(ctx.primeiro_email_em) : '—');
 
   linha('Data de entrega', criarCampoDataEntrega(item.id, ctx.data_entrega));
@@ -982,6 +996,10 @@ function criarNotaItem(casoId, container, nota) {
 /* ═══════════════════════════════  cartão  ═══════════════════════════════ */
 
 const ROTULO_AMEACA = { chargeback: 'Chargeback', legal: 'Ameaça legal', ambos: 'Chargeback + ameaça legal' };
+/* Tag do motivo do contato e prioridade Alta/Média (065, pedido da Késsia): automáticas, só leitura. */
+const ROTULO_TAG = { reembolso: 'Reembolso', chargeback: 'Chargeback', rastreio: 'Rastreio', outros: 'Outros motivos' };
+const ROTULO_NIVEL = { alta: 'Prioridade Alta', media: 'Prioridade Média' };
+const ROTULO_RASTREIO = { pending: 'Aguardando envio', shipped: 'Enviado', delivered: 'Entregue', cancelled: 'Cancelado', nao_encontrado: 'Não encontrado', pendente_consulta: 'Ainda não consultado' };
 
 function criarCard(item) {
   const card = document.createElement('div');
@@ -1044,6 +1062,22 @@ function criarCard(item) {
   linhaPlataforma.className = 'esc-card-plataforma';
   linhaPlataforma.textContent = `✉ ${plataformaTxt}`;
   card.append(linhaPlataforma);
+
+  if (item.tag_motivo) {
+    const tags = document.createElement('div');
+    tags.className = 'esc-card-tags';
+    const tag = document.createElement('span');
+    tag.className = 'esc-tag esc-tag--' + item.tag_motivo;
+    tag.textContent = ROTULO_TAG[item.tag_motivo] || item.tag_motivo;
+    tags.append(tag);
+    if (ROTULO_NIVEL[item.prioridade_nivel]) {
+      const nivel = document.createElement('span');
+      nivel.className = 'esc-nivel esc-nivel--' + item.prioridade_nivel;
+      nivel.textContent = ROTULO_NIVEL[item.prioridade_nivel];
+      tags.append(nivel);
+    }
+    card.append(tags);
+  }
 
   if (item.motivo_escalonamento) {
     const motivo = document.createElement('div');

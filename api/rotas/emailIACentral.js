@@ -1400,7 +1400,7 @@ export default async function rotasEmailIACentral(app) {
       query(
         `SELECT s.id, s.remetente_email, s.nome, s.resumo_conversa, s.motivo_escalonamento, s.status,
                 s.email_id, s.criado_em, s.atualizado_em, s.iniciado_em, s.finalizado_em,
-                s.data_entrega, s.alerta_ameaca, s.alerta_ameaca_em, s.prioridade, mv.produto AS produto_pedido, e.plataforma_origem,
+                s.data_entrega, s.alerta_ameaca, s.alerta_ameaca_em, s.prioridade, s.tag_motivo, s.prioridade_nivel, mv.produto AS produto_pedido, e.plataforma_origem,
                 ult.movido_por, ult.mudou_em AS movido_em, ult.status_anterior AS movido_de
          FROM email_ia.suporte_escalado s
          LEFT JOIN LATERAL (
@@ -1735,7 +1735,7 @@ export default async function rotasEmailIACentral(app) {
     onRequest: [app.exigirSessao],
     schema: {
       tags: ['Central de E-mail IA'],
-      summary: 'Ficha de compra do cliente de um caso escalado (cliente, pedido(s), produto, status)',
+      summary: 'Ficha de compra do cliente de um caso escalado (cliente, pedido(s), produto, status, valor, rastreio)',
       security: [{ bearerAuth: [] }],
       params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } },
     },
@@ -1745,7 +1745,7 @@ export default async function rotasEmailIACentral(app) {
     if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este caso não é de um board seu.');
 
     const { rows: casoRows } = await query(
-      'SELECT remetente_email, nome, email_id, data_entrega FROM email_ia.suporte_escalado WHERE id = $1',
+      'SELECT remetente_email, nome, email_id, data_entrega, tag_motivo, prioridade_nivel FROM email_ia.suporte_escalado WHERE id = $1',
       [req.params.id],
     );
     const caso = casoRows[0];
@@ -1764,8 +1764,16 @@ export default async function rotasEmailIACentral(app) {
       // TODOS os pedidos deste cliente (pode ter mais de um) — por e-mail,
       // mesmo índice que a tela de Tickets já usa.
       query(
-        `SELECT transacao_id, produto, plataforma, status AS status_pedido, criado_em AS pedido_em
-         FROM disparos_pos_venda WHERE lower(email) = lower($1) ORDER BY criado_em DESC`,
+        `SELECT d.transacao_id, d.produto, d.plataforma, d.status AS status_pedido, d.criado_em AS pedido_em,
+                coalesce((SELECT abs(e.valor) FROM eventos_plataforma e
+                           WHERE e.transacao_id = d.transacao_id AND btrim(e.plataforma) = d.plataforma
+                             AND e.evento IN ('SALE', 'payment', 'neworder') AND e.valor IS NOT NULL
+                           ORDER BY e.recebido_em ASC LIMIT 1), r.total) AS valor,
+                coalesce(r.currency, 'USD') AS moeda,
+                r.provedor, r.status_interno AS rastreio_status, r.carrier_code, r.tracking_number, r.tracking_url
+         FROM disparos_pos_venda d
+         LEFT JOIN rastreio_pedidos r ON r.transacao_id = d.transacao_id
+         WHERE lower(d.email) = lower($1) ORDER BY d.criado_em DESC`,
         [caso.remetente_email],
       ),
       query(
@@ -1777,6 +1785,8 @@ export default async function rotasEmailIACentral(app) {
     return {
       cliente: { nome: caso.nome, email: caso.remetente_email },
       data_entrega: caso.data_entrega,
+      tag_motivo: caso.tag_motivo,
+      prioridade_nivel: caso.prioridade_nivel,
       primeiro_email_em: ticketRes.rows[0]?.primeiro_email_em ?? null,
       pedido_principal: principalRes.rows[0] ?? null,
       pedidos: pedidosRes.rows,

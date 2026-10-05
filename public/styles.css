@@ -1956,6 +1956,11 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
   align-self: flex-start; font-size: 0.74rem; font-weight: 700; letter-spacing: .02em;
   padding: 2px 9px; border-radius: 999px; background: #dc2626; color: #fff;
 }
+.esc-card-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.esc-tag, .esc-nivel { font-size: 0.7rem; font-weight: 700; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--borda); background: var(--superficie); color: var(--tinta-2); }
+.esc-tag--chargeback { background: color-mix(in srgb, #dc2626 16%, var(--superficie)); border-color: #dc2626; color: var(--tinta); }
+.esc-tag--reembolso { background: color-mix(in srgb, var(--st-travado) 18%, var(--superficie)); border-color: var(--st-travado); color: var(--tinta); }
+.esc-nivel--alta { border-color: #dc2626; color: var(--tinta); }
 .esc-card-movimento { font-size: 0.74rem; color: var(--texto-suave, #6b7280); margin: 2px 0 6px; }
 .esc-card-motivo, .esc-card-resumo {
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
