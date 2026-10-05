@@ -6,7 +6,7 @@
  *   PUT  /api/suporte-escalado/:id/ficha                 → salva os campos enviados (dono do board ou admin)
  *   POST /api/suporte-escalado/:id/ajuda                 → o agente escala o caso a alguém da equipe, com uma nota (dono do board ou admin)
  *   POST /api/suporte-escalado/ajuda/:ajudaId/responder  → quem recebeu o pedido responde (a pessoa do board de destino ou admin)
- *   GET  /api/suporte-escalado/ajuda/para-mim            → pedidos de ajuda ainda sem resposta endereçados a mim
+ *   GET  /api/suporte-escalado/ajuda/para-mim            → pedidos de ajuda ainda sem resposta endereçados a mim (só a quem tem board; admin sem board não vê os dos outros)
  *
  * Quem recebe um pedido de ajuda enxerga SÓ aquele caso (leitura da ficha, contexto e notas) — não ganha acesso ao board do colega.
  * A tag automática do motivo (065) não tem relação com o "Motivo do contato" daqui, que o agente escolhe.
@@ -280,7 +280,7 @@ export default async function rotasSuporteEscaladoFicha(app) {
     onRequest: [app.exigirSessao],
     schema: {
       tags: ['Central de E-mail IA'],
-      summary: 'Pedidos de ajuda sem resposta endereçados a mim (admin vê todos)',
+      summary: 'Pedidos de ajuda sem resposta endereçados a mim (só os meus, mesmo para admin)',
       security: [{ bearerAuth: [] }],
     },
   }, async (req) => {
@@ -291,9 +291,9 @@ export default async function rotasSuporteEscaladoFicha(app) {
          JOIN email_ia.suporte_escalado_boards bd ON bd.id = a.para_board_id
          JOIN email_ia.suporte_escalado s ON s.id = a.suporte_escalado_id
          LEFT JOIN email_ia.suporte_escalado_boards bo ON bo.id = s.board_id
-        WHERE a.respondido_em IS NULL AND (bd.usuario_id = $1 OR $2::boolean)
+        WHERE a.respondido_em IS NULL AND bd.usuario_id = $1
         ORDER BY a.criado_em`,
-      [req.usuario.user_id, !!req.usuario.admin],
+      [req.usuario.user_id],
     );
     return { pedidos: rows };
   });
