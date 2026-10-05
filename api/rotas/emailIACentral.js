@@ -1021,6 +1021,19 @@ export default async function rotasEmailIACentral(app) {
 
   /** Board do caso escalado `casoId` — usado pelas rotas que recebem o id do
    *  CASO (mover status, reativar, notas), não o id do board. */
+  /** Leitura (contexto e notas) liberada também a quem recebeu um pedido de ajuda sobre o caso (066) — só leitura, só aquele caso. */
+  async function podeLerCaso(req, board, casoId) {
+    if (podeGerenciarBoard(req, board)) return true;
+    if (req.usuario.user_id == null) return false;
+    const { rows } = await query(
+      `SELECT 1 FROM email_ia.suporte_escalado_ajuda a
+         JOIN email_ia.suporte_escalado_boards b ON b.id = a.para_board_id
+        WHERE a.suporte_escalado_id = $1 AND b.usuario_id = $2 LIMIT 1`,
+      [casoId, req.usuario.user_id],
+    );
+    return rows.length > 0;
+  }
+
   async function boardDoCaso(casoId) {
     const { rows } = await query(
       `SELECT b.id, b.nome, b.usuario_id, b.ativo
@@ -1742,7 +1755,7 @@ export default async function rotasEmailIACentral(app) {
   }, async (req) => {
     const board = await boardDoCaso(req.params.id);
     if (!board) throw new ErroHttp(404, 'Caso escalado não encontrado.');
-    if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este caso não é de um board seu.');
+    if (!(await podeLerCaso(req, board, req.params.id))) throw new ErroHttp(403, 'Este caso não é de um board seu.');
 
     const { rows: casoRows } = await query(
       'SELECT remetente_email, nome, email_id, data_entrega, tag_motivo, prioridade_nivel FROM email_ia.suporte_escalado WHERE id = $1',
@@ -1955,7 +1968,7 @@ export default async function rotasEmailIACentral(app) {
   }, async (req) => {
     const board = await boardDoCaso(req.params.id);
     if (!board) throw new ErroHttp(404, 'Caso escalado não encontrado.');
-    if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este caso não é de um board seu.');
+    if (!(await podeLerCaso(req, board, req.params.id))) throw new ErroHttp(403, 'Este caso não é de um board seu.');
     const { rows } = await query(
       `SELECT id, suporte_escalado_id, autor, nota, criado_em, atualizado_em
        FROM email_ia.suporte_escalado_notas

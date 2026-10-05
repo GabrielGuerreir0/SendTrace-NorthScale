@@ -1956,6 +1956,16 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
   align-self: flex-start; font-size: 0.74rem; font-weight: 700; letter-spacing: .02em;
   padding: 2px 9px; border-radius: 999px; background: #dc2626; color: #fff;
 }
+.esc-ajuda-aviso { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; padding: 8px 12px; border-radius: 10px;
+  background: color-mix(in srgb, var(--st-travado) 14%, var(--superficie)); border: 1px solid var(--st-travado); }
+.esc-ficha-bloco { display: flex; flex-direction: column; gap: 8px; }
+.esc-ficha-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; align-items: end; }
+.esc-ficha-form .btn { justify-self: start; }
+.esc-campo { display: flex; flex-direction: column; gap: 3px; font-size: 0.78rem; color: var(--tinta-2); }
+.esc-campo select, .esc-campo input, .esc-campo textarea { font: inherit; font-size: 0.9rem; }
+.esc-ajuda-item { padding: 8px 10px; border: 1px solid var(--borda); border-radius: 9px; }
+.esc-ajuda-texto, .esc-ajuda-resposta { margin: 4px 0 0; white-space: pre-wrap; }
+.esc-ajuda-resposta { font-weight: 600; }
 .esc-card-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .esc-tag, .esc-nivel { font-size: 0.7rem; font-weight: 700; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--borda); background: var(--superficie); color: var(--tinta-2); }
 .esc-tag--chargeback { background: color-mix(in srgb, #dc2626 16%, var(--superficie)); border-color: #dc2626; color: var(--tinta); }

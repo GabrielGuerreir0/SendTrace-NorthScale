@@ -604,6 +604,16 @@ function abrirDetalheEscalado(item) {
   retencaoContainer.className = 'esc-retencao';
   retencaoContainer.textContent = 'Carregando retenção…';
 
+  const propriedadesContainer = document.createElement('div');
+  propriedadesContainer.className = 'esc-ficha-bloco';
+  propriedadesContainer.textContent = 'Carregando propriedades…';
+  const logisticaContainer = document.createElement('div');
+  logisticaContainer.className = 'esc-ficha-bloco';
+  logisticaContainer.textContent = 'Carregando logística…';
+  const ajudaContainer = document.createElement('div');
+  ajudaContainer.className = 'esc-ficha-bloco';
+  ajudaContainer.textContent = 'Carregando pedidos de ajuda…';
+
   const rotuloStatus = rotularStatus(item.status);
 
   // Botão pra timeline completa (10/09/2026): o resumo abaixo é um texto
@@ -632,6 +642,9 @@ function abrirDetalheEscalado(item) {
       { rotulo: 'Alerta', valor: ROTULO_AMEACA[item.alerta_ameaca] ? `🚨 ${ROTULO_AMEACA[item.alerta_ameaca]} — responder em até 2 dias úteis` : '—' },
       { rotulo: 'Última movimentação', valor: item.movido_em ? `${item.movido_de ? 'de ' + item.movido_de + ' ' : ''}por ${item.movido_por || 'Sistema (automação)'} em ${dataHora(item.movido_em)}` : '—' },
       { rotulo: 'Dados do pedido', valor: contextoContainer, largo: true },
+      { rotulo: 'Propriedades', valor: propriedadesContainer, largo: true },
+      { rotulo: 'Logística', valor: logisticaContainer, largo: true },
+      { rotulo: 'Ajuda — escalar para alguém da equipe', valor: ajudaContainer, largo: true },
       { rotulo: 'Mensagem da cliente — foco da reclamação', valor: item.resumo_conversa || '—', largo: true },
       { rotulo: 'Histórico completo', valor: botaoConversa, largo: true },
       { rotulo: 'Motivo do escalonamento', valor: item.motivo_escalonamento || '—', largo: true },
@@ -641,6 +654,7 @@ function abrirDetalheEscalado(item) {
   });
 
   carregarContexto(item, contextoContainer);
+  carregarFichaAgente(item, propriedadesContainer, logisticaContainer, ajudaContainer);
   carregarRetencao(item, retencaoContainer);
   carregarNotas(item.id, notasContainer);
 }
@@ -858,6 +872,248 @@ function renderRetencao(item, container, dados) {
     recarregar();
   });
   container.append(form);
+}
+
+/* ═══════════════  campos do agente: Propriedades, Logística e Ajuda  ═══════════════
+   Pedido da Késsia (PDF de 05/10/2026, migração 066). Tudo vem de GET .../ficha (+ /opcoes, com as listas
+   fechadas e a equipe) e salva com PUT .../ficha. Quem só recebeu um pedido de ajuda vê os campos sem editar. */
+
+let opcoesEscalado = null;
+async function obterOpcoes() {
+  if (opcoesEscalado) return opcoesEscalado;
+  const { ok, dados } = await api('/api/suporte-escalado/opcoes');
+  if (!ok) throw new Error('opcoes');
+  opcoesEscalado = dados;
+  return dados;
+}
+
+function selectLista(itens, atual, vazio = '—') {
+  const sel = document.createElement('select');
+  const o0 = document.createElement('option');
+  o0.value = ''; o0.textContent = vazio; sel.append(o0);
+  for (const it of itens) {
+    const [v, t] = Array.isArray(it) ? it : [it, it];
+    const o = document.createElement('option');
+    o.value = String(v); o.textContent = t; sel.append(o);
+  }
+  sel.value = atual === null || atual === undefined ? '' : String(atual);
+  return sel;
+}
+
+function rotuloDe(texto, el) {
+  const l = document.createElement('label');
+  l.className = 'esc-campo';
+  const s = document.createElement('span');
+  s.textContent = texto;
+  l.append(s, el);
+  return l;
+}
+
+/** Monta um bloco de campos (uma coluna de rótulos + controles) que salva só os campos dele. */
+function montarBlocoFicha({ casoId, container, ficha, podeEditar, definicao, recarregar }) {
+  container.replaceChildren();
+  const form = document.createElement('form');
+  form.className = 'esc-ficha-form';
+  const controles = {};
+  for (const d of definicao) {
+    let el;
+    if (d.tipo === 'lista') el = selectLista(d.opcoes, ficha[d.chave]);
+    else if (d.tipo === 'area') { el = document.createElement('textarea'); el.rows = 2; el.value = ficha[d.chave] ?? ''; el.maxLength = d.max; }
+    else { el = document.createElement('input'); el.type = 'text'; el.value = ficha[d.chave] ?? ''; el.maxLength = d.max; }
+    el.disabled = !podeEditar;
+    controles[d.chave] = el;
+    form.append(rotuloDe(d.rotulo, el));
+  }
+  if (podeEditar) {
+    const btn = document.createElement('button');
+    btn.type = 'submit'; btn.className = 'btn btn-forte'; btn.textContent = 'Salvar';
+    form.append(btn);
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const corpo = {};
+      for (const d of definicao) {
+        const v = controles[d.chave].value.trim();
+        corpo[d.chave] = v === '' ? null : (d.numero ? Number(v) : v);
+      }
+      btn.disabled = true;
+      const { ok, dados: r } = await api(`/api/suporte-escalado/${casoId}/ficha`, { metodo: 'PUT', corpo });
+      btn.disabled = false;
+      if (!ok) { window.alert(r?.erro ?? r?.detail ?? 'Não consegui salvar.'); return; }
+      recarregar();
+    });
+  }
+  container.append(form);
+  if (ficha.atualizado_em) {
+    const nota = document.createElement('p');
+    nota.className = 'vazio-suave';
+    nota.textContent = `Última alteração: ${ficha.atualizado_por || '—'} em ${dataHora(ficha.atualizado_em)}`;
+    container.append(nota);
+  }
+}
+
+function renderAjuda({ casoId, container, dados, opc, recarregar }) {
+  container.replaceChildren();
+  const pedidos = dados.ajudas ?? [];
+  if (!pedidos.length) {
+    const vazio = document.createElement('p');
+    vazio.className = 'vazio-suave';
+    vazio.textContent = 'Nenhum pedido de ajuda neste caso.';
+    container.append(vazio);
+  }
+  for (const a of pedidos) {
+    const bloco = document.createElement('div');
+    bloco.className = 'esc-ajuda-item';
+    const cab = document.createElement('div');
+    cab.className = 'esc-nota-cabeca';
+    cab.textContent = `${a.pedido_por} pediu ajuda a ${a.para_nome} · ${dataHora(a.criado_em)}`;
+    const nota = document.createElement('p');
+    nota.className = 'esc-ajuda-texto';
+    nota.textContent = a.nota;
+    bloco.append(cab, nota);
+    if (a.resposta) {
+      const r = document.createElement('p');
+      r.className = 'esc-ajuda-resposta';
+      r.textContent = `${a.respondido_por} respondeu em ${dataHora(a.respondido_em)}: ${a.resposta}`;
+      bloco.append(r);
+    } else {
+      const esp = document.createElement('p');
+      esp.className = 'vazio-suave';
+      esp.textContent = 'Aguardando resposta.';
+      bloco.append(esp);
+      if (a.pode_responder) bloco.append(formResposta(a.id, recarregar));
+    }
+    container.append(bloco);
+  }
+  if (!dados.pode_editar) return;
+  const form = document.createElement('form');
+  form.className = 'esc-ficha-form';
+  const para = selectLista((opc.equipe ?? []).map((e) => [e.id, e.nome]), null, 'Escolha quem vai ajudar…');
+  const texto = document.createElement('textarea');
+  texto.rows = 3; texto.maxLength = 4000; texto.required = true;
+  texto.placeholder = 'Descreva a dúvida (cole links de prints, se houver)…';
+  const btn = document.createElement('button');
+  btn.type = 'submit'; btn.className = 'btn btn-forte'; btn.textContent = 'Pedir ajuda';
+  form.append(rotuloDe('Para', para), rotuloDe('Dúvida', texto), btn);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!para.value) { window.alert('Escolha quem vai ajudar.'); return; }
+    btn.disabled = true;
+    const { ok, dados: r } = await api(`/api/suporte-escalado/${casoId}/ajuda`, {
+      metodo: 'POST', corpo: { para_board_id: Number(para.value), nota: texto.value.trim() },
+    });
+    btn.disabled = false;
+    if (!ok) { window.alert(r?.erro ?? r?.detail ?? 'Não consegui pedir ajuda.'); return; }
+    recarregar();
+  });
+  container.append(form);
+}
+
+function formResposta(ajudaId, aoResponder) {
+  const form = document.createElement('form');
+  form.className = 'esc-ficha-form';
+  const texto = document.createElement('textarea');
+  texto.rows = 3; texto.maxLength = 4000; texto.required = true;
+  texto.placeholder = 'Escreva a resposta…';
+  const btn = document.createElement('button');
+  btn.type = 'submit'; btn.className = 'btn btn-forte'; btn.textContent = 'Responder';
+  form.append(texto, btn);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    btn.disabled = true;
+    const { ok, dados: r } = await api(`/api/suporte-escalado/ajuda/${ajudaId}/responder`, {
+      metodo: 'POST', corpo: { resposta: texto.value.trim() },
+    });
+    btn.disabled = false;
+    if (!ok) { window.alert(r?.erro ?? r?.detail ?? 'Não consegui responder.'); return; }
+    aoResponder();
+  });
+  return form;
+}
+
+async function carregarFichaAgente(item, contProp, contLog, contAjuda) {
+  try {
+    const [opc, { ok, dados }] = await Promise.all([obterOpcoes(), api(`/api/suporte-escalado/${item.id}/ficha`)]);
+    if (!ok) throw new Error('ficha');
+    const recarregar = () => { carregarFichaAgente(item, contProp, contLog, contAjuda); carregarAjudaRecebida(); };
+    const base = { casoId: item.id, ficha: dados.ficha, podeEditar: dados.pode_editar, recarregar };
+    montarBlocoFicha({
+      ...base, container: contProp,
+      definicao: [
+        { chave: 'motivo_contato', rotulo: 'Motivo do contato', tipo: 'lista', opcoes: opc.motivo_contato },
+        { chave: 'detalhamento_motivo', rotulo: 'Detalhamento do motivo do contato', tipo: 'lista', opcoes: opc.detalhamento_motivo },
+        { chave: 'tipo_resolucao', rotulo: 'Tipo de resolução', tipo: 'lista', opcoes: opc.tipo_resolucao },
+        { chave: 'status_ticket', rotulo: 'Status do ticket', tipo: 'lista', opcoes: opc.status_ticket },
+      ],
+    });
+    montarBlocoFicha({
+      ...base, container: contLog,
+      definicao: [
+        { chave: 'motivo_reenvio', rotulo: 'Motivo do reenvio', tipo: 'lista', opcoes: opc.motivo_reenvio },
+        { chave: 'quantidade_reenvio', rotulo: 'Quantidade para reenvio', tipo: 'lista', numero: true, opcoes: Array.from({ length: 30 }, (_, i) => i + 1) },
+        { chave: 'produto_reenvio', rotulo: 'Produto a ser enviado', tipo: 'texto', max: 200 },
+        { chave: 'observacao_reenvio', rotulo: 'Observação em caso de reenvio', tipo: 'area', max: 2000 },
+        { chave: 'endereco_divergencia', rotulo: 'Endereço (em caso de divergência)', tipo: 'texto', max: 500 },
+        { chave: 'novo_rastreio', rotulo: 'Novo número de rastreio', tipo: 'texto', max: 120 },
+        { chave: 'responsavel_board_id', rotulo: 'Responsável', tipo: 'lista', numero: true, opcoes: (opc.equipe ?? []).map((e) => [e.id, e.nome]) },
+      ],
+    });
+    renderAjuda({ casoId: item.id, container: contAjuda, dados, opc, recarregar });
+  } catch {
+    for (const c of [contProp, contLog, contAjuda]) {
+      c.replaceChildren();
+      const erro = document.createElement('p');
+      erro.className = 'vazio-suave';
+      erro.textContent = 'Não consegui carregar estes campos.';
+      c.append(erro);
+    }
+  }
+}
+
+/** Aviso no topo do Kanban: pedidos de ajuda sem resposta endereçados a quem está logado. */
+async function carregarAjudaRecebida() {
+  const caixa = $('esc-ajuda-aviso');
+  if (!caixa) return;
+  let pedidos = [];
+  try {
+    const { ok, dados } = await api('/api/suporte-escalado/ajuda/para-mim');
+    if (ok) pedidos = dados.pedidos ?? [];
+  } catch { /* sem aviso: não atrapalha o Kanban */ }
+  caixa.replaceChildren();
+  caixa.hidden = pedidos.length === 0;
+  if (!pedidos.length) return;
+  const titulo = document.createElement('strong');
+  titulo.textContent = `🙋 ${pedidos.length} pedido${pedidos.length === 1 ? '' : 's'} de ajuda para você`;
+  caixa.append(titulo);
+  for (const p of pedidos) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'btn btn-fantasma';
+    b.textContent = `${p.cliente_nome || p.remetente_email} · de ${p.pedido_por} · ${relativo(p.criado_em)}`;
+    b.addEventListener('click', () => abrirAjudaRecebida(p));
+    caixa.append(b);
+  }
+}
+
+function abrirAjudaRecebida(p) {
+  const contexto = document.createElement('div');
+  contexto.className = 'esc-contexto';
+  contexto.textContent = 'Carregando dados do pedido…';
+  const resposta = document.createElement('div');
+  resposta.className = 'esc-ficha-bloco';
+  resposta.append(formResposta(p.id, () => { $('modal-ficha').close(); carregarAjudaRecebida(); }));
+  abrirFicha({
+    titulo: p.cliente_nome || p.remetente_email || '(sem nome)',
+    subtitulo: p.remetente_email || '',
+    campos: [
+      { rotulo: `Pedido de ajuda de ${p.pedido_por} · ${dataHora(p.criado_em)}`, valor: p.nota, largo: true },
+      { rotulo: 'Tag do motivo do contato', valor: ROTULO_TAG[p.tag_motivo] || '—' },
+      { rotulo: 'Prioridade', valor: ROTULO_NIVEL[p.prioridade_nivel] || '—' },
+      { rotulo: 'Board de origem', valor: p.board_nome || '—' },
+      { rotulo: 'Dados do pedido', valor: contexto, largo: true },
+      { rotulo: 'Mensagem da cliente — foco da reclamação', valor: p.resumo_conversa || '—', largo: true },
+      { rotulo: 'Sua resposta', valor: resposta, largo: true },
+    ],
+  });
+  carregarContexto({ id: p.caso_id, nome: p.cliente_nome, remetente_email: p.remetente_email }, contexto);
 }
 
 async function carregarNotas(casoId, container) {
@@ -1640,6 +1896,7 @@ async function carregarInsightsEscalado() {
 
 export async function carregarDados(opcoes = {}) {
   const meu = ++geracao;
+  carregarAjudaRecebida();
   if (!boardId) {
     colunas = [];
     kpis = {};

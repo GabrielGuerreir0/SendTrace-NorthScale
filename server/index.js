@@ -1562,6 +1562,36 @@ async function atender(req, res, url, sessao) {
     } catch (err) { return tratar(err); }
   }
 
+  /* ── campos do agente (Propriedades/Logística) e pedidos de ajuda (066) ──
+     Tudo repassa à API, que valida as listas fechadas, quem é dono do caso e quem pode responder. */
+  const erroFicha = (err, padrao) => {
+    if (err instanceof ErroApi && err.status === 404) return json(res, 404, { erro: detalharErroApi(err, 'Caso ou pedido não encontrado.') });
+    if (err instanceof ErroApi && err.status === 403) return json(res, 403, { erro: detalharErroApi(err, 'Você não tem acesso a este caso.') });
+    if (err instanceof ErroApi) return json(res, err.status || 400, { erro: detalharErroApi(err, padrao) });
+    throw err;
+  };
+  if (url.pathname === '/api/suporte-escalado/opcoes' && req.method === 'GET') {
+    try { return json(res, 200, await obterApi('/api/suporte-escalado/opcoes')); } catch (err) { return erroFicha(err, 'Não consegui carregar as opções.'); }
+  }
+  if (url.pathname === '/api/suporte-escalado/ajuda/para-mim' && req.method === 'GET') {
+    try { return json(res, 200, await obterApi('/api/suporte-escalado/ajuda/para-mim')); } catch (err) { return erroFicha(err, 'Não consegui carregar os pedidos de ajuda.'); }
+  }
+  const rotaAjudaResponder = /^\/api\/suporte-escalado\/ajuda\/(\d+)\/responder$/.exec(url.pathname);
+  if (rotaAjudaResponder && req.method === 'POST') {
+    try {
+      return json(res, 200, await criarApi(`/api/suporte-escalado/ajuda/${rotaAjudaResponder[1]}/responder`, await lerJson(req)));
+    } catch (err) { return erroFicha(err, 'Não consegui registrar a resposta.'); }
+  }
+  const rotaFichaAjuda = /^\/api\/suporte-escalado\/(\d+)\/(ficha|ajuda)$/.exec(url.pathname);
+  if (rotaFichaAjuda) {
+    const [, casoId, parte] = rotaFichaAjuda;
+    try {
+      if (parte === 'ficha' && req.method === 'GET') return json(res, 200, await obterApi(`/api/suporte-escalado/${casoId}/ficha`));
+      if (parte === 'ficha' && req.method === 'PUT') return json(res, 200, await substituirApi(`/api/suporte-escalado/${casoId}/ficha`, await lerJson(req)));
+      if (parte === 'ajuda' && req.method === 'POST') return json(res, 201, await criarApi(`/api/suporte-escalado/${casoId}/ajuda`, await lerJson(req)));
+    } catch (err) { return erroFicha(err, 'Não consegui salvar.'); }
+  }
+
   /* ── colunas do kanban de suporte escalado: criar/renomear/apagar ──
      Só apaga se a coluna estiver vazia — a API já recusa com 409 e uma
      mensagem legível (quantos casos tem, ou "é a coluna Pendente"); aqui só
