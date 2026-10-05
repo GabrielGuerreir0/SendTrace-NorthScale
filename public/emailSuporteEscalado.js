@@ -121,6 +121,7 @@ function renderControlesBoard() {
   campoSel.hidden = !(souAdmin || boards.length > 1);
 
   btnNovo.hidden = !souAdmin;
+  $('esc-subaba-btn-turnos').hidden = !souAdmin;
   btnEditar.hidden = !(souAdmin && boardId && boardId !== 'todos');
 
   if (souAdmin && orfaos > 0) {
@@ -315,7 +316,7 @@ const tomColuna = (indice) => TONS_COLUNA[indice % TONS_COLUNA.length];
    gráfico cai num fallback de 640px que não cabe numa tela estreita.
    Redesenhar no momento em que a sub-página fica visível corrige isso: a
    essa altura o container já tem largura real pra medir. */
-const SUBABAS = { kanban: 'esc-subaba-kanban', metricas: 'esc-subaba-metricas', formularios: 'esc-subaba-formularios' };
+const SUBABAS = { kanban: 'esc-subaba-kanban', metricas: 'esc-subaba-metricas', formularios: 'esc-subaba-formularios', turnos: 'esc-subaba-turnos' };
 
 function mostrarSubaba(qual) {
   for (const [nome, id] of Object.entries(SUBABAS)) {
@@ -325,6 +326,7 @@ function mostrarSubaba(qual) {
   localStorage.setItem('escSubaba', qual);
   if (qual === 'metricas') renderGraficosTempo();
   if (qual === 'formularios') carregarFormularios(boardId);
+  if (qual === 'turnos') carregarTurnos();
   if (qual !== 'formularios' && dadosPendentes) { dadosPendentes = false; carregarDados(); }
 }
 
@@ -1114,6 +1116,128 @@ function abrirAjudaRecebida(p) {
     ],
   });
   carregarContexto({ id: p.caso_id, nome: p.cliente_nome, remetente_email: p.remetente_email }, contexto);
+}
+
+/* ═══════════════  turnos e disponibilidade dos agentes (só admin)  ═══════════════
+   Pedido da Késsia (PDF de 05/10/2026, migração 067). "Disponível" = o `ativo` do board (quem está indisponível não recebe card
+   novo); o turno só vai definir quando o SLA conta. Horário de Brasília, segunda a sexta. Uma pessoa pode estar em vários turnos. */
+
+async function carregarTurnos() {
+  const raiz = $('esc-subaba-turnos');
+  if (!souAdmin) {
+    raiz.replaceChildren();
+    const p = document.createElement('p');
+    p.className = 'vazio-suave';
+    p.textContent = 'Só administradores veem e alteram turnos e disponibilidade.';
+    raiz.append(p);
+    return;
+  }
+  const { ok, dados } = await api('/api/suporte-escalado/turnos');
+  if (!ok) { raiz.textContent = 'Não consegui carregar os turnos.'; return; }
+  renderTurnos(raiz, dados);
+}
+
+function renderTurnos(raiz, dados) {
+  raiz.replaceChildren();
+  const trocar = (novo) => renderTurnos(raiz, novo);
+  const erro = (r) => window.alert(r?.erro ?? r?.detail ?? 'Não consegui salvar.');
+
+  const cartao = document.createElement('section');
+  cartao.className = 'cartao';
+  const titulo = document.createElement('h2');
+  titulo.textContent = 'Turnos e disponibilidade';
+  const sub = document.createElement('p');
+  sub.className = 'cartao-sub';
+  sub.textContent = 'Horário de Brasília, segunda a sexta. "Disponível" define quem recebe cards novos (a qualquer hora); o turno define quando o SLA de cada pessoa conta.';
+  cartao.append(titulo, sub);
+
+  const tabela = document.createElement('table');
+  tabela.className = 'sup-tabela esc-turnos-tabela';
+  const cab = tabela.createTHead().insertRow();
+  const th = (t) => { const c = document.createElement('th'); c.textContent = t; cab.append(c); };
+  th('Agente'); th('Disponível');
+  for (const t of dados.turnos) th(`${t.nome} (${t.inicio}–${t.fim})`);
+  const corpo = tabela.createTBody();
+  for (const ag of dados.agentes) {
+    const tr = corpo.insertRow();
+    tr.insertCell().textContent = ag.nome;
+    const cDisp = tr.insertCell();
+    const disp = document.createElement('input');
+    disp.type = 'checkbox'; disp.checked = ag.disponivel; disp.title = 'Recebe cards novos';
+    disp.addEventListener('change', async () => {
+      disp.disabled = true;
+      const { ok, dados: r } = await api(`/api/suporte-escalado/boards/${ag.board_id}`, { metodo: 'PATCH', corpo: { ativo: disp.checked } });
+      if (!ok) { disp.checked = !disp.checked; disp.disabled = false; erro(r); return; }
+      await carregarBoards();
+      carregarTurnos();
+    });
+    cDisp.append(disp);
+    for (const t of dados.turnos) {
+      const c = tr.insertCell();
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.checked = t.board_ids.includes(ag.board_id);
+      cb.dataset.turno = String(t.id); cb.dataset.board = String(ag.board_id);
+      cb.addEventListener('change', async () => {
+        const ids = [...tabela.querySelectorAll(`input[data-turno="${t.id}"]:checked`)].map((x) => Number(x.dataset.board));
+        cb.disabled = true;
+        const { ok, dados: r } = await api(`/api/suporte-escalado/turnos/${t.id}/agentes`, { metodo: 'PUT', corpo: { board_ids: ids } });
+        if (!ok) { cb.checked = !cb.checked; cb.disabled = false; erro(r); return; }
+        trocar(r);
+      });
+      c.append(cb);
+    }
+  }
+  if (!dados.agentes.length) {
+    const vazio = document.createElement('p');
+    vazio.className = 'vazio-suave';
+    vazio.textContent = 'Nenhum board com pessoa vinculada.';
+    cartao.append(vazio);
+  } else cartao.append(tabela);
+
+  const grupos = document.createElement('div');
+  grupos.className = 'esc-ficha-bloco';
+  const tg = document.createElement('h3');
+  tg.textContent = 'Grupos de turno';
+  grupos.append(tg);
+  const formGrupo = (t) => {
+    const f = document.createElement('form');
+    f.className = 'esc-ficha-form';
+    const nome = document.createElement('input'); nome.type = 'text'; nome.maxLength = 60; nome.required = true; nome.value = t?.nome ?? '';
+    const ini = document.createElement('input'); ini.type = 'time'; ini.required = true; ini.value = t?.inicio ?? '';
+    const fim = document.createElement('input'); fim.type = 'time'; fim.required = true; fim.value = t?.fim ?? '';
+    const salvar = document.createElement('button'); salvar.type = 'submit'; salvar.className = 'btn btn-forte'; salvar.textContent = t ? 'Salvar' : 'Criar turno';
+    f.append(rotuloDe('Nome', nome), rotuloDe('Início', ini), rotuloDe('Fim', fim), salvar);
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (fim.value <= ini.value) { window.alert('O fim do turno precisa ser depois do início.'); return; }
+      salvar.disabled = true;
+      const corpo = { nome: nome.value.trim(), inicio: ini.value, fim: fim.value };
+      const { ok, dados: r } = t
+        ? await api(`/api/suporte-escalado/turnos/${t.id}`, { metodo: 'PUT', corpo })
+        : await api('/api/suporte-escalado/turnos', { metodo: 'POST', corpo });
+      salvar.disabled = false;
+      if (!ok) { erro(r); return; }
+      trocar(r);
+    });
+    if (t) {
+      const apagar = document.createElement('button');
+      apagar.type = 'button'; apagar.className = 'btn btn-fantasma'; apagar.textContent = 'Apagar';
+      apagar.addEventListener('click', async () => {
+        if (!window.confirm(`Apagar o turno "${t.nome}"? As pessoas dele ficam sem esse turno.`)) return;
+        const { ok, dados: r } = await api(`/api/suporte-escalado/turnos/${t.id}`, { metodo: 'DELETE' });
+        if (!ok) { erro(r); return; }
+        trocar(r);
+      });
+      f.append(apagar);
+    }
+    return f;
+  };
+  for (const t of dados.turnos) grupos.append(formGrupo(t));
+  const novoTitulo = document.createElement('h3');
+  novoTitulo.textContent = 'Novo turno';
+  grupos.append(novoTitulo, formGrupo(null));
+  cartao.append(grupos);
+  raiz.append(cartao);
 }
 
 async function carregarNotas(casoId, container) {

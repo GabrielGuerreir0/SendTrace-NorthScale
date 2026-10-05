@@ -1592,6 +1592,22 @@ async function atender(req, res, url, sessao) {
     } catch (err) { return erroFicha(err, 'Não consegui salvar.'); }
   }
 
+  /* ── turnos e disponibilidade dos agentes (067): leitura para todos, escrita só admin (a API recusa com 403) ── */
+  const rotaTurnos = /^\/api\/suporte-escalado\/turnos(?:\/(\d+)(\/agentes)?)?$/.exec(url.pathname);
+  if (rotaTurnos) {
+    const [, turnoId, agentes] = rotaTurnos;
+    try {
+      if (!turnoId && req.method === 'GET') return json(res, 200, await obterApi('/api/suporte-escalado/turnos'));
+      if (!turnoId && req.method === 'POST') return json(res, 200, await criarApi('/api/suporte-escalado/turnos', await lerJson(req)));
+      if (turnoId && !agentes && req.method === 'PUT') return json(res, 200, await substituirApi(`/api/suporte-escalado/turnos/${turnoId}`, await lerJson(req)));
+      if (turnoId && !agentes && req.method === 'DELETE') {
+        await apagarApi(`/api/suporte-escalado/turnos/${turnoId}`);
+        return json(res, 200, await obterApi('/api/suporte-escalado/turnos'));
+      }
+      if (turnoId && agentes && req.method === 'PUT') return json(res, 200, await substituirApi(`/api/suporte-escalado/turnos/${turnoId}/agentes`, await lerJson(req)));
+    } catch (err) { return erroFicha(err, 'Não consegui salvar os turnos.'); }
+  }
+
   /* ── colunas do kanban de suporte escalado: criar/renomear/apagar ──
      Só apaga se a coluna estiver vazia — a API já recusa com 409 e uma
      mensagem legível (quantos casos tem, ou "é a coluna Pendente"); aqui só
