@@ -87,8 +87,12 @@ const COLUNAS = `t.transacao_id, t.grupo, t.produto, t.criado_em, t.reembolsado_
 
 const PEDIDOS_DO_EMAIL = `
   SELECT ${COLUNAS} FROM (
+    -- Bug conhecido da JVZoo: um upsell/downsell ("Last Chance"/"Upgrade") também entra em disparos_pos_venda como se fosse compra nova.
+    -- A classificação certa é a de compras_upsell_downsell, então o duplicado some do grupo front (mesmo critério do recibo consolidado).
     SELECT transacao_id, 'front' AS grupo, produto, criado_em, reembolsado_em, chargeback_em
-      FROM disparos_pos_venda WHERE lower(email) = lower($1)
+      FROM disparos_pos_venda d
+     WHERE lower(d.email) = lower($1)
+       AND NOT EXISTS (SELECT 1 FROM compras_upsell_downsell u WHERE u.transacao_id = d.transacao_id)
     UNION ALL
     SELECT transacao_id,
            CASE etapa_funil WHEN 'upsell' THEN 'upsell' WHEN 'downsell' THEN 'downsell' ELSE 'outros' END,
