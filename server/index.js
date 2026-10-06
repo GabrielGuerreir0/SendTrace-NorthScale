@@ -1645,6 +1645,13 @@ async function atender(req, res, url, sessao) {
     } catch (err) { return erroFicha(err, 'Não consegui salvar.'); }
   }
 
+  /* ── painel de KPIs da equipe (item 7 do PDF da Késsia): só leitura; a API recusa quem não é admin/gestor (403) ── */
+  if (url.pathname === '/api/suporte-escalado/kpis-equipe' && req.method === 'GET') {
+    try {
+      return json(res, 200, await obterApi('/api/suporte-escalado/kpis-equipe', { dias: url.searchParams.get('dias') }));
+    } catch (err) { return erroFicha(err, 'Não consegui carregar o painel da equipe.'); }
+  }
+
   /* ── fila do agente em lista (pedido da Késsia, item 8): só leitura; a API valida o board (403/404) ── */
   if (url.pathname === '/api/suporte-escalado/fila' && req.method === 'GET') {
     const boardFila = url.searchParams.get('board_id');

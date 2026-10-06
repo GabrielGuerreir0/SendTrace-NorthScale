@@ -124,6 +124,7 @@ function renderControlesBoard() {
 
   btnNovo.hidden = !souGestor;
   $('esc-subaba-btn-turnos').hidden = !souGestor;
+  $('esc-subaba-btn-equipe').hidden = !souGestor;
   btnEditar.hidden = !(souGestor && boardId && boardId !== 'todos');
 
   if (souGestor && orfaos > 0) {
@@ -298,6 +299,7 @@ async function carregarBoards() {
   await renderFormBoard();
   await carregarDadosSeVisivel();
   if (!$('esc-subaba-fila').hidden) carregarFila();
+  if (!$('esc-subaba-equipe').hidden) carregarEquipe();
   // Se a página abriu direto na sub-aba "Respostas dos formulários"
   // (`escSubaba` salvo), a chamada em mostrarSubaba() lá embaixo aconteceu
   // ANTES do board ser resolvido (esta função é assíncrona) — sem isto, o
@@ -324,7 +326,7 @@ const tomColuna = (indice) => TONS_COLUNA[indice % TONS_COLUNA.length];
    gráfico cai num fallback de 640px que não cabe numa tela estreita.
    Redesenhar no momento em que a sub-página fica visível corrige isso: a
    essa altura o container já tem largura real pra medir. */
-const SUBABAS = { kanban: 'esc-subaba-kanban', metricas: 'esc-subaba-metricas', formularios: 'esc-subaba-formularios', turnos: 'esc-subaba-turnos', fila: 'esc-subaba-fila' };
+const SUBABAS = { kanban: 'esc-subaba-kanban', metricas: 'esc-subaba-metricas', formularios: 'esc-subaba-formularios', turnos: 'esc-subaba-turnos', fila: 'esc-subaba-fila', equipe: 'esc-subaba-equipe' };
 
 function mostrarSubaba(qual) {
   for (const [nome, id] of Object.entries(SUBABAS)) {
@@ -336,6 +338,7 @@ function mostrarSubaba(qual) {
   if (qual === 'formularios') carregarFormularios(boardId);
   if (qual === 'turnos') carregarTurnos();
   if (qual === 'fila') carregarFila();
+  if (qual === 'equipe') carregarEquipe();
   if (qual !== 'formularios' && dadosPendentes) { dadosPendentes = false; carregarDados(); }
 }
 
@@ -1257,6 +1260,95 @@ function renderFila() {
     ? 'Mostrando os 1.000 mais urgentes. Ordenado por tempo restante (estourados primeiro). O tempo conta só dentro do turno (seg–sex, horário de Brasília).'
     : 'Ordenado por tempo restante (estourados primeiro). O tempo conta só dentro do turno (seg–sex, horário de Brasília). Clique numa linha para abrir o ticket.';
   raiz.replaceChildren(painel, abas, tabela, nota);
+}
+
+/* ═══════════════════  painel da equipe (item 7 do PDF da Késsia)  ═══════════════════
+   10 indicadores: SLA por agente e geral (1ª e 2ª em diante), tickets novos / respondidos pelos clientes / respondidos pelos agentes no dia,
+   tickets atribuídos, fila nova e aguardando 2ª em diante por agente. Só admin/gestor (GET /api/suporte-escalado/kpis-equipe). */
+let equipeDias = 7;
+let equipeDados = null;
+const PERIODOS_SLA = [{ dias: 0, rotulo: 'Hoje' }, { dias: 7, rotulo: '7 dias' }, { dias: 30, rotulo: '30 dias' }];
+
+function slaTexto(s) {
+  if (!s || s.media_min === null) return '—';
+  return minutosTxt(s.media_min);
+}
+function slaNota(s, periodo) {
+  if (!s || s.media_min === null) return `sem respostas medidas (${periodo})`;
+  return `${s.dentro} de ${s.medidas} dentro da meta · ${periodo}`;
+}
+
+async function carregarEquipe() {
+  const raiz = $('esc-subaba-equipe');
+  if (!souGestor) {
+    raiz.replaceChildren();
+    const p = document.createElement('p');
+    p.className = 'vazio-suave';
+    p.textContent = 'Só administradores e gestores veem o painel da equipe.';
+    raiz.append(p);
+    return;
+  }
+  const { ok, dados } = await api(`/api/suporte-escalado/kpis-equipe?dias=${equipeDias}`);
+  if (!ok) { if (!equipeDados) raiz.textContent = 'Não consegui carregar o painel da equipe.'; return; }
+  equipeDados = dados;
+  renderEquipe();
+}
+
+function renderEquipe() {
+  const raiz = $('esc-subaba-equipe');
+  const { equipe: e, agentes } = equipeDados;
+  const periodo = PERIODOS_SLA.find((p) => p.dias === equipeDias)?.rotulo.toLowerCase() ?? '';
+
+  const seletor = document.createElement('div');
+  seletor.className = 'esc-fila-abas';
+  const rot = document.createElement('span');
+  rot.className = 'rodape-nota';
+  rot.textContent = 'Período dos SLAs:';
+  seletor.append(rot);
+  for (const p of PERIODOS_SLA) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'subaba-btn';
+    b.setAttribute('aria-selected', String(p.dias === equipeDias));
+    b.textContent = p.rotulo;
+    b.addEventListener('click', () => { equipeDias = p.dias; carregarEquipe(); });
+    seletor.append(b);
+  }
+
+  const painel = document.createElement('section');
+  painel.className = 'kpis kpis--suporte';
+  painel.append(
+    kpiCard({ icone: '●', tom: 'finalizado', rotulo: 'Tickets novos hoje', valor: n(e.novos_hoje), nota: 'chegaram no dia' }),
+    kpiCard({ icone: '●', tom: 'travado', rotulo: 'Clientes que responderam hoje', valor: n(e.clientes_responderam_hoje), nota: 'tickets com novo e-mail do cliente' }),
+    kpiCard({ icone: '●', tom: 'em_dia', rotulo: 'Respondidos pelos agentes hoje', valor: n(e.agentes_responderam_hoje), nota: 'tickets com resposta enviada' }),
+    kpiCard({ icone: '●', tom: 'atrasado', rotulo: 'Novos na fila, sem atendimento', valor: n(e.sem_atendimento), nota: 'aguardando a 1ª resposta' }),
+    kpiCard({ icone: '●', tom: 'processando', rotulo: 'Aguardando 2ª resposta em diante', valor: n(e.aguardando_segunda), nota: 'o cliente escreveu de novo' }),
+    kpiCard({ icone: '●', tom: 'em_dia', rotulo: 'SLA geral — 1ª resposta', valor: slaTexto(e.sla_primeira), nota: slaNota(e.sla_primeira, periodo) }),
+    kpiCard({ icone: '●', tom: 'processando', rotulo: 'SLA geral — 2ª resposta em diante', valor: slaTexto(e.sla_segunda), nota: slaNota(e.sla_segunda, periodo) }),
+  );
+
+  const tabela = document.createElement('table');
+  tabela.className = 'sup-tabela esc-fila-tabela';
+  const cab = tabela.createTHead().insertRow();
+  for (const t of ['Agente', 'Atribuídos (em aberto)', 'Novos sem atendimento', 'Aguardando 2ª em diante', 'Respondidos hoje', `SLA 1ª resposta (${periodo})`, `SLA 2ª em diante (${periodo})`]) {
+    const th = document.createElement('th'); th.textContent = t; cab.append(th);
+  }
+  const corpo = tabela.createTBody();
+  const colunasEq = [
+    { render: (a) => (a.disponivel ? a.nome : `${a.nome} (indisponível)`) },
+    { classe: 'num', render: (a) => n(a.atribuidos) },
+    { classe: 'num', render: (a) => n(a.sem_atendimento) },
+    { classe: 'num', render: (a) => n(a.aguardando_segunda) },
+    { classe: 'num', render: (a) => n(a.respondidos_hoje) },
+    { classe: 'num', render: (a) => `${slaTexto(a.sla_primeira)}${a.sla_primeira.medidas ? ` (${a.sla_primeira.dentro}/${a.sla_primeira.medidas})` : ''}` },
+    { classe: 'num', render: (a) => `${slaTexto(a.sla_segunda)}${a.sla_segunda.medidas ? ` (${a.sla_segunda.dentro}/${a.sla_segunda.medidas})` : ''}` },
+  ];
+  renderTabela(corpo, agentes, colunasEq, { vazio: 'Nenhum agente com board vinculado.' });
+
+  const nota = document.createElement('p');
+  nota.className = 'rodape-nota';
+  nota.textContent = 'Tempos em minutos de turno (seg–sex, horário de Brasília); entre parênteses, quantas respostas ficaram dentro da meta (3 h Alta, 4 h Média). O agente é o dono do board. "Hoje" = dia atual em Brasília.';
+  raiz.replaceChildren(seletor, painel, tabela, nota);
 }
 
 async function carregarTurnos() {
@@ -2254,7 +2346,7 @@ ligarArrastoBoard($('esc-board'));
 carregarBoards();
 carregarInsightsEscalado();
 // Aba escondida não atualiza (várias abas abertas o dia todo multiplicavam a carga); ao voltar, atualiza na hora.
-setInterval(() => { if (!document.hidden) { carregarDadosSeVisivel({ periodico: true }); if (!$('esc-subaba-fila').hidden) carregarFila(); } }, 30 * 1000);
+setInterval(() => { if (!document.hidden) { carregarDadosSeVisivel({ periodico: true }); if (!$('esc-subaba-fila').hidden) carregarFila(); if (!$('esc-subaba-equipe').hidden) carregarEquipe(); } }, 30 * 1000);
 setInterval(() => { if (!document.hidden) carregarInsightsEscalado(); }, 60 * 1000);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
