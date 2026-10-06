@@ -488,12 +488,29 @@ $('sh-board-seletor').addEventListener('change', (e) => {
 for (const nome of Object.keys(SUBABAS)) $(`sh-subaba-btn-${nome}`).addEventListener('click', () => mostrarSubaba(nome));
 $('aba-btn-suportehumano').addEventListener('click', () => { if (boardId) { carregarFila(); if (souGestor) carregarEquipe(); } else carregarBoards(); });
 
+async function carregarInsights() {
+  try {
+    const { ok, dados: d } = await api('/api/suporte-escalado/insights');
+    if (!ok) return;
+    $('sh-insights').replaceChildren(...(d.insights ?? []).map((i) => {
+      const li = document.createElement('li');
+      li.className = 'sup-insight';
+      li.dataset.nivel = i.nivel;
+      li.textContent = i.texto;
+      return li;
+    }));
+  } catch { /* silencioso — não é crítico */ }
+}
+
 carregarBoards();
+carregarInsights();
+setInterval(() => { if (paginaVisivel()) carregarInsights(); }, 60 * 1000);
 setInterval(() => {
   if (!paginaVisivel()) return;
   if (!$('sh-subaba-fila').hidden) carregarFila();
   if (!$('sh-subaba-equipe').hidden) carregarEquipe();
 }, 30 * 1000);
 document.addEventListener('visibilitychange', () => {
-  if (paginaVisivel()) { if (!$('sh-subaba-fila').hidden) carregarFila(); if (!$('sh-subaba-equipe').hidden) carregarEquipe(); }
+  if (paginaVisivel()) {
+    carregarInsights(); if (!$('sh-subaba-fila').hidden) carregarFila(); if (!$('sh-subaba-equipe').hidden) carregarEquipe(); }
 });

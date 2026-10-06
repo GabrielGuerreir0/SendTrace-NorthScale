@@ -34,7 +34,7 @@ const REGUA_E_RASTREIO = ['regua', 'rastreio'];
 const MAPA = [
   ['/api/visao-geral', ['visaogeral', 'regua']],   // a lista de pedidos da Régua também sai daqui
   ['/api/dash', ['visaogeral']],
-  ['/api/suporte-escalado/insights', ['suporteescalado', 'visaogeral']],
+  ['/api/suporte-escalado/insights', ['suporteescalado', 'suportehumano', 'visaogeral']],
   ['/api/suporte-escalado', ['suporteescalado', 'suportehumano']],   // Suporte Humano usa a mesma API (fila, painel, ficha do caso); o papel de gestor continua o do Suporte Escalado
   ['/api/formularios', ['suporteescalado']],
   ['/api/recorrencia', ['suporteescalado', 'suportehumano']],
