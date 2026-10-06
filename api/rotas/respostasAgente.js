@@ -38,6 +38,12 @@ export default async function rotasRespostasAgente(app) {
     const { rows: tk } = await query(
       'SELECT boas_vindas_enviada_em AS enviada_em, nome FROM email_ia.tickets WHERE lower(remetente_email) = $1 AND boas_vindas_enviada_em IS NOT NULL LIMIT 1', [email]);
     const boasVindas = tk[0] ? { enviada_em: tk[0].enviada_em, assunto: ASSUNTO_BOAS_VINDAS, texto: textoBoasVindas(tk[0].nome, tk[0].enviada_em) } : null;
-    return { respostas: rows, boas_vindas: boasVindas };
+    // E-mails automáticos do sistema (079, ex.: regra dos 30 dias): o texto EXATO enviado + hora. Antes da migração 079 a tabela não existe: lista vazia.
+    let mensagensSistema = [];
+    try {
+      ({ rows: mensagensSistema } = await query(
+        `SELECT id, tipo, assunto, corpo_texto AS texto, enviado_em FROM email_ia.mensagens_sistema WHERE email = $1 ORDER BY enviado_em ASC LIMIT 20`, [email]));
+    } catch (err) { if (err.code !== '42P01') throw err; }
+    return { respostas: rows, boas_vindas: boasVindas, mensagens_sistema: mensagensSistema };
   });
 }

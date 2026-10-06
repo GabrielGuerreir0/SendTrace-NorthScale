@@ -69,6 +69,7 @@ let emailsModalGeracao = 0;
 let emailsModalTodos = [];
 let emailsModalPagina = 1;
 let emailsModalModo = 'tabela'; // 'tabela' | 'conversa'
+let mensagensSistemaModal = [];   // e-mails automáticos do sistema (079): texto exato + hora
 let boasVindasModal = null;   // boas-vindas automática do cliente aberto (hora + texto padrão)
 let respostasAgenteModal = []; // respostas humanas (pasta Enviados) do cliente aberto, p/ a conversa completa
 let conversaFiltro = 'tudo'; // 'tudo' | 'ia' | 'agente' — o que acompanhar na conversa completa
@@ -188,6 +189,11 @@ function renderConversa() {
   if (boasVindasModal?.texto) {
     itens.push({ papel: 'boasvindas', t: new Date(boasVindasModal.enviada_em ?? 0), b: balaoConversa('boasvindas', '👋 Boas-vindas automática', `${boasVindasModal.assunto}\n\n${boasVindasModal.texto}`, boasVindasModal.enviada_em) });
   }
+  // E-mails automáticos do sistema (ex.: regra dos 30 dias): texto exato que foi enviado, destacado, na hora do envio.
+  const ROTULO_SISTEMA = { pos_forms_30d: '📤 E-mail automático — regra dos 30 dias' };
+  for (const m of mensagensSistemaModal) {
+    itens.push({ papel: 'sistema', t: new Date(m.enviado_em ?? 0), b: balaoConversa('sistema', ROTULO_SISTEMA[m.tipo] ?? '📤 E-mail automático', `${m.assunto ? m.assunto + '\n\n' : ''}${m.texto}`, m.enviado_em) });
+  }
   // Respostas dos agentes (lidas da pasta Enviados de support@): entram na ordem do tempo, ao lado do cliente e da IA.
   for (const r of respostasAgenteModal) {
     if (r.corpo_texto) {
@@ -196,10 +202,10 @@ function renderConversa() {
     }
   }
   itens.sort((x, y) => x.t - y.t);
-  const qIA = itens.filter((i) => i.papel === 'ia' || i.papel === 'boasvindas').length;
+  const qIA = itens.filter((i) => i.papel === 'ia' || i.papel === 'boasvindas' || i.papel === 'sistema').length;
   const qAgente = itens.filter((i) => i.papel === 'agente').length;
   // Filtro: "Só IA" mostra cliente + IA; "Só agente" mostra cliente + agente (o cliente fica sempre, para dar contexto).
-  const visiveis = itens.filter((i) => conversaFiltro === 'tudo' || i.papel === 'cliente' || i.papel === conversaFiltro || (conversaFiltro === 'ia' && i.papel === 'boasvindas'));
+  const visiveis = itens.filter((i) => conversaFiltro === 'tudo' || i.papel === 'cliente' || i.papel === conversaFiltro || (conversaFiltro === 'ia' && (i.papel === 'boasvindas' || i.papel === 'sistema')));
   const balões = visiveis.map((i) => i.b);
 
   const barra = document.createElement('div');
@@ -270,10 +276,11 @@ export async function abrirModalEmails(tipo, valor, rotulo, ficha = null, modoIn
     emailsModalTodos = resp.itens ?? [];
     respostasAgenteModal = [];
     boasVindasModal = null;
+    mensagensSistemaModal = [];
     if (tipo === 'email') {
       try {
         const { ok: okR, dados: dr } = await api(`/api/respostas-agente?email=${encodeURIComponent(valor)}`);
-        if (okR) { respostasAgenteModal = dr.respostas ?? []; boasVindasModal = dr.boas_vindas ?? null; }
+        if (okR) { respostasAgenteModal = dr.respostas ?? []; boasVindasModal = dr.boas_vindas ?? null; mensagensSistemaModal = dr.mensagens_sistema ?? []; }
       } catch { /* a conversa abre sem as respostas dos agentes */ }
       if (meu !== emailsModalGeracao) return;
     }

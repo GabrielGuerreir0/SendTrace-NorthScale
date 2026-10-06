@@ -2164,6 +2164,11 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
   padding: 10px 15px; border-radius: 18px; border-bottom-right-radius: 5px;
   background: color-mix(in srgb, var(--st-atrasado) 16%, var(--superficie)); border: 1.5px dashed var(--st-atrasado); color: var(--tinta);
 }
+.ch-balao[data-papel="sistema"] { justify-content: flex-end; }
+.ch-balao[data-papel="sistema"] .ch-balao-corpo {
+  padding: 10px 15px; border-radius: 18px; border-bottom-right-radius: 5px;
+  background: color-mix(in srgb, var(--st-processando) 14%, var(--superficie)); border: 1.5px dashed var(--st-processando); color: var(--tinta);
+}
 .ch-filtros { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; position: sticky; top: 0; background: var(--superficie); padding: 4px 0; z-index: 1; }
 .ch-filtro { font: inherit; font-size: 12.5px; padding: 3px 11px; border-radius: 999px; border: 1px solid var(--borda); background: var(--superficie-2); color: var(--tinta-2); cursor: pointer; }
 .ch-filtro[aria-pressed="true"] { background: var(--tinta); color: var(--superficie); border-color: var(--tinta); }
