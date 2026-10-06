@@ -1678,11 +1678,11 @@ const PAGINAS_ACESSO = [
 /** Páginas em que a pessoa pode ser Usuário ou Gestor (mesmas chaves de PAPEIS em api/acessoPaginas.js). */
 const PAPEL_POR_PAGINA = {
   suporteescalado: {
-    dica: 'Usuário: vê só o seu board e os seus casos. Gestor: vê todos os boards, cria e edita boards e transfere casos.',
+    dica: 'Usuário: vê só o seu board e os seus casos. Gestor: vê todos os boards, cria e edita boards (filas), transfere casos, vê o painel da equipe e edita turnos. Gestor vale no Suporte Escalado e no Suporte Humano.',
     opcoes: [['usuario', 'Usuário (só o que é seu)'], ['gestor', 'Gestor (vê tudo)']],
   },
   suportehumano: {
-    dica: 'Usuário: vê só a sua fila de respostas. Gestor: vê tudo da página — a fila de todos os boards, o painel da equipe e os turnos.',
+    dica: 'Usuário: vê só a sua fila de respostas. Gestor: vê tudo — a fila de todos os boards, o painel da equipe, os turnos, e cria e edita boards (filas). Gestor vale no Suporte Escalado e no Suporte Humano.',
     opcoes: [['usuario', 'Usuário (só a sua fila)'], ['gestor', 'Gestor (vê tudo)']],
   },
 };
@@ -1719,6 +1719,7 @@ function painelAcessos(u) {
       sel.value = atuais.get(chave) === 'gestor' ? 'gestor' : 'usuario';
       sel.disabled = !cb.checked;
       cb.addEventListener('change', () => { sel.disabled = !cb.checked; });
+      sel.addEventListener('change', () => { for (const [outra, s] of Object.entries(papeis)) if (outra !== chave) s.value = sel.value; });   // gestor é um papel só, nas duas páginas
       papeis[chave] = sel;
       linha.append(' ', sel);
     }

@@ -1198,9 +1198,7 @@ export default async function rotasEmailIACentral(app) {
     },
   }, async (req) => {
     const corpo = req.body ?? {};
-    // Gestor do Suporte Humano só liga/desliga a disponibilidade (tela de Turnos); nome e pessoa do board seguem com admin e gestor do Escalado.
-    const soDisponibilidade = req.usuario.gestorHumano && Object.keys(corpo).every((k) => k === 'ativo');
-    if (!req.usuario.admin && !req.usuario.gestorEscalado && !soDisponibilidade) throw new ErroHttp(403, 'Só administradores e gestores alteram boards.');
+    if (!req.usuario.admin && !req.usuario.gestorEscalado) throw new ErroHttp(403, 'Só administradores e gestores alteram boards.');
     const campos = [];
     const valores = [];
     let i = 1;

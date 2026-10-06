@@ -123,8 +123,11 @@ export async function verificarAcessoPagina(req) {
     throw err;
   }
   u.paginas = a.paginas; u.papeis = a.papeis;
-  u.gestorEscalado = a.papeis.suporteescalado === 'gestor' && a.paginas.includes('suporteescalado');
-  u.gestorHumano = a.papeis.suportehumano === 'gestor' && a.paginas.includes('suportehumano');   // Suporte Humano: gestor vê tudo da página (todos os boards, painel, turnos)
+  // Gestor é UM papel só: ser gestor no Suporte Escalado ou no Suporte Humano vale nas duas páginas (todos os boards, criar/editar boards, transferir casos, painel e turnos).
+  const gestor = (a.papeis.suporteescalado === 'gestor' && a.paginas.includes('suporteescalado'))
+    || (a.papeis.suportehumano === 'gestor' && a.paginas.includes('suportehumano'));
+  u.gestorEscalado = gestor;
+  u.gestorHumano = gestor;
   const exigidas = paginasDaRota(req.routeOptions?.url ?? req.routerPath);
   if (exigidas && !exigidas.some((p) => a.paginas.includes(p))) {
     throw new ErroHttp(403, 'Você não tem acesso a esta página.');

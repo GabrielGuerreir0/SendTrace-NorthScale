@@ -11,6 +11,8 @@ let boardId = null;          // id de um board, ou 'todos' (só admin/gestor)
 let boards = [];
 let souGestor = false;
 let meuBoardId = null;
+let boardFormAberto = null;   // null = fechado; 'novo' = criando; um id = editando aquele board
+let usuariosCache = null;
 
 const SUBABAS = { fila: 'sh-subaba-fila', equipe: 'sh-subaba-equipe', turnos: 'sh-subaba-turnos' };
 const paginaVisivel = () => !$('aba-suportehumano').hidden && !document.hidden;
@@ -40,6 +42,77 @@ function renderSeletor() {
   $('sh-board-campo').hidden = !(souGestor || boards.length > 1);
   $('sh-subaba-btn-equipe').hidden = !souGestor;
   $('sh-subaba-btn-turnos').hidden = !souGestor;
+  $('sh-board-novo').hidden = !souGestor;
+  $('sh-board-editar').hidden = !(souGestor && boardId && boardId !== 'todos');
+}
+
+/* ── criar / editar board (fila): mesmo formulário do Suporte Escalado — gestor é um papel só, vale nas duas páginas ── */
+async function usuariosParaSelect() {
+  if (usuariosCache) return usuariosCache;
+  const { ok, dados } = await api('/api/suporte-escalado/usuarios');
+  usuariosCache = ok ? (dados.usuarios ?? []) : [];
+  return usuariosCache;
+}
+
+async function renderFormBoard() {
+  const container = $('sh-board-form');
+  if (!boardFormAberto) { container.hidden = true; container.replaceChildren(); return; }
+  container.hidden = false;
+  container.replaceChildren();
+  const editando = boardFormAberto !== 'novo';
+  const boardAtual = editando ? boards.find((b) => b.id === boardFormAberto) : null;
+  const usuarios = await usuariosParaSelect();
+
+  const form = document.createElement('form');
+  form.className = 'esc-board-form cartao';
+  const inputNome = document.createElement('input');
+  inputNome.type = 'text'; inputNome.placeholder = 'Nome do board'; inputNome.maxLength = 120; inputNome.required = true;
+  inputNome.value = editando ? (boardAtual?.nome ?? '') : '';
+  const selectUsuario = document.createElement('select');
+  const optNenhum = document.createElement('option');
+  optNenhum.value = ''; optNenhum.textContent = '— sem responsável vinculado —';
+  selectUsuario.append(optNenhum);
+  for (const u of usuarios) {
+    const opt = document.createElement('option');
+    opt.value = String(u.id); opt.textContent = u.nome || u.email;
+    if (editando && boardAtual?.usuario_id === u.id) opt.selected = true;
+    selectUsuario.append(opt);
+  }
+  form.append(inputNome, selectUsuario);
+  let checkAtivo;
+  if (editando) {
+    const labelAtivo = document.createElement('label');
+    labelAtivo.className = 'esc-board-form-ativo';
+    checkAtivo = document.createElement('input');
+    checkAtivo.type = 'checkbox'; checkAtivo.checked = boardAtual?.ativo !== false;
+    labelAtivo.append(checkAtivo, document.createTextNode(' Ativo — recebe casos novos automaticamente'));
+    form.append(labelAtivo);
+  }
+  const acoes = document.createElement('div');
+  acoes.className = 'esc-board-form-acoes';
+  const btnSalvar = document.createElement('button');
+  btnSalvar.type = 'submit'; btnSalvar.className = 'btn btn-forte'; btnSalvar.textContent = editando ? 'Salvar' : 'Criar board';
+  const btnCancelar = document.createElement('button');
+  btnCancelar.type = 'button'; btnCancelar.className = 'btn'; btnCancelar.textContent = 'Cancelar';
+  acoes.append(btnSalvar, btnCancelar);
+  form.append(acoes);
+  btnCancelar.addEventListener('click', () => { boardFormAberto = null; renderFormBoard(); });
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const nome = inputNome.value.trim();
+    if (!nome) return;
+    btnSalvar.disabled = true;
+    const usuarioId = selectUsuario.value ? Number(selectUsuario.value) : null;
+    const { ok, dados: resp } = editando
+      ? await api(`/api/suporte-escalado/boards/${boardAtual.id}`, { metodo: 'PATCH', corpo: { nome, usuario_id: usuarioId, ativo: checkAtivo.checked } })
+      : await api('/api/suporte-escalado/boards', { metodo: 'POST', corpo: { nome, usuario_id: usuarioId } });
+    if (!ok) { window.alert(resp?.erro ?? resp?.detail ?? 'Não consegui salvar o board.'); btnSalvar.disabled = false; return; }
+    boardFormAberto = null;
+    if (!editando && resp?.id) { boardId = resp.id; localStorage.setItem('shBoardId', String(boardId)); }
+    await carregarBoards();
+    renderFormBoard();
+  });
+  container.append(form);
 }
 
 async function carregarBoards() {
@@ -386,10 +459,15 @@ function renderTurnos(raiz, dados) {
 }
 
 
+$('sh-board-novo').addEventListener('click', () => { boardFormAberto = 'novo'; renderFormBoard(); });
+$('sh-board-editar').addEventListener('click', () => { if (boardId && boardId !== 'todos') { boardFormAberto = boardId; renderFormBoard(); } });
 $('sh-board-seletor').addEventListener('change', (e) => {
   boardId = e.target.value === 'todos' ? 'todos' : (Number(e.target.value) || null);
   if (boardId) localStorage.setItem('shBoardId', String(boardId));
   filaDados = null;
+  boardFormAberto = null;
+  renderSeletor();
+  renderFormBoard();
   if (!$('sh-subaba-fila').hidden) carregarFila();
 });
 for (const nome of Object.keys(SUBABAS)) $(`sh-subaba-btn-${nome}`).addEventListener('click', () => mostrarSubaba(nome));
