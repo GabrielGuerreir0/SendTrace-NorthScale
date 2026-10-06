@@ -1,7 +1,7 @@
 /**
  * Respostas dos agentes (lidas da pasta Enviados de support@; migração 069).
  *
- *   GET /api/respostas-agente?email=…   → as respostas humanas enviadas a esse cliente, em ordem cronológica
+ *   GET /api/respostas-agente?email=…   → as respostas humanas enviadas a esse cliente, em ordem cronológica + a boas-vindas automática (hora e texto padrão)
  *
  * `agente` = dono do board do caso na hora da resposta (a caixa é única, não dá para saber de quem foi o clique no webmail).
  * Alimenta a "conversa completa" da ficha do caso (balões do agente ao lado dos do cliente e da IA). O corpo já vem sem a parte citada.
@@ -9,6 +9,7 @@
 
 import { query } from '../../server/db.js';
 import { ErroHttp } from '../comum.js';
+import { ASSUNTO_BOAS_VINDAS, textoBoasVindas } from '../boasVindas.js';
 
 export default async function rotasRespostasAgente(app) {
   app.get('/api/respostas-agente', {
@@ -33,6 +34,10 @@ export default async function rotasRespostasAgente(app) {
         ORDER BY r.enviado_em ASC LIMIT 200`,
       [email],
     );
-    return { respostas: rows };
+    // Boas-vindas automática: só a hora vem do banco; o texto é o padrão (ver api/boasVindas.js).
+    const { rows: tk } = await query(
+      'SELECT boas_vindas_enviada_em AS enviada_em, nome FROM email_ia.tickets WHERE lower(remetente_email) = $1 AND boas_vindas_enviada_em IS NOT NULL LIMIT 1', [email]);
+    const boasVindas = tk[0] ? { enviada_em: tk[0].enviada_em, assunto: ASSUNTO_BOAS_VINDAS, texto: textoBoasVindas(tk[0].nome) } : null;
+    return { respostas: rows, boas_vindas: boasVindas };
   });
 }
