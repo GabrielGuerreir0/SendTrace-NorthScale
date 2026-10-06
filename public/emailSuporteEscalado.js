@@ -955,6 +955,7 @@ function montarBlocoFicha({ casoId, container, ficha, podeEditar, definicao, rec
       const { ok, dados: r } = await api(`/api/suporte-escalado/${casoId}/ficha`, { metodo: 'PUT', corpo });
       btn.disabled = false;
       if (!ok) { window.alert(r?.erro ?? r?.detail ?? 'Não consegui salvar.'); return; }
+      document.dispatchEvent(new CustomEvent('escalado:ficha-salva'));   // a fila do Suporte Humano atualiza na hora
       recarregar();
     });
   }

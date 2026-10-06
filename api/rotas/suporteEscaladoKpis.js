@@ -14,6 +14,7 @@ import { query } from '../../server/db.js';
 import { ErroHttp } from '../comum.js';
 
 const ABERTOS = "('pendente', 'iniciado', 'lead_respondeu', 'esperando_resposta', 'em_analise', 'pendente_consulta')";
+const ENCERRADO_NA_FICHA = "coalesce(fi.status_ticket, '') NOT IN ('Resolvido', 'Fechado')";
 const HOJE = "(date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')";
 
 export default async function rotasSuporteEscaladoKpis(app) {
@@ -39,7 +40,8 @@ export default async function rotasSuporteEscaladoKpis(app) {
                 count(*) FILTER (WHERE s.primeira_resposta_agente_em IS NOT NULL
                                    AND s.ultimo_email_cliente_em > coalesce(s.ultima_resposta_agente_em, '-infinity'::timestamptz))::int AS aguardando_segunda
            FROM email_ia.suporte_escalado s
-          WHERE s.status IN ${ABERTOS}
+           LEFT JOIN email_ia.suporte_escalado_ficha fi ON fi.suporte_escalado_id = s.id
+          WHERE s.status IN ${ABERTOS} AND ${ENCERRADO_NA_FICHA}
           GROUP BY s.board_id`,
       ),
       query(

@@ -13,6 +13,7 @@ import { query } from '../../server/db.js';
 import { ErroHttp } from '../comum.js';
 
 const ABERTOS = "('pendente', 'iniciado', 'lead_respondeu', 'esperando_resposta', 'em_analise', 'pendente_consulta')";
+const ENCERRADO_NA_FICHA = "coalesce(fi.status_ticket, '') NOT IN ('Resolvido', 'Fechado')";   // ticket resolvido/fechado na ficha sai da fila
 const LIMITE = 1000;
 
 export default async function rotasSuporteEscaladoFila(app) {
@@ -52,7 +53,8 @@ export default async function rotasSuporteEscaladoFila(app) {
            LEFT JOIN email_ia.v_sla_suporte_escalado v ON v.caso_id = s.id
            LEFT JOIN email_ia.emails e ON e.id = s.email_id
            LEFT JOIN email_ia.suporte_escalado_boards b ON b.id = s.board_id
-          WHERE ${escopo} AND s.status IN ${ABERTOS}
+           LEFT JOIN email_ia.suporte_escalado_ficha fi ON fi.suporte_escalado_id = s.id
+          WHERE ${escopo} AND s.status IN ${ABERTOS} AND ${ENCERRADO_NA_FICHA}
           ORDER BY (CASE WHEN v.meta_min IS NULL THEN 1 ELSE 0 END),
                    (v.meta_min - coalesce(CASE WHEN s.primeira_resposta_agente_em IS NULL THEN v.primeira_resposta_min WHEN v.vez_do_agente THEN v.vez_agente_min END, 0)) ASC,
                    s.criado_em ASC

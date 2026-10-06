@@ -510,6 +510,7 @@ setInterval(() => {
   if (!$('sh-subaba-fila').hidden) carregarFila();
   if (!$('sh-subaba-equipe').hidden) carregarEquipe();
 }, 30 * 1000);
+document.addEventListener('escalado:ficha-salva', () => { if (!$('sh-subaba-fila').hidden) carregarFila(); if (!$('sh-subaba-equipe').hidden) carregarEquipe(); });
 document.addEventListener('visibilitychange', () => {
   if (paginaVisivel()) {
     carregarInsights(); if (!$('sh-subaba-fila').hidden) carregarFila(); if (!$('sh-subaba-equipe').hidden) carregarEquipe(); }
