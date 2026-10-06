@@ -37,7 +37,7 @@ export default async function rotasRespostasAgente(app) {
     // Boas-vindas automática: só a hora vem do banco; o texto é o padrão (ver api/boasVindas.js).
     const { rows: tk } = await query(
       'SELECT boas_vindas_enviada_em AS enviada_em, nome FROM email_ia.tickets WHERE lower(remetente_email) = $1 AND boas_vindas_enviada_em IS NOT NULL LIMIT 1', [email]);
-    const boasVindas = tk[0] ? { enviada_em: tk[0].enviada_em, assunto: ASSUNTO_BOAS_VINDAS, texto: textoBoasVindas(tk[0].nome) } : null;
+    const boasVindas = tk[0] ? { enviada_em: tk[0].enviada_em, assunto: ASSUNTO_BOAS_VINDAS, texto: textoBoasVindas(tk[0].nome, tk[0].enviada_em) } : null;
     return { respostas: rows, boas_vindas: boasVindas };
   });
 }
