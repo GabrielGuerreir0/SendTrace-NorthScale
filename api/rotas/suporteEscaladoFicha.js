@@ -19,7 +19,7 @@ export const OPCOES = {
   motivo_contato: ['Reembolso', 'Chargeback', 'Logística', 'Dúvidas'],
   detalhamento_motivo: [
     'Verificando - Ag. Cliente', 'Insatisfação após uso do produto', 'Dúvida - Esclarecimento', 'Alergia - Doença - Médico',
-    'Comprou muito - Upsell', 'Problemas Financeiros', 'Rótulo ou Ingredientes', 'Pessoa incapaz comprou',
+    'Comprou muito - Upsell', 'Problemas Financeiros', 'Acha que é fraude/golpe', 'Rótulo ou Ingredientes', 'Pessoa incapaz comprou',
     'Arrepen. pós compra - pedido não entregue', 'Arrepen. pós compra - pedido entregue', 'Logística - pedido não entregue',
     'Logística - pedido incompleto', 'Logística - pedido quebrado', 'Logística - divergência no produto', 'Cliente não retornou',
   ],
