@@ -2871,3 +2871,6 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .esc-sla[data-estado="perto"] { color: var(--st-atrasado); border-color: var(--st-atrasado); }
 .esc-sla[data-estado="ok"] { color: var(--tinta); border-color: var(--borda); }
 .esc-sla[data-estado="espera"] { color: var(--tinta-fraca); border-color: var(--borda); font-weight: 400; }
+
+.esc-fila-email { display: flex; align-items: center; gap: 6px; }
+.esc-fila-email .btn-icone { padding: 2px 7px; }

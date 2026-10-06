@@ -485,7 +485,7 @@ async function moverStatus(id, status) {
  * depois do `await` fazia o navegador perder o vínculo com o clique e bloquear como pop-up (19/09/2026). Se a busca
  * falhar, a aba é fechada; se o navegador não deixar fechar, ela mostra o erro em vez de ficar em branco.
  */
-async function abrirNoWebmail(emailId, botao) {
+export async function abrirNoWebmail(emailId, botao) {
   const original = botao.textContent;
   botao.disabled = true;
   botao.textContent = '…';

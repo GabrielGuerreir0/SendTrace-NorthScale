@@ -3,9 +3,9 @@
  * Página própria no menu, separada do Suporte Escalado (Kanban): usa os MESMOS casos (email_ia.suporte_escalado), só que vistos pelo que está pendente de
  * resposta do agente, não pela coluna do card. O agente vê só o próprio board; administrador e gestor (papel do Suporte Escalado) veem todos.
  */
-import { $, api, kpiCard, renderTabela } from './emailComum.js';
+import { $, api, kpiCard, renderTabela, botaoCopiar } from './emailComum.js';
 import { n } from './format.js';
-import { abrirDetalheEscalado, ROTULO_TAG, rotuloDe } from './emailSuporteEscalado.js';
+import { abrirDetalheEscalado, abrirNoWebmail, ROTULO_TAG, rotuloDe } from './emailSuporteEscalado.js';
 
 let boardId = null;          // id de um board, ou 'todos' (só admin/gestor)
 let boards = [];
@@ -232,7 +232,22 @@ function renderFila() {
   const corpo = tabela.createTBody();
   const linhas = casosAba(filaAba);
   const colunasFila = [
-    { render: (c) => { const d = document.createElement('div'); d.textContent = c.remetente_email; if (c.nome) { const s = document.createElement('small'); s.textContent = c.nome; d.append(s); } return d; } },
+    { render: (c) => {
+      const d = document.createElement('div');
+      const linha = document.createElement('div');
+      linha.className = 'esc-fila-email';
+      const txt = document.createElement('span'); txt.textContent = c.remetente_email;
+      const webmail = document.createElement('button');
+      webmail.type = 'button'; webmail.className = 'btn btn-icone'; webmail.textContent = '✉';
+      if (c.email_id) {
+        webmail.title = 'Abrir o e-mail original na caixa (Hostinger)';
+        webmail.addEventListener('click', (ev) => { ev.stopPropagation(); abrirNoWebmail(c.email_id, webmail); });
+      } else { webmail.disabled = true; webmail.title = 'Nenhum e-mail vinculado a este caso.'; }
+      linha.append(txt, botaoCopiar(c.remetente_email, { titulo: `Copiar ${c.remetente_email}` }), webmail);
+      d.append(linha);
+      if (c.nome) { const s = document.createElement('small'); s.textContent = c.nome; d.append(s); }
+      return d;
+    } },
     { classe: 'esc-fila-assunto', render: (c) => c.assunto || '—' },
     { render: (c) => ROTULO_TAG[c.tag_motivo] || '—' },
     { render: (c) => (c.prioridade_nivel === 'alta' ? 'Alta' : c.prioridade_nivel === 'media' ? 'Média' : '—') },
