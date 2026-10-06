@@ -26,7 +26,7 @@ export default async function rotasSuporteEscaladoKpis(app) {
       querystring: { type: 'object', properties: { dias: { type: 'integer', enum: [0, 7, 30], default: 7 } } },
     },
   }, async (req) => {
-    if (!req.usuario.admin && !req.usuario.gestorEscalado) throw new ErroHttp(403, 'Só administradores e gestores veem o painel da equipe.');
+    if (!req.usuario.admin && !req.usuario.gestorHumano) throw new ErroHttp(403, 'Só administradores e gestores veem o painel da equipe.');
     const dias = req.query.dias ?? 7;
     const desde = dias === 0 ? HOJE : `(now() - interval '${dias} days')`;
 

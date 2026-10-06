@@ -1850,7 +1850,6 @@
       <button class="subaba-btn" id="esc-subaba-btn-kanban" type="button" role="tab" aria-selected="true">Kanban</button>
       <button class="subaba-btn" id="esc-subaba-btn-metricas" type="button" role="tab" aria-selected="false">Tempo no kanban</button>
       <button class="subaba-btn" id="esc-subaba-btn-formularios" type="button" role="tab" aria-selected="false">Respostas dos formulários</button>
-      <button class="subaba-btn" id="esc-subaba-btn-turnos" type="button" role="tab" aria-selected="false" hidden>Turnos e disponibilidade</button>
     </div>
   </section>
 
@@ -1860,9 +1859,6 @@
     <section class="kpis kpis--suporte" id="esc-kpis"></section>
     <div class="esc-board" id="esc-board"></div>
   </div>
-
-  <!-- ── sub-página: turnos e disponibilidade dos agentes (só admin) ── -->
-  <div id="esc-subaba-turnos" hidden></div>
 
   <!-- ── sub-página: respostas dos formulários (Drive) por perfil ── -->
   <div id="esc-subaba-formularios" hidden>
@@ -1976,11 +1972,13 @@
     <div class="subabas" role="tablist" aria-label="Visão do Suporte Humano">
       <button class="subaba-btn" id="sh-subaba-btn-fila" type="button" role="tab" aria-selected="true">Fila de respostas</button>
       <button class="subaba-btn" id="sh-subaba-btn-equipe" type="button" role="tab" aria-selected="false" hidden>Painel da equipe</button>
+      <button class="subaba-btn" id="sh-subaba-btn-turnos" type="button" role="tab" aria-selected="false" hidden>Turnos e disponibilidade</button>
     </div>
   </section>
 
   <div id="sh-subaba-fila"></div>
   <div id="sh-subaba-equipe" hidden></div>
+  <div id="sh-subaba-turnos" hidden></div>
 </main>
 
 <main class="conteudo" id="aba-relatorioia" hidden>

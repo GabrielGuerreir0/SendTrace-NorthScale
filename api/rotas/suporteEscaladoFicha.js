@@ -58,7 +58,7 @@ export default async function rotasSuporteEscaladoFicha(app) {
   }
 
   // Dono do board, administrador ou gestor do Suporte Escalado (papel 072): lê e edita o caso.
-  const ehDono = (req, caso) => !!req.usuario.admin || !!req.usuario.gestorEscalado || (caso.dono_id != null && caso.dono_id === req.usuario.user_id);
+  const ehDono = (req, caso) => !!req.usuario.admin || !!req.usuario.gestorEscalado || !!req.usuario.gestorHumano || (caso.dono_id != null && caso.dono_id === req.usuario.user_id);
 
   async function recebeuAjuda(req, casoId) {
     if (req.usuario.user_id == null) return false;

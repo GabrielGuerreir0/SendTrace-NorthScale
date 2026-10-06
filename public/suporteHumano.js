@@ -5,14 +5,14 @@
  */
 import { $, api, kpiCard, renderTabela } from './emailComum.js';
 import { n } from './format.js';
-import { abrirDetalheEscalado, ROTULO_TAG } from './emailSuporteEscalado.js';
+import { abrirDetalheEscalado, ROTULO_TAG, rotuloDe } from './emailSuporteEscalado.js';
 
 let boardId = null;          // id de um board, ou 'todos' (só admin/gestor)
 let boards = [];
 let souGestor = false;
 let meuBoardId = null;
 
-const SUBABAS = { fila: 'sh-subaba-fila', equipe: 'sh-subaba-equipe' };
+const SUBABAS = { fila: 'sh-subaba-fila', equipe: 'sh-subaba-equipe', turnos: 'sh-subaba-turnos' };
 const paginaVisivel = () => !$('aba-suportehumano').hidden && !document.hidden;
 
 function mostrarSubaba(qual) {
@@ -23,6 +23,7 @@ function mostrarSubaba(qual) {
   localStorage.setItem('shSubaba', qual);
   if (qual === 'fila') carregarFila();
   if (qual === 'equipe') carregarEquipe();
+  if (qual === 'turnos') carregarTurnos();
 }
 
 function renderSeletor() {
@@ -38,13 +39,14 @@ function renderSeletor() {
   sel.value = String(boardId ?? '');
   $('sh-board-campo').hidden = !(souGestor || boards.length > 1);
   $('sh-subaba-btn-equipe').hidden = !souGestor;
+  $('sh-subaba-btn-turnos').hidden = !souGestor;
 }
 
 async function carregarBoards() {
   const { ok, dados } = await api('/api/suporte-escalado/boards');
   if (!ok) { boardId = null; return; }
   boards = dados.boards ?? [];
-  souGestor = Boolean(dados.admin || dados.gestor);
+  souGestor = Boolean(dados.admin || dados.gestor_humano);
   meuBoardId = dados.meu_board_id ?? null;
   const salvoRaw = localStorage.getItem('shBoardId');
   const salvo = Number(salvoRaw);
@@ -54,8 +56,8 @@ async function carregarBoards() {
   else if (boards.length === 1) boardId = boards[0].id;
   else boardId = souGestor ? 'todos' : null;
   renderSeletor();
-  if (!souGestor && localStorage.getItem('shSubaba') === 'equipe') localStorage.setItem('shSubaba', 'fila');
-  mostrarSubaba(localStorage.getItem('shSubaba') === 'equipe' && souGestor ? 'equipe' : 'fila');
+  const salva = localStorage.getItem('shSubaba');
+  mostrarSubaba(souGestor && SUBABAS[salva] ? salva : 'fila');
 }
 
 /* ═══════════════════  fila de respostas em lista (item 8 do PDF da Késsia)  ═══════════════════
@@ -262,6 +264,125 @@ function renderEquipe() {
   nota.className = 'rodape-nota';
   nota.textContent = 'Tempos em minutos de turno (seg–sex, horário de Brasília); entre parênteses, quantas respostas ficaram dentro da meta (3 h Alta, 4 h Média). O agente é o dono do board. "Hoje" = dia atual em Brasília.';
   raiz.replaceChildren(seletor, painel, tabela, nota);
+}
+
+
+async function carregarTurnos() {
+  const raiz = $('sh-subaba-turnos');
+  if (!souGestor) {
+    raiz.replaceChildren();
+    const p = document.createElement('p');
+    p.className = 'vazio-suave';
+    p.textContent = 'Só administradores e gestores veem e alteram turnos e disponibilidade.';
+    raiz.append(p);
+    return;
+  }
+  const { ok, dados } = await api('/api/suporte-escalado/turnos');
+  if (!ok) { raiz.textContent = 'Não consegui carregar os turnos.'; return; }
+  renderTurnos(raiz, dados);
+}
+
+function renderTurnos(raiz, dados) {
+  raiz.replaceChildren();
+  const trocar = (novo) => renderTurnos(raiz, novo);
+  const erro = (r) => window.alert(r?.erro ?? r?.detail ?? 'Não consegui salvar.');
+
+  const cartao = document.createElement('section');
+  cartao.className = 'cartao';
+  const titulo = document.createElement('h2');
+  titulo.textContent = 'Turnos e disponibilidade';
+  const sub = document.createElement('p');
+  sub.className = 'cartao-sub';
+  sub.textContent = 'Horário de Brasília, segunda a sexta. "Disponível" define quem recebe cards novos (a qualquer hora); o turno define quando o SLA de cada pessoa conta.';
+  cartao.append(titulo, sub);
+
+  const tabela = document.createElement('table');
+  tabela.className = 'sup-tabela esc-turnos-tabela';
+  const cab = tabela.createTHead().insertRow();
+  const th = (t) => { const c = document.createElement('th'); c.textContent = t; cab.append(c); };
+  th('Agente'); th('Disponível');
+  for (const t of dados.turnos) th(`${t.nome} (${t.inicio}–${t.fim})`);
+  const corpo = tabela.createTBody();
+  for (const ag of dados.agentes) {
+    const tr = corpo.insertRow();
+    tr.insertCell().textContent = ag.nome;
+    const cDisp = tr.insertCell();
+    const disp = document.createElement('input');
+    disp.type = 'checkbox'; disp.checked = ag.disponivel; disp.title = 'Recebe cards novos';
+    disp.addEventListener('change', async () => {
+      disp.disabled = true;
+      const { ok, dados: r } = await api(`/api/suporte-escalado/boards/${ag.board_id}`, { metodo: 'PATCH', corpo: { ativo: disp.checked } });
+      if (!ok) { disp.checked = !disp.checked; disp.disabled = false; erro(r); return; }
+      await carregarBoards();
+      carregarTurnos();
+    });
+    cDisp.append(disp);
+    for (const t of dados.turnos) {
+      const c = tr.insertCell();
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.checked = t.board_ids.includes(ag.board_id);
+      cb.dataset.turno = String(t.id); cb.dataset.board = String(ag.board_id);
+      cb.addEventListener('change', async () => {
+        const ids = [...tabela.querySelectorAll(`input[data-turno="${t.id}"]:checked`)].map((x) => Number(x.dataset.board));
+        cb.disabled = true;
+        const { ok, dados: r } = await api(`/api/suporte-escalado/turnos/${t.id}/agentes`, { metodo: 'PUT', corpo: { board_ids: ids } });
+        if (!ok) { cb.checked = !cb.checked; cb.disabled = false; erro(r); return; }
+        trocar(r);
+      });
+      c.append(cb);
+    }
+  }
+  if (!dados.agentes.length) {
+    const vazio = document.createElement('p');
+    vazio.className = 'vazio-suave';
+    vazio.textContent = 'Nenhum board com pessoa vinculada.';
+    cartao.append(vazio);
+  } else cartao.append(tabela);
+
+  const grupos = document.createElement('div');
+  grupos.className = 'esc-ficha-bloco';
+  const tg = document.createElement('h3');
+  tg.textContent = 'Grupos de turno';
+  grupos.append(tg);
+  const formGrupo = (t) => {
+    const f = document.createElement('form');
+    f.className = 'esc-ficha-form';
+    const nome = document.createElement('input'); nome.type = 'text'; nome.maxLength = 60; nome.required = true; nome.value = t?.nome ?? '';
+    const ini = document.createElement('input'); ini.type = 'time'; ini.required = true; ini.value = t?.inicio ?? '';
+    const fim = document.createElement('input'); fim.type = 'time'; fim.required = true; fim.value = t?.fim ?? '';
+    const salvar = document.createElement('button'); salvar.type = 'submit'; salvar.className = 'btn btn-forte'; salvar.textContent = t ? 'Salvar' : 'Criar turno';
+    f.append(rotuloDe('Nome', nome), rotuloDe('Início', ini), rotuloDe('Fim', fim), salvar);
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (fim.value <= ini.value) { window.alert('O fim do turno precisa ser depois do início.'); return; }
+      salvar.disabled = true;
+      const corpo = { nome: nome.value.trim(), inicio: ini.value, fim: fim.value };
+      const { ok, dados: r } = t
+        ? await api(`/api/suporte-escalado/turnos/${t.id}`, { metodo: 'PUT', corpo })
+        : await api('/api/suporte-escalado/turnos', { metodo: 'POST', corpo });
+      salvar.disabled = false;
+      if (!ok) { erro(r); return; }
+      trocar(r);
+    });
+    if (t) {
+      const apagar = document.createElement('button');
+      apagar.type = 'button'; apagar.className = 'btn btn-fantasma'; apagar.textContent = 'Apagar';
+      apagar.addEventListener('click', async () => {
+        if (!window.confirm(`Apagar o turno "${t.nome}"? As pessoas dele ficam sem esse turno.`)) return;
+        const { ok, dados: r } = await api(`/api/suporte-escalado/turnos/${t.id}`, { metodo: 'DELETE' });
+        if (!ok) { erro(r); return; }
+        trocar(r);
+      });
+      f.append(apagar);
+    }
+    return f;
+  };
+  for (const t of dados.turnos) grupos.append(formGrupo(t));
+  const novoTitulo = document.createElement('h3');
+  novoTitulo.textContent = 'Novo turno';
+  grupos.append(novoTitulo, formGrupo(null));
+  cartao.append(grupos);
+  raiz.append(cartao);
 }
 
 

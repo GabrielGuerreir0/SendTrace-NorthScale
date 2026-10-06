@@ -1017,7 +1017,7 @@ export default async function rotasEmailIACentral(app) {
 
   function podeGerenciarBoard(req, board) {
     // Gestor do Suporte Escalado (papel 072) gerencia qualquer board, como o administrador; usuário comum, só o próprio.
-    return req.usuario.admin || req.usuario.gestorEscalado || (board && board.usuario_id === req.usuario.user_id);
+    return req.usuario.admin || req.usuario.gestorEscalado || req.usuario.gestorHumano || (board && board.usuario_id === req.usuario.user_id);
   }
 
   /** Board do caso escalado `casoId` — usado pelas rotas que recebem o id do
@@ -1061,7 +1061,7 @@ export default async function rotasEmailIACentral(app) {
     // `admin` vai na resposta pra a tela não depender de descobrir isso por
     // outro caminho — é o mesmo request que já sabe, via a sessão, se pode
     // gerenciar boards ou só ver/usar o próprio.
-    const veTudo = !!(req.usuario.admin || req.usuario.gestorEscalado);
+    const veTudo = !!(req.usuario.admin || req.usuario.gestorEscalado || req.usuario.gestorHumano);
     if (veTudo) {
       const [{ rows: boards }, { rows: orfaosRows }, meu] = await Promise.all([
         query(
@@ -1075,11 +1075,12 @@ export default async function rotasEmailIACentral(app) {
       ]);
       // `gestor`: vê todos os boards sem ser administrador (papel Gestor do Suporte Escalado); `meu_board_id`: o board dele, para abrir nele por padrão.
       return {
-        admin: !!req.usuario.admin, gestor: !req.usuario.admin, boards, orfaos: orfaosRows[0].total, meu_board_id: meu?.id ?? null,
+        admin: !!req.usuario.admin, gestor: !!(req.usuario.admin || req.usuario.gestorEscalado), gestor_humano: !!(req.usuario.admin || req.usuario.gestorHumano),
+        boards, orfaos: orfaosRows[0].total, meu_board_id: meu?.id ?? null,
       };
     }
     const board = await boardPorUsuario(req.usuario.user_id);
-    return { admin: false, gestor: false, boards: board ? [board] : [], orfaos: 0, meu_board_id: board?.id ?? null };
+    return { admin: false, gestor: false, gestor_humano: false, boards: board ? [board] : [], orfaos: 0, meu_board_id: board?.id ?? null };
   });
 
   async function boardPorUsuario(usuarioId) {
@@ -1197,7 +1198,9 @@ export default async function rotasEmailIACentral(app) {
     },
   }, async (req) => {
     const corpo = req.body ?? {};
-    if (!req.usuario.admin && !req.usuario.gestorEscalado) throw new ErroHttp(403, 'Só administradores e gestores alteram boards.');
+    // Gestor do Suporte Humano só liga/desliga a disponibilidade (tela de Turnos); nome e pessoa do board seguem com admin e gestor do Escalado.
+    const soDisponibilidade = req.usuario.gestorHumano && Object.keys(corpo).every((k) => k === 'ativo');
+    if (!req.usuario.admin && !req.usuario.gestorEscalado && !soDisponibilidade) throw new ErroHttp(403, 'Só administradores e gestores alteram boards.');
     const campos = [];
     const valores = [];
     let i = 1;

@@ -17,8 +17,8 @@ import { ErroHttp } from '../comum.js';
 const HORA = '^([01][0-9]|2[0-3]):[0-5][0-9]$';
 
 export default async function rotasSuporteEscaladoTurnos(app) {
-  // Administrador ou gestor do Suporte Escalado (papel 072).
-  const soAdmin = (req) => { if (!req.usuario.admin && !req.usuario.gestorEscalado) throw new ErroHttp(403, 'Só administradores e gestores alteram turnos.'); };
+  // Administrador ou gestor do Suporte Humano (papel por página, 072/078).
+  const soAdmin = (req) => { if (!req.usuario.admin && !req.usuario.gestorHumano) throw new ErroHttp(403, 'Só administradores e gestores alteram turnos.'); };
   const idTurno = { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } };
 
   const dadosTurnos = async () => {

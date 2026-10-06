@@ -1675,7 +1675,19 @@ const PAGINAS_ACESSO = [
   ['galeriaia', 'Galeria de Imagens'], ['suporteescalado', 'Suporte Escalado'], ['suportehumano', 'Suporte Humano'], ['relatorioia', 'Relatório de Métricas'],
 ];
 
-/** Seção "Gerenciar acessos" de um usuário: caixas por página (pode marcar várias) e, no Suporte Escalado, o papel Usuário/Gestor. */
+/** Páginas em que a pessoa pode ser Usuário ou Gestor (mesmas chaves de PAPEIS em api/acessoPaginas.js). */
+const PAPEL_POR_PAGINA = {
+  suporteescalado: {
+    dica: 'Usuário: vê só o seu board e os seus casos. Gestor: vê todos os boards, cria e edita boards e transfere casos.',
+    opcoes: [['usuario', 'Usuário (só o que é seu)'], ['gestor', 'Gestor (vê tudo)']],
+  },
+  suportehumano: {
+    dica: 'Usuário: vê só a sua fila de respostas. Gestor: vê tudo da página — a fila de todos os boards, o painel da equipe e os turnos.',
+    opcoes: [['usuario', 'Usuário (só a sua fila)'], ['gestor', 'Gestor (vê tudo)']],
+  },
+};
+
+/** Seção "Gerenciar acessos" de um usuário: caixas por página (pode marcar várias) e, no Suporte Escalado e no Suporte Humano, o papel Usuário/Gestor. */
 function painelAcessos(u) {
   const atuais = new Map((u.acessos ?? []).map((a) => [a.pagina, a.papel]));
   const caixa = document.createElement('div');
@@ -1689,7 +1701,7 @@ function painelAcessos(u) {
   const grade = document.createElement('div');
   grade.className = 'usuario-acessos-grade';
   const marcas = {};
-  let papel;
+  const papeis = {};
   for (const [chave, rotulo] of PAGINAS_ACESSO) {
     const linha = document.createElement('label');
     linha.className = 'usuario-acesso';
@@ -1698,16 +1710,17 @@ function painelAcessos(u) {
     cb.checked = atuais.has(chave);
     marcas[chave] = cb;
     linha.append(cb, document.createTextNode(` ${rotulo}`));
-    if (chave === 'suporteescalado') {
-      papel = document.createElement('select');
-      papel.title = 'Usuário: vê só o seu board e os seus casos. Gestor: vê todos os boards, cria e edita boards, transfere casos e edita turnos.';
-      for (const [v, t] of [['usuario', 'Usuário (só o que é seu)'], ['gestor', 'Gestor (vê tudo)']]) {
-        const o = document.createElement('option'); o.value = v; o.textContent = t; papel.append(o);
+    if (chave in PAPEL_POR_PAGINA) {
+      const sel = document.createElement('select');
+      sel.title = PAPEL_POR_PAGINA[chave].dica;
+      for (const [v, t] of PAPEL_POR_PAGINA[chave].opcoes) {
+        const o = document.createElement('option'); o.value = v; o.textContent = t; sel.append(o);
       }
-      papel.value = atuais.get('suporteescalado') === 'gestor' ? 'gestor' : 'usuario';
-      papel.disabled = !cb.checked;
-      cb.addEventListener('change', () => { papel.disabled = !cb.checked; });
-      linha.append(' ', papel);
+      sel.value = atuais.get(chave) === 'gestor' ? 'gestor' : 'usuario';
+      sel.disabled = !cb.checked;
+      cb.addEventListener('change', () => { sel.disabled = !cb.checked; });
+      papeis[chave] = sel;
+      linha.append(' ', sel);
     }
     grade.append(linha);
   }
@@ -1722,7 +1735,7 @@ function painelAcessos(u) {
   };
   const salvar = mini('Salvar acessos', async () => {
     const acessos = PAGINAS_ACESSO.filter(([c]) => marcas[c].checked)
-      .map(([c]) => ({ pagina: c, papel: c === 'suporteescalado' ? papel.value : 'usuario' }));
+      .map(([c]) => ({ pagina: c, papel: papeis[c] ? papeis[c].value : 'usuario' }));
     salvar.disabled = true;
     try {
       const r = await api(`/api/usuarios/${u.id}/acessos`, { metodo: 'PUT', corpo: { acessos } });
@@ -1733,8 +1746,8 @@ function painelAcessos(u) {
   }, 'btn btn-forte');
   botoes.append(
     salvar,
-    mini('Marcar todas', () => { for (const c of Object.values(marcas)) c.checked = true; papel.disabled = false; }),
-    mini('Limpar', () => { for (const c of Object.values(marcas)) c.checked = false; papel.disabled = true; }),
+    mini('Marcar todas', () => { for (const c of Object.values(marcas)) c.checked = true; for (const s of Object.values(papeis)) s.disabled = false; }),
+    mini('Limpar', () => { for (const c of Object.values(marcas)) c.checked = false; for (const s of Object.values(papeis)) s.disabled = true; }),
     mini('Fechar', () => { caixa.hidden = true; }),
   );
   caixa.append(botoes);

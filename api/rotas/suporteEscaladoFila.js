@@ -26,7 +26,7 @@ export default async function rotasSuporteEscaladoFila(app) {
     },
   }, async (req) => {
     const todos = req.query.board_id === 'todos';
-    const gestor = !!req.usuario.admin || !!req.usuario.gestorEscalado;
+    const gestor = !!req.usuario.admin || !!req.usuario.gestorHumano;
     let boardId = null;
     if (todos) {
       if (!gestor) throw new ErroHttp(403, 'Só administradores e gestores veem a fila de todos os boards.');

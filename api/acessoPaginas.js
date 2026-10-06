@@ -23,7 +23,7 @@ export const PAGINAS = [
 ];
 export const CHAVES = PAGINAS.map((p) => p.chave);
 /** Papéis aceitos por página (as demais só aceitam 'usuario'). */
-export const PAPEIS = { suporteescalado: ['usuario', 'gestor'] };
+export const PAPEIS = { suporteescalado: ['usuario', 'gestor'], suportehumano: ['usuario', 'gestor'] };
 export const papeisDaPagina = (pagina) => PAPEIS[pagina] ?? ['usuario'];
 
 /**
@@ -108,13 +108,13 @@ export async function acessosParaTela(usuario) {
 }
 
 /**
- * Roda dentro de exigirSessao (depois de o JWT valer): deixa `paginas`, `papeis` e `gestorEscalado` em req.usuario e recusa quem não tem a página da rota.
+ * Roda dentro de exigirSessao (depois de o JWT valer): deixa `paginas`, `papeis`, `gestorEscalado` e `gestorHumano` em req.usuario e recusa quem não tem a página da rota.
  * Token de serviço (integrações) e administrador passam direto.
  */
 export async function verificarAcessoPagina(req) {
   const u = req.usuario;
   if (u.servico) return;
-  if (u.admin) { u.paginas = CHAVES; u.papeis = {}; u.gestorEscalado = true; return; }
+  if (u.admin) { u.paginas = CHAVES; u.papeis = {}; u.gestorEscalado = true; u.gestorHumano = true; return; }
   let a;
   try {
     a = await carregarAcessos(u.user_id);
@@ -124,6 +124,7 @@ export async function verificarAcessoPagina(req) {
   }
   u.paginas = a.paginas; u.papeis = a.papeis;
   u.gestorEscalado = a.papeis.suporteescalado === 'gestor' && a.paginas.includes('suporteescalado');
+  u.gestorHumano = a.papeis.suportehumano === 'gestor' && a.paginas.includes('suportehumano');   // Suporte Humano: gestor vê tudo da página (todos os boards, painel, turnos)
   const exigidas = paginasDaRota(req.routeOptions?.url ?? req.routerPath);
   if (exigidas && !exigidas.some((p) => a.paginas.includes(p))) {
     throw new ErroHttp(403, 'Você não tem acesso a esta página.');

@@ -539,6 +539,8 @@ async function servirEstatico(req, res, urlPath) {
 /* ─────────────────────────  rotas de acesso  ───────────────────────── */
 
 /** Administrador, ou gestor do Suporte Escalado (papel por página, migração 072). */
+/** Gestor do Suporte Humano (papel por página, 078): só liga/desliga disponibilidade de board. */
+const ehGestorHumano = (u) => Boolean(u?.admin || (u?.acessos ?? []).some((a) => a.pagina === 'suportehumano' && a.papel === 'gestor'));
 const ehGestorEscalado = (u) => Boolean(u?.admin || (u?.acessos ?? []).some((a) => a.pagina === 'suporteescalado' && a.papel === 'gestor'));
 
 /**
@@ -1483,8 +1485,9 @@ async function atender(req, res, url, sessao) {
   }
   const rotaBoardEscalado = /^\/api\/suporte-escalado\/boards\/(\d+)$/.exec(url.pathname);
   if (rotaBoardEscalado && req.method === 'PATCH') {
-    if (!ehGestorEscalado(usuario)) return json(res, 403, { erro: 'Só administradores e gestores alteram boards.' });
     const corpo = await lerJson(req);
+    const soDisponibilidade = ehGestorHumano(usuario) && Object.keys(corpo).every((k) => k === 'ativo');
+    if (!ehGestorEscalado(usuario) && !soDisponibilidade) return json(res, 403, { erro: 'Só administradores e gestores alteram boards.' });
     const alteracoes = {};
     if (corpo.nome !== undefined) alteracoes.nome = String(corpo.nome ?? '').trim();
     if (corpo.usuario_id !== undefined) alteracoes.usuario_id = corpo.usuario_id;
