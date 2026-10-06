@@ -24,7 +24,7 @@ export const OPCOES = {
     'Logística - pedido incompleto', 'Logística - pedido quebrado', 'Logística - divergência no produto', 'Cliente não retornou',
   ],
   tipo_resolucao: [
-    'Verificando - Ag. Cliente', 'Reversão total do reembolso', 'Reembolso parcial', 'Não revertido',
+    'Verificando - Ag. Cliente', 'Reversão total do reembolso', 'Reembolso parcial', 'Reembolsado pela plataforma', 'Não revertido',
     'Virou chargeback', 'Cliente não retornou',
   ],
   // Aparece ao lado quando o tipo de resolução é "Reembolso parcial" (15% a 90%, de 5 em 5).
