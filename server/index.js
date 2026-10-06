@@ -1645,6 +1645,15 @@ async function atender(req, res, url, sessao) {
     } catch (err) { return erroFicha(err, 'Não consegui salvar.'); }
   }
 
+  /* ── fila do agente em lista (pedido da Késsia, item 8): só leitura; a API valida o board (403/404) ── */
+  if (url.pathname === '/api/suporte-escalado/fila' && req.method === 'GET') {
+    const boardFila = url.searchParams.get('board_id');
+    if (!boardFila) return json(res, 400, { erro: 'Informe o board.' });
+    try {
+      return json(res, 200, await obterApi('/api/suporte-escalado/fila', { board_id: boardFila }));
+    } catch (err) { return erroFicha(err, 'Não consegui carregar a fila.'); }
+  }
+
   /* ── turnos e disponibilidade dos agentes (067): leitura para todos, escrita só admin (a API recusa com 403) ── */
   const rotaTurnos = /^\/api\/suporte-escalado\/turnos(?:\/(\d+)(\/agentes)?)?$/.exec(url.pathname);
   if (rotaTurnos) {

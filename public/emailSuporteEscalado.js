@@ -297,6 +297,7 @@ async function carregarBoards() {
   renderControlesBoard();
   await renderFormBoard();
   await carregarDadosSeVisivel();
+  if (!$('esc-subaba-fila').hidden) carregarFila();
   // Se a página abriu direto na sub-aba "Respostas dos formulários"
   // (`escSubaba` salvo), a chamada em mostrarSubaba() lá embaixo aconteceu
   // ANTES do board ser resolvido (esta função é assíncrona) — sem isto, o
@@ -323,7 +324,7 @@ const tomColuna = (indice) => TONS_COLUNA[indice % TONS_COLUNA.length];
    gráfico cai num fallback de 640px que não cabe numa tela estreita.
    Redesenhar no momento em que a sub-página fica visível corrige isso: a
    essa altura o container já tem largura real pra medir. */
-const SUBABAS = { kanban: 'esc-subaba-kanban', metricas: 'esc-subaba-metricas', formularios: 'esc-subaba-formularios', turnos: 'esc-subaba-turnos' };
+const SUBABAS = { kanban: 'esc-subaba-kanban', metricas: 'esc-subaba-metricas', formularios: 'esc-subaba-formularios', turnos: 'esc-subaba-turnos', fila: 'esc-subaba-fila' };
 
 function mostrarSubaba(qual) {
   for (const [nome, id] of Object.entries(SUBABAS)) {
@@ -334,6 +335,7 @@ function mostrarSubaba(qual) {
   if (qual === 'metricas') renderGraficosTempo();
   if (qual === 'formularios') carregarFormularios(boardId);
   if (qual === 'turnos') carregarTurnos();
+  if (qual === 'fila') carregarFila();
   if (qual !== 'formularios' && dadosPendentes) { dadosPendentes = false; carregarDados(); }
 }
 
@@ -1139,6 +1141,123 @@ function abrirAjudaRecebida(p) {
 /* ═══════════════  turnos e disponibilidade dos agentes (só admin)  ═══════════════
    Pedido da Késsia (PDF de 05/10/2026, migração 067). "Disponível" = o `ativo` do board (quem está indisponível não recebe card
    novo); o turno só vai definir quando o SLA conta. Horário de Brasília, segunda a sexta. Uma pessoa pode estar em vários turnos. */
+
+/* ═══════════════════  fila de respostas em lista (item 8 do PDF da Késsia)  ═══════════════════
+   Para o agente não importa o status do card: importa o que está pendente de resposta dele. 3 filas: 1º e-mail pendente, 2º em
+   diante pendente e todos os atribuídos. O tempo restante vem do SLA dentro do turno (GET /api/suporte-escalado/fila, migrações 073/074). */
+let filaDados = null;
+let filaAba = 'primeiro';
+const FILAS = [
+  { chave: 'primeiro', rotulo: '1º e-mail — pendente de resposta' },
+  { chave: 'segundo', rotulo: '2º e-mail em diante — pendente de resposta' },
+  { chave: 'todos', rotulo: 'Todos os atribuídos' },
+];
+
+function minutosTxt(min) {
+  const m = Math.abs(Math.round(min));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  return m % 60 ? `${h} h ${m % 60} min` : `${h} h`;
+}
+
+function selarSla(caso) {
+  const el = document.createElement('span');
+  el.className = 'esc-sla';
+  if (caso.restante_min === null || caso.fila === 'outros') {
+    el.dataset.estado = 'espera';
+    el.textContent = caso.fila === 'outros' ? 'aguardando o cliente' : '—';
+    return el;
+  }
+  if (caso.restante_min < 0) { el.dataset.estado = 'estourado'; el.textContent = `estourado há ${minutosTxt(caso.restante_min)}`; }
+  else {
+    el.dataset.estado = caso.restante_min <= 30 ? 'perto' : 'ok';
+    el.textContent = `restam ${minutosTxt(caso.restante_min)}`;
+  }
+  el.title = `Meta ${minutosTxt(caso.meta_min)} de turno; já se passaram ${minutosTxt(caso.espera_min)} dentro do turno.`;
+  return el;
+}
+
+function slaResumo(s) {
+  if (!s || s.media_min === null) return { valor: '—', nota: `sem respostas medidas nos últimos ${filaDados?.resumo?.janela_dias ?? 7} dias` };
+  return { valor: minutosTxt(s.media_min), nota: `média dos últimos ${filaDados.resumo.janela_dias} dias · ${s.dentro} de ${s.medidas} dentro da meta` };
+}
+
+async function carregarFila() {
+  const raiz = $('esc-subaba-fila');
+  if (!boardId) {
+    raiz.replaceChildren();
+    const p = document.createElement('p');
+    p.className = 'vazio-suave';
+    p.textContent = 'Escolha um board para ver a fila de respostas.';
+    raiz.append(p);
+    return;
+  }
+  const { ok, dados } = await api(`/api/suporte-escalado/fila?board_id=${boardId}`);
+  if (!ok) {
+    if (!filaDados) raiz.textContent = 'Não consegui carregar a fila.';
+    return;
+  }
+  filaDados = dados;
+  renderFila();
+}
+
+function renderFila() {
+  const raiz = $('esc-subaba-fila');
+  const { resumo, casos, truncado } = filaDados;
+  const casosAba = (chave) => (chave === 'todos' ? casos : casos.filter((c) => c.fila === chave));
+
+  const painel = document.createElement('section');
+  painel.className = 'kpis kpis--suporte';
+  const sla1 = slaResumo(resumo.sla_primeira);
+  const sla2 = slaResumo(resumo.sla_segunda);
+  painel.append(
+    kpiCard({ icone: '●', tom: 'atrasado', rotulo: 'Pendentes de 1ª resposta', valor: n(resumo.pendentes_primeira), nota: 'sem nenhuma resposta do agente', onClick: () => { filaAba = 'primeiro'; renderFila(); }, ativo: filaAba === 'primeiro' }),
+    kpiCard({ icone: '●', tom: 'travado', rotulo: 'Pendentes de 2ª resposta em diante', valor: n(resumo.pendentes_segunda), nota: 'o cliente escreveu de novo', onClick: () => { filaAba = 'segundo'; renderFila(); }, ativo: filaAba === 'segundo' }),
+    kpiCard({ icone: '●', tom: 'finalizado', rotulo: 'Respondidos hoje', valor: n(resumo.respondidos_hoje), nota: 'tickets com resposta enviada hoje' }),
+    kpiCard({ icone: '●', tom: 'em_dia', rotulo: 'SLA de 1ª resposta', valor: sla1.valor, nota: sla1.nota }),
+    kpiCard({ icone: '●', tom: 'processando', rotulo: 'SLA de 2ª resposta em diante', valor: sla2.valor, nota: sla2.nota }),
+  );
+
+  const abas = document.createElement('div');
+  abas.className = 'esc-fila-abas';
+  abas.setAttribute('role', 'tablist');
+  for (const f of FILAS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'subaba-btn';
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-selected', String(filaAba === f.chave));
+    b.textContent = `${f.rotulo} (${n(casosAba(f.chave).length)})`;
+    b.addEventListener('click', () => { filaAba = f.chave; renderFila(); });
+    abas.append(b);
+  }
+
+  const tabela = document.createElement('table');
+  tabela.className = 'sup-tabela esc-fila-tabela';
+  const cab = tabela.createTHead().insertRow();
+  for (const t of ['E-mail do cliente', 'Assunto', 'Motivo', 'Prioridade', 'Tempo para responder', 'Agente responsável']) {
+    const th = document.createElement('th'); th.textContent = t; cab.append(th);
+  }
+  const corpo = tabela.createTBody();
+  const linhas = casosAba(filaAba);
+  const colunasFila = [
+    { render: (c) => { const d = document.createElement('div'); d.textContent = c.remetente_email; if (c.nome) { const s = document.createElement('small'); s.textContent = c.nome; d.append(s); } return d; } },
+    { classe: 'esc-fila-assunto', render: (c) => c.assunto || '—' },
+    { render: (c) => ROTULO_TAG[c.tag_motivo] || '—' },
+    { render: (c) => (c.prioridade_nivel === 'alta' ? 'Alta' : c.prioridade_nivel === 'media' ? 'Média' : '—') },
+    { render: selarSla },
+    { render: (c) => c.agente || '—' },
+  ];
+  colunasFila.aoClicarLinha = (c) => abrirDetalheEscalado(c);
+  renderTabela(corpo, linhas, colunasFila, { vazio: filaAba === 'todos' ? 'Nenhum ticket em aberto atribuído.' : 'Nada pendente de resposta nesta fila. 🎉' });
+
+  const nota = document.createElement('p');
+  nota.className = 'rodape-nota';
+  nota.textContent = truncado
+    ? 'Mostrando os 1.000 mais urgentes. Ordenado por tempo restante (estourados primeiro). O tempo conta só dentro do turno (seg–sex, horário de Brasília).'
+    : 'Ordenado por tempo restante (estourados primeiro). O tempo conta só dentro do turno (seg–sex, horário de Brasília). Clique numa linha para abrir o ticket.';
+  raiz.replaceChildren(painel, abas, tabela, nota);
+}
 
 async function carregarTurnos() {
   const raiz = $('esc-subaba-turnos');
@@ -2117,6 +2236,8 @@ $('esc-board-seletor').addEventListener('change', (e) => {
   // dispara ao abrir a sub-aba) — sem isto, trocar o board com essa sub-aba
   // já aberta deixava a tabela mostrando o board antigo até alguém recarregar.
   if (!$('esc-subaba-formularios').hidden) carregarFormularios(boardId);
+  filaDados = null;
+  if (!$('esc-subaba-fila').hidden) carregarFila();
 });
 $('esc-board-novo').addEventListener('click', () => {
   boardFormAberto = 'novo';
@@ -2133,7 +2254,7 @@ ligarArrastoBoard($('esc-board'));
 carregarBoards();
 carregarInsightsEscalado();
 // Aba escondida não atualiza (várias abas abertas o dia todo multiplicavam a carga); ao voltar, atualiza na hora.
-setInterval(() => { if (!document.hidden) carregarDadosSeVisivel({ periodico: true }); }, 30 * 1000);
+setInterval(() => { if (!document.hidden) { carregarDadosSeVisivel({ periodico: true }); if (!$('esc-subaba-fila').hidden) carregarFila(); } }, 30 * 1000);
 setInterval(() => { if (!document.hidden) carregarInsightsEscalado(); }, 60 * 1000);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {

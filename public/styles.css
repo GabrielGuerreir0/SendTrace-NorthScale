@@ -2861,3 +2861,13 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .vg-ab21-tab th, .vg-ab21-tab td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--borda, rgba(128,128,128,.25)); }
 .vg-ab21-tab th { font-weight: 600; }
 .vg-ab21-prod { margin: 4px 0 0; padding-left: 18px; font-size: 13px; }
+
+/* Fila de respostas em lista (Suporte Escalado) */
+.esc-fila-abas { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 10px; }
+.esc-fila-tabela td.esc-fila-assunto { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.esc-fila-tabela td small { display: block; color: var(--tinta-fraca); }
+.esc-sla { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; border: 1px solid transparent; }
+.esc-sla[data-estado="estourado"] { color: var(--st-travado); border-color: var(--st-travado); }
+.esc-sla[data-estado="perto"] { color: var(--st-atrasado); border-color: var(--st-atrasado); }
+.esc-sla[data-estado="ok"] { color: var(--tinta); border-color: var(--borda); }
+.esc-sla[data-estado="espera"] { color: var(--tinta-fraca); border-color: var(--borda); font-weight: 400; }
