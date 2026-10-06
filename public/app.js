@@ -18,6 +18,7 @@ import './emailDetalhes.js';
 import './emailChat.js';
 import './emailGaleria.js';
 import './emailSuporteEscalado.js';
+import './suporteHumano.js';
 import './relatorioMetricas.js';
 import './visaoGeral.js';
 import './rastreio.js';
@@ -1671,7 +1672,7 @@ function relatarConvite({ email: envio, conviteDias }, senha, quem) {
 const PAGINAS_ACESSO = [
   ['visaogeral', 'Visão Geral'], ['suporte', 'Suporte IA'], ['regua', 'Régua de pós-venda'], ['rastreio', 'Rastreio de Pedidos'],
   ['postmark', 'Postmark'], ['ticketsia', 'Tickets de Atendimento'], ['detalhesia', 'Mais Detalhes'], ['chatia', 'Chat com IA'],
-  ['galeriaia', 'Galeria de Imagens'], ['suporteescalado', 'Suporte Escalado'], ['relatorioia', 'Relatório de Métricas'],
+  ['galeriaia', 'Galeria de Imagens'], ['suporteescalado', 'Suporte Escalado'], ['suportehumano', 'Suporte Humano'], ['relatorioia', 'Relatório de Métricas'],
 ];
 
 /** Seção "Gerenciar acessos" de um usuário: caixas por página (pode marcar várias) e, no Suporte Escalado, o papel Usuário/Gestor. */

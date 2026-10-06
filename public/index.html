@@ -228,6 +228,16 @@
       <span class="menu-rotulo">Suporte Escalado</span>
     </button>
 
+    <button class="menu-item" id="aba-btn-suportehumano" type="button"
+            aria-selected="false" title="Suporte Humano">
+      <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
+           stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="10" cy="7" r="3"/>
+        <path d="M4 16.5c.8-3 3.2-4.5 6-4.5s5.2 1.5 6 4.5"/>
+      </svg>
+      <span class="menu-rotulo">Suporte Humano</span>
+    </button>
+
     <button class="menu-item" id="aba-btn-relatorioia" type="button"
             aria-selected="false" title="Relatório de Métricas">
       <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
@@ -1838,10 +1848,8 @@
     <div id="esc-board-form" hidden></div>
     <div class="subabas" role="tablist" aria-label="Visão do Suporte Escalado">
       <button class="subaba-btn" id="esc-subaba-btn-kanban" type="button" role="tab" aria-selected="true">Kanban</button>
-      <button class="subaba-btn" id="esc-subaba-btn-fila" type="button" role="tab" aria-selected="false">Fila de respostas (lista)</button>
       <button class="subaba-btn" id="esc-subaba-btn-metricas" type="button" role="tab" aria-selected="false">Tempo no kanban</button>
       <button class="subaba-btn" id="esc-subaba-btn-formularios" type="button" role="tab" aria-selected="false">Respostas dos formulários</button>
-      <button class="subaba-btn" id="esc-subaba-btn-equipe" type="button" role="tab" aria-selected="false" hidden>Painel da equipe</button>
       <button class="subaba-btn" id="esc-subaba-btn-turnos" type="button" role="tab" aria-selected="false" hidden>Turnos e disponibilidade</button>
     </div>
   </section>
@@ -1852,12 +1860,6 @@
     <section class="kpis kpis--suporte" id="esc-kpis"></section>
     <div class="esc-board" id="esc-board"></div>
   </div>
-
-  <!-- ── sub-página: fila do agente em lista (1º e-mail / 2º em diante / todos) ── -->
-  <div id="esc-subaba-fila" hidden></div>
-
-  <!-- ── sub-página: painel de KPIs da equipe (só admin/gestor) ── -->
-  <div id="esc-subaba-equipe" hidden></div>
 
   <!-- ── sub-página: turnos e disponibilidade dos agentes (só admin) ── -->
   <div id="esc-subaba-turnos" hidden></div>
@@ -1950,6 +1952,37 @@
 </main>
 
 <!-- ═══════════════════  Central de E-mail IA — Tela 6: Relatório de Métricas  ═══════════════ -->
+<main class="conteudo" id="aba-suportehumano" hidden>
+
+  <header class="vg-heroi pag-heroi">
+    <p class="vg-heroi-eyebrow">SendTrace <span aria-hidden="true">/</span> <b>Suporte humano</b></p>
+    <h2 class="vg-heroi-titulo">O que está <em>esperando você responder.</em></h2>
+    <p class="vg-heroi-sub">A fila de respostas dos tickets atribuídos e o painel da equipe, com o SLA contado dentro do turno. São os mesmos casos do Suporte Escalado, vistos pelo que está pendente de resposta.</p>
+  </header>
+
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Suporte Humano</h2>
+        <p class="cartao-sub">Para o agente não importa o status do card: importa o que está pendente de resposta dele.</p>
+      </div>
+      <div class="tk-filtros">
+        <label class="campo" id="sh-board-campo" hidden>
+          <span>Board</span>
+          <select id="sh-board-seletor"></select>
+        </label>
+      </div>
+    </header>
+    <div class="subabas" role="tablist" aria-label="Visão do Suporte Humano">
+      <button class="subaba-btn" id="sh-subaba-btn-fila" type="button" role="tab" aria-selected="true">Fila de respostas</button>
+      <button class="subaba-btn" id="sh-subaba-btn-equipe" type="button" role="tab" aria-selected="false" hidden>Painel da equipe</button>
+    </div>
+  </section>
+
+  <div id="sh-subaba-fila"></div>
+  <div id="sh-subaba-equipe" hidden></div>
+</main>
+
 <main class="conteudo" id="aba-relatorioia" hidden>
 
   <!-- ── cabeçalho da página: o mesmo da Visão Geral, em tamanho de aba ── -->
