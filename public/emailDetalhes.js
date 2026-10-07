@@ -135,6 +135,19 @@ function textoReal(corpo) {
   if (/-{3,}\s*Original Message\s*-{3,}/i.test(t)) {
     t = t.slice(0, t.search(/-{3,}\s*Original Message\s*-{3,}/i));
   }
+  // Outros formatos de cliente de e-mail (PDF de 07/10, item 2): "Em … escreveu:" (pt), "El … escribió:" (es), "-----Mensagem original-----",
+  // e o bloco de cabeçalho do Outlook ("De:/From:" seguido de "Enviado em:/Sent:" em até 3 linhas).
+  const cortes = [
+    /\bEm\s+[^\n]{3,120}?\bescreveu:/i,
+    /\bEl\s+[^\n]{3,120}?\bescribi[óo]:/i,
+    /-{3,}\s*(Mensagem original|Mensaje original|Forwarded message|Mensagem encaminhada)\s*-{3,}/i,
+    /\n\s*_{5,}\s*\n\s*(From|De):/i,
+    /\n\s*(From|De):\s[^\n]+\n(?:[^\n]*\n){0,2}?\s*(Sent|Enviado em|Enviada em|Date|Data):/i,
+  ];
+  for (const re of cortes) {
+    const pos = t.search(re);
+    if (pos > 0) t = t.slice(0, pos);
+  }
 
   const linhas = t.split('\n');
   const primeiraCitada = linhas.findIndex((l) => /^\s*>/.test(l));

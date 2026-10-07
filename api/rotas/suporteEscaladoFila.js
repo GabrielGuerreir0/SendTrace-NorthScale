@@ -62,7 +62,9 @@ export default async function rotasSuporteEscaladoFila(app) {
         `SELECT s.id, s.remetente_email, s.nome, e.assunto, s.status, s.tag_motivo, s.prioridade_nivel, s.prioridade, s.board_id,
                 b.nome AS agente, s.resumo_conversa, s.motivo_escalonamento, s.email_id, s.iniciado_em, s.finalizado_em, s.alerta_ameaca, s.criado_em, s.ultimo_email_cliente_em, s.primeira_resposta_agente_em, s.ultima_resposta_agente_em,
                 fi.motivo_contato, fi.detalhamento_motivo, fi.tipo_resolucao, fi.status_ticket, fi.motivo_reenvio, fi.status_logistica,
-                fi.responsavel_board_id AS responsavel_logistica_id, fi.status_ajuda,
+                fi.responsavel_board_id AS responsavel_logistica_id, fi.status_ajuda, fi.quantidade_reenvio, fi.percentual_reembolso,
+                fi.chargeback_em, fi.ticket_reaberto_em,
+                (SELECT a.para_board_id FROM email_ia.suporte_escalado_ajuda a WHERE a.suporte_escalado_id = s.id ORDER BY a.criado_em DESC LIMIT 1) AS ajuda_para_id,
                 CASE WHEN s.primeira_resposta_agente_em IS NULL THEN 'primeiro' WHEN v.vez_do_agente THEN 'segundo' ELSE 'outros' END AS fila,
                 v.meta_min, v.pausado,
                 CASE WHEN s.primeira_resposta_agente_em IS NULL THEN v.primeira_resposta_min WHEN v.vez_do_agente THEN v.vez_agente_min END AS espera_min

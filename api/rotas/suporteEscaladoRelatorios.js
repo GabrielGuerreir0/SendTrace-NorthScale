@@ -52,6 +52,7 @@ export default async function rotasSuporteEscaladoRelatorios(app) {
     }
     const { rows } = await query(
       `SELECT s.id AS numero, s.remetente_email, s.nome, e.assunto, s.status AS status_kanban, s.criado_em, s.iniciado_em, s.finalizado_em,
+              s.data_entrega, s.resumo_conversa, s.motivo_escalonamento,
               s.tag_motivo, s.prioridade_nivel, s.alerta_ameaca, s.ticket_mae_id, b.nome AS agente,
               mv.movido_por, mv.mudou_em AS movido_em, mv.status_anterior AS movido_de,
               ped.produto, ped.plataforma, ped.status_pedido, ped.pedido_em, ped.valor AS valor_pedido, ped.rastreio_status, ped.carrier_code,

@@ -158,6 +158,9 @@ const FILTROS_LISTA = [
   { chave: 'status_logistica', rotulo: 'Status logística', opcoes: (o) => o.status_logistica },
   { chave: 'responsavel_logistica_id', rotulo: 'Responsável (logística)', opcoes: (o) => (o.equipe ?? []).map((e) => [e.id, e.nome]) },
   { chave: 'status_ajuda', rotulo: 'Status de ajuda', opcoes: (o) => o.status_ajuda },
+  { chave: 'ajuda_para_id', rotulo: 'Ajuda pedida a', opcoes: (o) => (o.equipe ?? []).map((e) => [e.id, e.nome]) },
+  { chave: 'quantidade_reenvio', rotulo: 'Quantidade para reenvio', opcoes: () => Array.from({ length: 30 }, (_, i) => i + 1) },
+  { chave: 'percentual_reembolso', rotulo: 'Percentual do reembolso', opcoes: (o) => (o.percentual_reembolso ?? []).map((p) => [p, `${p}%`]) },
 ];
 const VENCE_EM = [
   ['30', 'Vence em 30 minutos', (r) => r >= 0 && r <= 30],
@@ -199,10 +202,12 @@ const COLUNAS_RELATORIO = [
   ['Última movimentação (de)', (r) => r.movido_de], ['Última movimentação (por)', (r) => (r.movido_em ? (r.movido_por || 'Sistema') : '')], ['Última movimentação (em)', (r) => dt(r.movido_em)],
   ['Produto', (r) => r.produto], ['Plataforma', (r) => r.plataforma], ['Status do pedido', (r) => r.status_pedido], ['Data da compra', (r) => dt(r.pedido_em)],
   ['Valor do pedido', (r) => r.valor_pedido], ['Status da entrega', (r) => r.rastreio_status], ['Transportadora', (r) => r.carrier_code], ['Rastreio', (r) => r.tracking_number],
-  ['Data do 1º e-mail', (r) => dt(r.primeiro_email_em)],
+  ['Data do 1º e-mail', (r) => dt(r.primeiro_email_em)], ['Data de entrega', (r) => dia(r.data_entrega)],
+  ['Mensagem da cliente — foco da reclamação', (r) => r.resumo_conversa], ['Motivo do escalonamento', (r) => r.motivo_escalonamento],
   ['Motivo do contato', (r) => r.motivo_contato], ['Detalhamento do motivo', (r) => r.detalhamento_motivo], ['Tipo de resolução', (r) => r.tipo_resolucao],
   ['% do reembolso', (r) => r.percentual_reembolso], ['Valor da compra (reembolso)', (r) => r.valor_compra_usd], ['Dedução de frascos', (r) => r.deducao_frascos_usd],
-  ['Valor a reembolsar', (r) => r.valor_a_reembolsar_usd], ['Status do ticket', (r) => r.status_ticket], ['Virou chargeback em', (r) => dia(r.chargeback_em)],
+  ['Valor a reembolsar', (r) => r.valor_a_reembolsar_usd], ['Status do ticket', (r) => r.status_ticket],
+  ['Virou chargeback', (r) => (r.tipo_resolucao === 'Virou chargeback' || r.chargeback_em ? 'Sim' : 'Não')], ['Virou chargeback em', (r) => dia(r.chargeback_em)],
   ['Ticket reaberto em', (r) => dt(r.ticket_reaberto_em)], ['Propriedades — última alteração por', (r) => r.propriedades_atualizado_por], ['Propriedades — última alteração em', (r) => dt(r.propriedades_atualizado_em)],
   ['Status logística', (r) => r.status_logistica], ['Motivo do reenvio', (r) => r.motivo_reenvio], ['Quantidade para reenvio', (r) => r.quantidade_reenvio],
   ['Produto a ser enviado', (r) => r.produto_reenvio], ['Observação do reenvio', (r) => r.observacao_reenvio], ['Endereço (divergência)', (r) => r.endereco_divergencia],
@@ -252,7 +257,7 @@ async function montarBarraFiltros() {
   const barra = document.createElement('div');
   barra.className = 'esc-filtros';
   const campoBusca = document.createElement('input');
-  campoBusca.type = 'search'; campoBusca.placeholder = 'Buscar por e-mail, nº do ticket, nº do pedido, nome ou assunto…'; campoBusca.className = 'esc-filtros-busca';
+  campoBusca.type = 'search'; campoBusca.placeholder = 'Buscar por e-mail, nº do ticket, nº do pedido…'; campoBusca.className = 'esc-filtros-busca';
   campoBusca.addEventListener('input', debounce(() => { busca = campoBusca.value.trim(); selecionados.clear(); carregarFila(); }, 350));
   const detalhes = document.createElement('details');
   detalhes.className = 'esc-filtros-lista';
@@ -287,7 +292,8 @@ async function montarBarraFiltros() {
   });
   grade.append(limpar);
   detalhes.append(sum, grade);
-  barra.append(campoBusca, detalhes, montarRelatorio());
+  barra.append(detalhes, montarRelatorio());
+  barra.campoBusca = campoBusca;   // fica na linha das abas (PDF 07/10, item 13)
   return barra;
 }
 
@@ -372,6 +378,8 @@ function renderFila() {
   const abas = document.createElement('div');
   abas.className = 'esc-fila-abas';
   abas.setAttribute('role', 'tablist');
+  const grupoAbas = document.createElement('div');
+  grupoAbas.className = 'esc-fila-abas-grupo';
   for (const f of FILAS) {
     const b = document.createElement('button');
     b.type = 'button';
@@ -380,8 +388,9 @@ function renderFila() {
     b.setAttribute('aria-selected', String(filaAba === f.chave));
     b.textContent = `${f.rotulo} (${n(casosAba(f.chave).length)})`;
     b.addEventListener('click', () => { filaAba = f.chave; renderFila(); });
-    abas.append(b);
+    grupoAbas.append(b);
   }
+  abas.append(grupoAbas, barraFiltros.campoBusca);
 
   const interna = filaAba === 'internas';
   const linhas = casosAba(filaAba);
@@ -391,7 +400,7 @@ function renderFila() {
   const cab = tabela.createTHead().insertRow();
   const titulos = interna
     ? ['Tipo', 'E-mail do cliente', 'Assunto', 'Pedido por', 'Para', 'O que fazer', 'Desde']
-    : ['Nº', 'E-mail do cliente', 'Assunto', 'Motivo', 'Prioridade', 'Tempo para responder', 'Agente responsável'];
+    : ['Nº', 'E-mail do cliente', 'Assunto', 'Motivo', 'Prioridade', 'Virou chargeback', 'Tempo para responder', 'Agente responsável'];
   if (podeSelecionar) {
     const th = document.createElement('th');
     const todosMarcados = linhas.length > 0 && linhas.every((c) => selecionados.has(c.id));
@@ -433,8 +442,9 @@ function renderFila() {
       { render: (c) => `#${c.id}` },
       { render: celulaEmail },
       { classe: 'esc-fila-assunto', render: (c) => c.assunto || '—' },
-      { render: (c) => ROTULO_TAG[c.tag_motivo] || '—' },
+      { render: (c) => `${ROTULO_TAG[c.tag_motivo] || '—'}${c.ticket_reaberto_em ? ' · 🔁 reaberto' : ''}` },
       { render: (c) => (c.prioridade_nivel === 'alta' ? 'Alta' : c.prioridade_nivel === 'media' ? 'Média' : '—') },
+      { render: (c) => (c.tipo_resolucao === 'Virou chargeback' || c.chargeback_em ? `🚨 Sim${c.chargeback_em ? ` · ${dia(c.chargeback_em)}` : ''}` : '—') },
       { render: selarSla },
       { render: (c) => c.agente || '—' },
     ];

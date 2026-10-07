@@ -645,6 +645,18 @@ export function abrirDetalheEscalado(item) {
   const ticketEl = document.createElement('span');
   ticketEl.textContent = `#${item.id}`;
 
+  // Bloco "Resumo da IA" (item 28): a mensagem da cliente e o motivo do escalonamento, recolhidos de início (item 19).
+  const resumoIA = document.createElement('div');
+  resumoIA.className = 'esc-resumo-ia';
+  for (const [titulo, texto] of [['Mensagem da cliente — foco da reclamação', item.resumo_conversa], ['Motivo do escalonamento', item.motivo_escalonamento]]) {
+    const det = document.createElement('details');
+    const sum = document.createElement('summary');
+    sum.textContent = titulo;
+    const corpoTxt = document.createElement('p');
+    corpoTxt.textContent = texto || '—';
+    det.append(sum, corpoTxt);
+    resumoIA.append(det);
+  }
   const alertaEl = document.createElement('span');
   alertaEl.textContent = ROTULO_AMEACA[item.alerta_ameaca] ? `🚨 ${ROTULO_AMEACA[item.alerta_ameaca]} — responder em até 2 dias úteis` : '—';
 
@@ -667,8 +679,7 @@ export function abrirDetalheEscalado(item) {
       { rotulo: 'Última movimentação', largo: true, valor: item.movido_em ? `${item.movido_de ? 'de ' + item.movido_de + ' ' : ''}por ${item.movido_por || 'Sistema (automação)'} em ${dataHora(item.movido_em)}` : '—' },
       { rotulo: 'Dados do pedido', valor: contextoContainer, bloco: true, metade: true },
       { rotulo: 'Propriedades', valor: propriedadesContainer, bloco: true, metade: true },
-      { rotulo: 'Mensagem da cliente — foco da reclamação', valor: item.resumo_conversa || '—', recolhivel: true, metade: true },
-      { rotulo: 'Motivo do escalonamento', valor: item.motivo_escalonamento || '—', recolhivel: true, metade: true },
+      { rotulo: 'Resumo da IA', valor: resumoIA, bloco: true },
       { rotulo: 'Atendimento', valor: atendimentoContainer, bloco: true },
       { rotulo: 'Logística', valor: logisticaContainer, bloco: true, metade: true },
       { rotulo: 'Ajuda — escalar para alguém da equipe', valor: ajudaContainer, bloco: true, metade: true },
