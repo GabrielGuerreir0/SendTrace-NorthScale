@@ -1451,6 +1451,22 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
   gap: 12px 20px; margin-bottom: 18px;
 }
 .mf-campo--largo { grid-column: 1 / -1; }
+/* Ficha do Suporte Humano: mais larga (menos rolagem) e em blocos. */
+.janela--ficha-larga[open] { width: min(1180px, calc(100vw - 32px)); }
+.mf-campo--bloco {
+  border: 1px solid var(--borda); border-radius: var(--raio); padding: 12px 14px;
+  background: var(--plano);
+}
+.mf-campo--bloco > .mf-campo-rotulo, .mf-campo--bloco summary.mf-campo-rotulo {
+  font-size: 12px; color: var(--tinta-2); margin-bottom: 8px;
+}
+.mf-campo--bloco summary.mf-campo-rotulo { cursor: pointer; margin-bottom: 0; }
+.mf-campo--bloco details[open] > summary.mf-campo-rotulo { margin-bottom: 8px; }
+@media (min-width: 900px) {
+  /* Propriedades e Dados do pedido lado a lado, como no print. */
+  .janela--ficha-larga .mf-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .janela--ficha-larga .mf-campo--metade { grid-column: span 2; }
+}
 .mf-campo-rotulo {
   display: block; font-size: 11px; font-weight: 600; text-transform: uppercase;
   letter-spacing: .03em; color: var(--tinta-fraca); margin-bottom: 3px;
@@ -2802,6 +2818,9 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .pag-heroi { padding: clamp(2px, 1vw, 10px) 0 2px; }
 .pag-heroi .vg-heroi-titulo { margin-top: 8px; font-size: clamp(28px, 3.6vw, 46px); }
 .pag-heroi .vg-heroi-sub { margin-top: 10px; font-size: clamp(13.5px, 1.1vw, 15px); }
+/* Suporte Humano: título e texto menores para a fila e o painel aparecerem sem rolar (PDF 07/10, item 12). */
+.pag-heroi--compacto .vg-heroi-titulo { font-size: clamp(20px, 2.2vw, 28px); margin-top: 4px; }
+.pag-heroi--compacto .vg-heroi-sub { margin-top: 4px; font-size: 12px; }
 
 /* Com o cabeçalho no alto, o primeiro cartão volta a ser um cartão comum. */
 .conteudo > .pag-heroi + .cartao > .cartao-cabeca h2 { font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }

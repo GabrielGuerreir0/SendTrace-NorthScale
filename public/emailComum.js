@@ -367,16 +367,30 @@ export function barraHorizontal(container, itens, campo, {
    abre esta grade de campo:valor com o registro inteiro. */
 
 export function renderFicha(container, campos) {
-  container.replaceChildren(...campos.filter(Boolean).map(({ rotulo, valor, largo = false }) => {
+  container.replaceChildren(...campos.filter(Boolean).map(({
+    rotulo, valor, largo = false, bloco = false, recolhivel = false, metade = false,
+  }) => {
+    // bloco: cartão com título de seção (ficha do Suporte Humano); recolhivel:
+    // o conteúdo nasce recolhido e abre no clique no título.
     const div = document.createElement('div');
-    div.className = largo ? 'mf-campo mf-campo--largo' : 'mf-campo';
-    const dt = document.createElement('span');
-    dt.className = 'mf-campo-rotulo';
-    dt.textContent = rotulo;
+    div.className = ['mf-campo', (largo || bloco || recolhivel) && !metade ? 'mf-campo--largo' : null, metade && 'mf-campo--metade', (bloco || recolhivel) && 'mf-campo--bloco']
+      .filter(Boolean).join(' ');
     const dd = document.createElement('div');
     dd.className = 'mf-campo-valor';
     if (valor instanceof Node) dd.append(valor);
     else dd.textContent = (valor === null || valor === undefined || valor === '') ? '—' : String(valor);
+    if (recolhivel) {
+      const det = document.createElement('details');
+      const sum = document.createElement('summary');
+      sum.className = 'mf-campo-rotulo';
+      sum.textContent = rotulo;
+      det.append(sum, dd);
+      div.append(det);
+      return div;
+    }
+    const dt = document.createElement('span');
+    dt.className = 'mf-campo-rotulo';
+    dt.textContent = rotulo;
     div.append(dt, dd);
     return div;
   }));
@@ -391,7 +405,8 @@ export function renderFicha(container, campos) {
  * modal #dt-emails-modal (ver abrirModalEmails em emailDetalhes.js), que já
  * resolve paginação — este aqui é só ficha, sem tabela.
  */
-export function abrirFicha({ titulo, subtitulo = '', campos = [] }) {
+export function abrirFicha({ titulo, subtitulo = '', campos = [], larga = false }) {
+  $('modal-ficha').classList.toggle('janela--ficha-larga', larga);
   $('mf-titulo').textContent = titulo;
   $('mf-subtitulo').textContent = subtitulo;
   renderFicha($('mf-campos'), campos);

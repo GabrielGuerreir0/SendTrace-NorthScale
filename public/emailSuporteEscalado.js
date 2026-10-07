@@ -636,9 +636,13 @@ export function abrirDetalheEscalado(item) {
     abrirModalEmails('email', item.remetente_email, `conversa com ${item.nome || item.remetente_email}`, null, 'conversa');
   });
 
+  // Ordem pedida pela Késsia (PDF 07/10, item 28): Resumo geral → Dados do
+  // pedido → Propriedades → Resumo da IA → Atendimento → Logística → Ajuda.
+  // Retenção e Notas ficam no fim (Retenção sai na troca da fonte da Home/dash).
   abrirFicha({
     titulo: item.nome || item.remetente_email || '(sem nome)',
     subtitulo: item.remetente_email || '',
+    larga: true,
     campos: [
       { rotulo: 'Status no kanban', valor: rotuloStatus },
       { rotulo: 'Escalado em', valor: item.criado_em ? dataHora(item.criado_em) : '—' },
@@ -648,15 +652,15 @@ export function abrirDetalheEscalado(item) {
       { rotulo: 'Prioridade', valor: ROTULO_NIVEL[item.prioridade_nivel] || '—' },
       { rotulo: 'Alerta', valor: ROTULO_AMEACA[item.alerta_ameaca] ? `🚨 ${ROTULO_AMEACA[item.alerta_ameaca]} — responder em até 2 dias úteis` : '—' },
       { rotulo: 'Última movimentação', valor: item.movido_em ? `${item.movido_de ? 'de ' + item.movido_de + ' ' : ''}por ${item.movido_por || 'Sistema (automação)'} em ${dataHora(item.movido_em)}` : '—' },
-      { rotulo: 'Dados do pedido', valor: contextoContainer, largo: true },
-      { rotulo: 'Propriedades', valor: propriedadesContainer, largo: true },
-      { rotulo: 'Logística', valor: logisticaContainer, largo: true },
-      { rotulo: 'Ajuda — escalar para alguém da equipe', valor: ajudaContainer, largo: true },
-      { rotulo: 'Mensagem da cliente — foco da reclamação', valor: item.resumo_conversa || '—', largo: true },
-      { rotulo: 'Histórico completo', valor: botaoConversa, largo: true },
-      { rotulo: 'Motivo do escalonamento', valor: item.motivo_escalonamento || '—', largo: true },
-      { rotulo: 'Retenção — oferta feita ao cliente', valor: retencaoContainer, largo: true },
-      { rotulo: 'Notas internas', valor: notasContainer, largo: true },
+      { rotulo: 'Dados do pedido', valor: contextoContainer, bloco: true, metade: true },
+      { rotulo: 'Propriedades', valor: propriedadesContainer, bloco: true, metade: true },
+      { rotulo: 'Mensagem da cliente — foco da reclamação', valor: item.resumo_conversa || '—', recolhivel: true, metade: true },
+      { rotulo: 'Motivo do escalonamento', valor: item.motivo_escalonamento || '—', recolhivel: true, metade: true },
+      { rotulo: 'Atendimento', valor: botaoConversa, bloco: true },
+      { rotulo: 'Logística', valor: logisticaContainer, bloco: true, metade: true },
+      { rotulo: 'Ajuda — escalar para alguém da equipe', valor: ajudaContainer, bloco: true, metade: true },
+      { rotulo: 'Retenção — oferta feita ao cliente', valor: retencaoContainer, bloco: true },
+      { rotulo: 'Notas internas', valor: notasContainer, bloco: true },
     ],
   });
 
@@ -1214,10 +1218,11 @@ function criarNotaItem(casoId, container, nota) {
   const editada = nota.atualizado_em && nota.atualizado_em !== nota.criado_em;
   const quando = document.createElement('span');
   quando.className = 'esc-nota-quando';
-  quando.textContent = (editada ? 'editada ' : '') + relativo(nota.atualizado_em || nota.criado_em);
-  quando.title = editada
-    ? `Criada em ${dataHora(nota.criado_em)} · editada em ${dataHora(nota.atualizado_em)}`
-    : `Criada em ${dataHora(nota.criado_em)}`;
+  // Data e hora exatas visíveis (PDF 07/10, item 15); o relativo vai no tooltip.
+  quando.textContent = editada
+    ? `${dataHora(nota.criado_em)} · editada em ${dataHora(nota.atualizado_em)}`
+    : dataHora(nota.criado_em);
+  quando.title = relativo(nota.atualizado_em || nota.criado_em);
   const btnEditar = document.createElement('button');
   btnEditar.type = 'button';
   btnEditar.className = 'btn btn-icone';
