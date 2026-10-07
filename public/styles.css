@@ -2902,5 +2902,12 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .esc-sla[data-estado="ok"] { color: var(--tinta); border-color: var(--borda); }
 .esc-sla[data-estado="espera"] { color: var(--tinta-fraca); border-color: var(--borda); font-weight: 400; }
 
+.esc-filtros { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; margin: 4px 0 10px; }
+.esc-filtros-busca { flex: 1 1 320px; min-width: 220px; padding: 8px 12px; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--superficie); color: var(--tinta); }
+.esc-filtros-lista { flex: 1 1 100%; }
+.esc-filtros-lista > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--tinta-2); }
+.esc-filtros-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px 14px; align-items: end; margin-top: 10px; }
+.esc-selecao { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 8px; font-size: 13px; }
+.esc-selecao-qtd { width: 72px; padding: 6px 8px; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--superficie); color: var(--tinta); }
 .esc-fila-email { display: flex; align-items: center; gap: 6px; }
 .esc-fila-email .btn-icone { padding: 2px 7px; }

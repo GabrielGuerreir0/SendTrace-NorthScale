@@ -3,9 +3,9 @@
  * Página própria no menu, separada do Suporte Escalado (Kanban): usa os MESMOS casos (email_ia.suporte_escalado), só que vistos pelo que está pendente de
  * resposta do agente, não pela coluna do card. O agente vê só o próprio board; administrador e gestor (papel do Suporte Escalado) veem todos.
  */
-import { $, api, kpiCard, renderTabela, botaoCopiar } from './emailComum.js';
-import { n } from './format.js';
-import { abrirDetalheEscalado, abrirNoWebmail, ROTULO_TAG, rotuloDe } from './emailSuporteEscalado.js';
+import { $, api, kpiCard, renderTabela, botaoCopiar, debounce } from './emailComum.js';
+import { n, dataHora } from './format.js';
+import { abrirDetalheEscalado, abrirNoWebmail, ROTULO_TAG, rotuloDe, obterOpcoes } from './emailSuporteEscalado.js';
 
 let boardId = null;          // id de um board, ou 'todos' (só admin/gestor)
 let boards = [];
@@ -142,7 +142,93 @@ const FILAS = [
   { chave: 'primeiro', rotulo: '1º e-mail — pendente de resposta' },
   { chave: 'segundo', rotulo: '2º e-mail em diante — pendente de resposta' },
   { chave: 'todos', rotulo: 'Todos os atribuídos' },
+  { chave: 'internas', rotulo: 'Pendências internas' },   // logística e ajuda pedidas por outros agentes (item 27) — fora das duas filas de resposta
 ];
+
+/* ── filtros (itens 3, 4 e 13 do PDF de 07/10) ──
+   Os filtros por lista suspensa e por tempo restante rodam no navegador (a fila já vem com até 1.000 casos); a busca roda no servidor
+   porque procura também pelo nº do pedido do cliente. */
+const FILTROS_LISTA = [
+  { chave: 'tag_motivo', rotulo: 'Motivo (tag automática)', opcoes: () => Object.entries(ROTULO_TAG) },
+  { chave: 'motivo_contato', rotulo: 'Motivo do contato', opcoes: (o) => o.motivo_contato },
+  { chave: 'detalhamento_motivo', rotulo: 'Detalhamento do motivo', opcoes: (o) => o.detalhamento_motivo },
+  { chave: 'tipo_resolucao', rotulo: 'Tipo de resolução', opcoes: (o) => o.tipo_resolucao },
+  { chave: 'status_ticket', rotulo: 'Status do ticket', opcoes: (o) => o.status_ticket },
+  { chave: 'motivo_reenvio', rotulo: 'Motivo do reenvio', opcoes: (o) => o.motivo_reenvio },
+  { chave: 'status_logistica', rotulo: 'Status logística', opcoes: (o) => o.status_logistica },
+  { chave: 'responsavel_logistica_id', rotulo: 'Responsável (logística)', opcoes: (o) => (o.equipe ?? []).map((e) => [e.id, e.nome]) },
+  { chave: 'status_ajuda', rotulo: 'Status de ajuda', opcoes: (o) => o.status_ajuda },
+];
+const VENCE_EM = [
+  ['30', 'Vence em 30 minutos', (r) => r >= 0 && r <= 30],
+  ['60', 'Vence em 1 hora', (r) => r > 30 && r <= 60],
+  ['120', 'Vence em 2 horas', (r) => r > 60 && r <= 120],
+  ['180', 'Vence em 3 horas', (r) => r > 120 && r <= 180],
+  ['240', 'Vence em 4 horas', (r) => r > 180 && r <= 240],
+  ['vencido', 'Vencido', (r) => r < 0],
+];
+let filtros = {};            // chave → valor escolhido ('' = sem filtro)
+let busca = '';
+let barraFiltros = null;     // montada uma vez e reaproveitada a cada renderFila (não perde o foco do campo de busca)
+let selecionados = new Set();
+let pendenciasInternas = [];
+
+function passaFiltros(c) {
+  for (const f of FILTROS_LISTA) {
+    const v = filtros[f.chave];
+    if (v && String(c[f.chave] ?? '') !== v) return false;
+  }
+  if (filtros.vence) {
+    const regra = VENCE_EM.find((x) => x[0] === filtros.vence)[2];
+    if (c.restante_min === null || c.restante_min === undefined || c.fila === 'outros' || !regra(c.restante_min)) return false;
+  }
+  return true;
+}
+
+async function montarBarraFiltros() {
+  let opc = {};
+  try { opc = await obterOpcoes(); } catch { /* sem listas: a barra mostra só a busca e o tempo */ }
+  const barra = document.createElement('div');
+  barra.className = 'esc-filtros';
+  const campoBusca = document.createElement('input');
+  campoBusca.type = 'search'; campoBusca.placeholder = 'Buscar por e-mail, nº do ticket, nº do pedido, nome ou assunto…'; campoBusca.className = 'esc-filtros-busca';
+  campoBusca.addEventListener('input', debounce(() => { busca = campoBusca.value.trim(); selecionados.clear(); carregarFila(); }, 350));
+  const detalhes = document.createElement('details');
+  detalhes.className = 'esc-filtros-lista';
+  const sum = document.createElement('summary');
+  sum.textContent = 'Filtros';
+  const grade = document.createElement('div');
+  grade.className = 'esc-filtros-grade';
+  const atualizarTitulo = () => {
+    const ativos = Object.values(filtros).filter(Boolean).length;
+    sum.textContent = ativos ? `Filtros (${ativos} ativo${ativos > 1 ? 's' : ''})` : 'Filtros';
+  };
+  const aoMudar = () => { atualizarTitulo(); selecionados.clear(); renderFila(); };
+  const campo = (chave, rotulo, itens) => {
+    const sel = document.createElement('select');
+    const o0 = document.createElement('option'); o0.value = ''; o0.textContent = 'Todos'; sel.append(o0);
+    for (const it of itens) {
+      const [v, t] = Array.isArray(it) ? it : [it, it];
+      const o = document.createElement('option'); o.value = String(v); o.textContent = t; sel.append(o);
+    }
+    sel.value = filtros[chave] ?? '';
+    sel.addEventListener('change', () => { filtros[chave] = sel.value; aoMudar(); });
+    return rotuloDe(rotulo, sel);
+  };
+  grade.append(campo('vence', 'Tempo restante para responder', VENCE_EM.map(([v, t]) => [v, t])));
+  for (const f of FILTROS_LISTA) grade.append(campo(f.chave, f.rotulo, f.opcoes(opc) ?? []));
+  const limpar = document.createElement('button');
+  limpar.type = 'button'; limpar.className = 'btn'; limpar.textContent = 'Limpar filtros';
+  limpar.addEventListener('click', () => {
+    filtros = {};
+    for (const sel of grade.querySelectorAll('select')) sel.value = '';
+    aoMudar();
+  });
+  grade.append(limpar);
+  detalhes.append(sum, grade);
+  barra.append(campoBusca, detalhes);
+  return barra;
+}
 
 function minutosTxt(min) {
   const m = Math.abs(Math.round(min));
@@ -183,19 +269,26 @@ async function carregarFila() {
     raiz.append(p);
     return;
   }
-  const { ok, dados } = await api(`/api/suporte-escalado/fila?board_id=${boardId}`);
+  if (!barraFiltros) barraFiltros = await montarBarraFiltros();
+  const [{ ok, dados }, pend] = await Promise.all([
+    api(`/api/suporte-escalado/fila?board_id=${boardId}${busca ? `&q=${encodeURIComponent(busca)}` : ''}`),
+    api(`/api/suporte-escalado/pendencias-internas?board_id=${boardId}`),
+  ]);
   if (!ok) {
     if (!filaDados) raiz.textContent = 'Não consegui carregar a fila.';
     return;
   }
   filaDados = dados;
+  pendenciasInternas = pend.ok ? (pend.dados.pendencias ?? []) : [];
+  const vivos = new Set(dados.casos.map((c) => c.id));
+  for (const id of [...selecionados]) if (!vivos.has(id)) selecionados.delete(id);
   renderFila();
 }
 
 function renderFila() {
   const raiz = $('sh-subaba-fila');
   const { resumo, casos, truncado } = filaDados;
-  const casosAba = (chave) => (chave === 'todos' ? casos : casos.filter((c) => c.fila === chave));
+  const casosAba = (chave) => (chave === 'internas' ? pendenciasInternas : (chave === 'todos' ? casos : casos.filter((c) => c.fila === chave)).filter(passaFiltros));
 
   const painel = document.createElement('section');
   painel.className = 'kpis kpis--suporte';
@@ -223,46 +316,135 @@ function renderFila() {
     abas.append(b);
   }
 
+  const interna = filaAba === 'internas';
+  const linhas = casosAba(filaAba);
+  const podeSelecionar = souGestor && !interna;
   const tabela = document.createElement('table');
   tabela.className = 'sup-tabela esc-fila-tabela';
   const cab = tabela.createTHead().insertRow();
-  for (const t of ['E-mail do cliente', 'Assunto', 'Motivo', 'Prioridade', 'Tempo para responder', 'Agente responsável']) {
-    const th = document.createElement('th'); th.textContent = t; cab.append(th);
+  const titulos = interna
+    ? ['Tipo', 'E-mail do cliente', 'Assunto', 'Pedido por', 'Para', 'O que fazer', 'Desde']
+    : ['Nº', 'E-mail do cliente', 'Assunto', 'Motivo', 'Prioridade', 'Tempo para responder', 'Agente responsável'];
+  if (podeSelecionar) {
+    const th = document.createElement('th');
+    const todosMarcados = linhas.length > 0 && linhas.every((c) => selecionados.has(c.id));
+    const marca = document.createElement('input');
+    marca.type = 'checkbox'; marca.checked = todosMarcados; marca.title = 'Marcar todos os tickets desta lista';
+    marca.addEventListener('change', () => { for (const c of linhas) (marca.checked ? selecionados.add(c.id) : selecionados.delete(c.id)); renderFila(); });
+    th.append(marca); cab.append(th);
   }
+  for (const t of titulos) { const th = document.createElement('th'); th.textContent = t; cab.append(th); }
   const corpo = tabela.createTBody();
-  const linhas = casosAba(filaAba);
-  const colunasFila = [
-    { render: (c) => {
-      const d = document.createElement('div');
-      const linha = document.createElement('div');
-      linha.className = 'esc-fila-email';
-      const txt = document.createElement('span'); txt.textContent = c.remetente_email;
-      const webmail = document.createElement('button');
-      webmail.type = 'button'; webmail.className = 'btn btn-icone'; webmail.textContent = '✉';
-      if (c.email_id) {
-        webmail.title = 'Abrir o e-mail original na caixa (Hostinger)';
-        webmail.addEventListener('click', (ev) => { ev.stopPropagation(); abrirNoWebmail(c.email_id, webmail); });
-      } else { webmail.disabled = true; webmail.title = 'Nenhum e-mail vinculado a este caso.'; }
-      linha.append(txt, botaoCopiar(c.remetente_email, { titulo: `Copiar ${c.remetente_email}` }), webmail);
-      d.append(linha);
-      if (c.nome) { const s = document.createElement('small'); s.textContent = c.nome; d.append(s); }
-      return d;
-    } },
-    { classe: 'esc-fila-assunto', render: (c) => c.assunto || '—' },
-    { render: (c) => ROTULO_TAG[c.tag_motivo] || '—' },
-    { render: (c) => (c.prioridade_nivel === 'alta' ? 'Alta' : c.prioridade_nivel === 'media' ? 'Média' : '—') },
-    { render: selarSla },
-    { render: (c) => c.agente || '—' },
-  ];
-  colunasFila.aoClicarLinha = (c) => abrirDetalheEscalado(c);
-  renderTabela(corpo, linhas, colunasFila, { vazio: filaAba === 'todos' ? 'Nenhum ticket em aberto atribuído.' : 'Nada pendente de resposta nesta fila. 🎉' });
+
+  const celulaEmail = (c) => {
+    const d = document.createElement('div');
+    const linha = document.createElement('div');
+    linha.className = 'esc-fila-email';
+    const txt = document.createElement('span'); txt.textContent = c.remetente_email;
+    const webmail = document.createElement('button');
+    webmail.type = 'button'; webmail.className = 'btn btn-icone'; webmail.textContent = '✉';
+    if (c.email_id) {
+      webmail.title = 'Abrir o e-mail original na caixa (Hostinger)';
+      webmail.addEventListener('click', (ev) => { ev.stopPropagation(); abrirNoWebmail(c.email_id, webmail); });
+    } else { webmail.disabled = true; webmail.title = 'Nenhum e-mail vinculado a este caso.'; }
+    linha.append(txt, botaoCopiar(c.remetente_email, { titulo: `Copiar ${c.remetente_email}` }), webmail);
+    d.append(linha);
+    if (c.nome) { const s2 = document.createElement('small'); s2.textContent = c.nome; d.append(s2); }
+    return d;
+  };
+  const colunasBase = interna
+    ? [
+      { render: (p) => (p.tipo === 'ajuda' ? 'Ajuda' : 'Logística') },
+      { render: (p) => celulaEmail(p) },
+      { classe: 'esc-fila-assunto', render: (p) => p.assunto || '—' },
+      { render: (p) => p.pedido_por || '—' },
+      { render: (p) => p.para_nome || '—' },
+      { render: (p) => (p.tipo === 'ajuda' ? `Responder o pedido de ajuda${p.nota ? `: ${p.nota.slice(0, 80)}` : ''}` : `Logística — ${p.detalhe}${p.nota ? ` (${p.nota})` : ''}`) },
+      { render: (p) => (p.desde ? dataHora(p.desde) : '—') },
+    ]
+    : [
+      { render: (c) => `#${c.id}` },
+      { render: celulaEmail },
+      { classe: 'esc-fila-assunto', render: (c) => c.assunto || '—' },
+      { render: (c) => ROTULO_TAG[c.tag_motivo] || '—' },
+      { render: (c) => (c.prioridade_nivel === 'alta' ? 'Alta' : c.prioridade_nivel === 'media' ? 'Média' : '—') },
+      { render: selarSla },
+      { render: (c) => c.agente || '—' },
+    ];
+  const colunasFila = podeSelecionar
+    ? [{ render: (c) => {
+      const cx = document.createElement('input');
+      cx.type = 'checkbox'; cx.checked = selecionados.has(c.id);
+      cx.addEventListener('click', (ev) => ev.stopPropagation());
+      cx.addEventListener('change', () => { (cx.checked ? selecionados.add(c.id) : selecionados.delete(c.id)); renderFila(); });
+      return cx;
+    } }, ...colunasBase]
+    : colunasBase;
+  colunasFila.aoClicarLinha = interna
+    ? (p) => abrirDetalheEscalado({ ...p, id: p.caso_id, criado_em: p.caso_criado_em })
+    : (c) => abrirDetalheEscalado(c);
+  renderTabela(corpo, linhas, colunasFila, {
+    vazio: interna ? 'Nenhuma pendência interna para este board. 🎉'
+      : (Object.values(filtros).some(Boolean) || busca ? 'Nenhum ticket encontrado com estes filtros.'
+        : (filaAba === 'todos' ? 'Nenhum ticket em aberto atribuído.' : 'Nada pendente de resposta nesta fila. 🎉')),
+  });
 
   const nota = document.createElement('p');
   nota.className = 'rodape-nota';
-  nota.textContent = truncado
-    ? 'Mostrando os 1.000 mais urgentes. Ordenado por tempo restante (estourados primeiro). O tempo conta só dentro do turno (seg–sex, horário de Brasília).'
-    : 'Ordenado por tempo restante (estourados primeiro). O tempo conta só dentro do turno (seg–sex, horário de Brasília). Clique numa linha para abrir o ticket.';
-  raiz.replaceChildren(painel, abas, tabela, nota);
+  nota.textContent = interna
+    ? 'Pendências que outro agente pediu a este board (logística e ajuda). Ficam fora das filas de resposta ao cliente. Clique numa linha para abrir o ticket.'
+    : (truncado
+      ? 'Mostrando os 1.000 mais urgentes. Ordenado por tempo restante (estourados primeiro). O tempo conta só dentro do turno (seg–sex, horário de Brasília).'
+      : 'Ordenado por tempo restante (estourados primeiro). O tempo conta só dentro do turno (seg–sex, horário de Brasília). Clique numa linha para abrir o ticket.');
+  raiz.replaceChildren(painel, barraFiltros, abas, ...(podeSelecionar ? [barraSelecao(linhas)] : []), tabela, nota);
+}
+
+/** Barra da seleção em massa: transferir os tickets marcados para outro agente de uma vez (item 7). */
+function barraSelecao(linhasVisiveis) {
+  const barra = document.createElement('div');
+  barra.className = 'esc-selecao';
+  const info = document.createElement('span');
+  info.textContent = selecionados.size ? `${n(selecionados.size)} ticket${selecionados.size > 1 ? 's' : ''} marcado${selecionados.size > 1 ? 's' : ''}` : 'Marque tickets na lista para transferi-los em massa.';
+  barra.append(info);
+
+  const qtd = document.createElement('input');
+  qtd.type = 'number'; qtd.min = '1'; qtd.max = String(linhasVisiveis.length || 1); qtd.placeholder = 'Qtd.'; qtd.className = 'esc-selecao-qtd';
+  const marcarN = document.createElement('button');
+  marcarN.type = 'button'; marcarN.className = 'btn'; marcarN.textContent = 'Marcar os primeiros';
+  marcarN.title = 'Marca os N primeiros da lista (a ordem é a de urgência)';
+  marcarN.addEventListener('click', () => {
+    const k = Math.max(0, Math.min(Number(qtd.value) || 0, linhasVisiveis.length));
+    if (!k) return;
+    selecionados = new Set(linhasVisiveis.slice(0, k).map((c) => c.id));
+    renderFila();
+  });
+  barra.append(qtd, marcarN);
+
+  if (selecionados.size) {
+    const destino = document.createElement('select');
+    const o0 = document.createElement('option'); o0.value = ''; o0.textContent = 'Transferir para…'; destino.append(o0);
+    for (const b of boards.filter((x) => x.ativo !== false && x.usuario_id)) {
+      const o = document.createElement('option'); o.value = String(b.id); o.textContent = b.nome; destino.append(o);
+    }
+    const ir = document.createElement('button');
+    ir.type = 'button'; ir.className = 'btn btn-forte'; ir.textContent = 'Transferir';
+    ir.addEventListener('click', async () => {
+      if (!destino.value) { window.alert('Escolha para quem transferir.'); return; }
+      const nome = destino.options[destino.selectedIndex].textContent;
+      if (!window.confirm(`Transferir ${selecionados.size} ticket(s) para ${nome}? Eles voltam para "Pendente" no board de destino.`)) return;
+      ir.disabled = true;
+      const { ok, dados } = await api('/api/suporte-escalado/transferir-em-massa', { metodo: 'POST', corpo: { ids: [...selecionados], board_id: Number(destino.value) } });
+      ir.disabled = false;
+      if (!ok) { window.alert(dados?.erro ?? dados?.detail ?? dados?.message ?? 'Não consegui transferir.'); return; }
+      selecionados.clear();
+      await carregarFila();
+    });
+    const limpa = document.createElement('button');
+    limpa.type = 'button'; limpa.className = 'btn'; limpa.textContent = 'Desmarcar';
+    limpa.addEventListener('click', () => { selecionados.clear(); renderFila(); });
+    barra.append(destino, ir, limpa);
+  }
+  return barra;
 }
 
 /* ═══════════════════  painel da equipe (item 7 do PDF da Késsia)  ═══════════════════

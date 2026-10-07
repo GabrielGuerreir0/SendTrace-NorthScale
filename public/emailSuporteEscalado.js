@@ -775,7 +775,7 @@ function criarCampoDataEntrega(casoId, dataEntregaIso) {
    fechadas e a equipe) e salva com PUT .../ficha. Quem só recebeu um pedido de ajuda vê os campos sem editar. */
 
 let opcoesEscalado = null;
-async function obterOpcoes() {
+export async function obterOpcoes() {
   if (opcoesEscalado) return opcoesEscalado;
   const { ok, dados } = await api('/api/suporte-escalado/opcoes');
   if (!ok) throw new Error('opcoes');
@@ -996,7 +996,7 @@ async function carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl)
       ],
     });
     montarBlocoFicha({
-      ...base, container: contLog, atualizadoPor: f.logistica_atualizado_por, atualizadoEm: f.logistica_atualizado_em,
+      ...base, podeEditar: dados.pode_editar_logistica ?? dados.pode_editar, container: contLog, atualizadoPor: f.logistica_atualizado_por, atualizadoEm: f.logistica_atualizado_em,
       definicao: [
         { chave: 'status_logistica', rotulo: 'Status logística', tipo: 'lista', opcoes: opc.status_logistica },
         { chave: 'motivo_reenvio', rotulo: 'Motivo do reenvio', tipo: 'lista', opcoes: opc.motivo_reenvio },

@@ -1033,7 +1033,15 @@ export default async function rotasEmailIACentral(app) {
         WHERE a.suporte_escalado_id = $1 AND b.usuario_id = $2 LIMIT 1`,
       [casoId, req.usuario.user_id],
     );
-    return rows.length > 0;
+    if (rows.length > 0) return true;
+    // Quem é o responsável da logística do caso (pendência interna, 07/10) também lê o caso.
+    const { rows: resp } = await query(
+      `SELECT 1 FROM email_ia.suporte_escalado_ficha fi
+         JOIN email_ia.suporte_escalado_boards b ON b.id = fi.responsavel_board_id
+        WHERE fi.suporte_escalado_id = $1 AND b.usuario_id = $2 LIMIT 1`,
+      [casoId, req.usuario.user_id],
+    );
+    return resp.length > 0;
   }
 
   async function boardDoCaso(casoId) {
@@ -1592,6 +1600,43 @@ export default async function rotasEmailIACentral(app) {
     );
     if (!rows[0]) throw new ErroHttp(404, 'Caso escalado não encontrado.');
     return rows[0];
+  });
+
+  /* ═══════════════════  POST /api/suporte-escalado/transferir-em-massa  ══════════════
+     Mesma regra de /transferir (o caso reinicia no board de destino), mas para vários casos de uma vez — o gestor marca os tickets
+     na fila do Suporte Humano e manda todos ao outro agente (PDF de 07/10, item 7). Até 500 casos por chamada. */
+
+  app.post('/api/suporte-escalado/transferir-em-massa', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Transfere vários casos escalados para o board de outro responsável',
+      description: 'Só administradores e gestores. Cada caso volta para "Pendente" no board de destino, como em /transferir.',
+      security: [{ bearerAuth: [] }],
+      body: {
+        type: 'object',
+        required: ['ids', 'board_id'],
+        additionalProperties: false,
+        properties: {
+          ids: { type: 'array', minItems: 1, maxItems: 500, uniqueItems: true, items: { type: 'integer' } },
+          board_id: { type: 'integer' },
+        },
+      },
+    },
+  }, async (req) => {
+    if (!req.usuario.admin && !req.usuario.gestorEscalado && !req.usuario.gestorHumano) throw new ErroHttp(403, 'Só administradores e gestores transferem casos entre boards.');
+    const { ids, board_id: boardIdDestino } = req.body;
+    const destino = await boardPorId(boardIdDestino);
+    if (!destino) throw new ErroHttp(404, 'Board de destino não encontrado.');
+    const { rows } = await queryComoUsuario(req,
+      `UPDATE email_ia.suporte_escalado
+       SET board_id = $1, status = 'pendente', iniciado_em = NULL, finalizado_em = NULL,
+           primeiro_toque_humano_em = coalesce(primeiro_toque_humano_em, now()), atualizado_em = now()
+       WHERE id = ANY($2::bigint[]) AND board_id IS DISTINCT FROM $1
+       RETURNING id`,
+      [boardIdDestino, ids],
+    );
+    return { transferidos: rows.length, ignorados: ids.length - rows.length };
   });
 
   /* ═══════════════════════  POST /api/suporte-escalado/reativar  ══════════════ */

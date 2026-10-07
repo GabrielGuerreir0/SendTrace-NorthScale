@@ -131,10 +131,22 @@ export default async function rotasSuporteEscaladoFicha(app) {
     return rows.length > 0;
   }
 
+  // Responsável da logística do caso (pendência interna): lê o caso e edita só o bloco Logística.
+  async function ehResponsavelLogistica(req, casoId) {
+    if (req.usuario.user_id == null) return false;
+    const { rows } = await query(
+      `SELECT 1 FROM email_ia.suporte_escalado_ficha fi
+         JOIN email_ia.suporte_escalado_boards b ON b.id = fi.responsavel_board_id
+        WHERE fi.suporte_escalado_id = $1 AND b.usuario_id = $2 LIMIT 1`,
+      [casoId, req.usuario.user_id],
+    );
+    return rows.length > 0;
+  }
+
   async function exigirLeitura(req, id) {
     const caso = await casoComBoard(id);
     if (!caso) throw new ErroHttp(404, 'Caso escalado não encontrado.');
-    if (!ehDono(req, caso) && !(await recebeuAjuda(req, id))) throw new ErroHttp(403, 'Este caso não é de um board seu.');
+    if (!ehDono(req, caso) && !(await recebeuAjuda(req, id)) && !(await ehResponsavelLogistica(req, id))) throw new ErroHttp(403, 'Este caso não é de um board seu.');
     return caso;
   }
 
@@ -194,6 +206,7 @@ export default async function rotasSuporteEscaladoFicha(app) {
     const pedido = c?.remetente_email ? await pedidoDoCliente(c.remetente_email) : null;
     return {
       pode_editar: ehDono(req, caso),
+      pode_editar_logistica: ehDono(req, caso) || (await ehResponsavelLogistica(req, req.params.id)),
       pedido_sugerido: pedido ? { valor_usd: pedido.valor_usd ?? null, plataforma: pedido.plataforma } : null,
       chargeback_pedido_em: pedido?.chargeback ? (pedido.chargeback_em ?? true) : null,
       ficha: { ...Object.fromEntries(CAMPOS_FICHA.map((c) => [c, null])), status_ticket: 'Aberto', ...ficha },
@@ -239,7 +252,13 @@ export default async function rotasSuporteEscaladoFicha(app) {
       },
     },
   }, async (req) => {
-    await exigirEscrita(req, req.params.id);
+    const casoPut = await casoComBoard(req.params.id);
+    if (!casoPut) throw new ErroHttp(404, 'Caso escalado não encontrado.');
+    if (!ehDono(req, casoPut)) {
+      // O responsável da logística só mexe no bloco Logística (ex.: trocar o status para "Responder cliente" e passar a vez).
+      const soLogistica = Object.keys(req.body).every((c) => BLOCO_LOGISTICA.includes(c));
+      if (!(soLogistica && await ehResponsavelLogistica(req, req.params.id))) throw new ErroHttp(403, 'Este caso não é de um board seu.');
+    }
     const tem = (o, c) => Object.prototype.hasOwnProperty.call(o, c);
     const limpa = (v) => (typeof v === 'string' ? (v.trim() === '' ? null : v.trim()) : (v ?? null));
     const toca = (bloco) => bloco.some((c) => tem(req.body, c));
