@@ -1657,8 +1657,40 @@ async function atender(req, res, url, sessao) {
     const boardFila = url.searchParams.get('board_id');
     if (!boardFila) return json(res, 400, { erro: 'Informe o board.' });
     try {
-      return json(res, 200, await obterApi('/api/suporte-escalado/fila', { board_id: boardFila }));
+      return json(res, 200, await obterApi('/api/suporte-escalado/fila', { board_id: boardFila, q: url.searchParams.get('q') }));
     } catch (err) { return erroFicha(err, 'Não consegui carregar a fila.'); }
+  }
+
+  /* ── Suporte Humano, 2º momento da solicitação da Késsia (PDF de 07/10/2026): tudo repassa à API, que valida quem pode (403/404/422) ── */
+  if (url.pathname === '/api/suporte-escalado/pendencias-internas' && req.method === 'GET') {
+    const b = url.searchParams.get('board_id');
+    if (!b) return json(res, 400, { erro: 'Informe o board.' });
+    try { return json(res, 200, await obterApi('/api/suporte-escalado/pendencias-internas', { board_id: b })); } catch (err) { return erroFicha(err, 'Não consegui carregar as pendências internas.'); }
+  }
+  if (url.pathname === '/api/suporte-escalado/buscar' && req.method === 'GET') {
+    try { return json(res, 200, await obterApi('/api/suporte-escalado/buscar', { q: url.searchParams.get('q') })); } catch (err) { return erroFicha(err, 'Não consegui buscar.'); }
+  }
+  if (url.pathname === '/api/suporte-escalado/relatorio' && req.method === 'GET') {
+    try {
+      return json(res, 200, await obterApi('/api/suporte-escalado/relatorio', {
+        board_id: url.searchParams.get('board_id'), de: url.searchParams.get('de'), ate: url.searchParams.get('ate'),
+      }));
+    } catch (err) { return erroFicha(err, 'Não consegui gerar o relatório.'); }
+  }
+  if (url.pathname === '/api/suporte-escalado/dashboard-propriedades' && req.method === 'GET') {
+    try { return json(res, 200, await obterApi('/api/suporte-escalado/dashboard-propriedades', { dias: url.searchParams.get('dias') })); } catch (err) { return erroFicha(err, 'Não consegui carregar os dashboards.'); }
+  }
+  if (url.pathname === '/api/suporte-escalado/transferir-em-massa' && req.method === 'POST') {
+    try { return json(res, 200, await criarApi('/api/suporte-escalado/transferir-em-massa', await lerJson(req))); } catch (err) { return erroFicha(err, 'Não consegui transferir os tickets.'); }
+  }
+  const rotaTicketHumano = /^\/api\/suporte-escalado\/(\d+)\/(atividades|mesclar|responder)$/.exec(url.pathname);
+  if (rotaTicketHumano) {
+    const [, casoId, parte] = rotaTicketHumano;
+    try {
+      if (parte === 'atividades' && req.method === 'GET') return json(res, 200, await obterApi(`/api/suporte-escalado/${casoId}/atividades`));
+      if (parte === 'mesclar' && req.method === 'POST') return json(res, 200, await criarApi(`/api/suporte-escalado/${casoId}/mesclar`, await lerJson(req)));
+      if (parte === 'responder' && req.method === 'POST') return json(res, 201, await criarApi(`/api/suporte-escalado/${casoId}/responder`, await lerJson(req)));
+    } catch (err) { return erroFicha(err, 'Não consegui concluir a ação.'); }
   }
 
   /* ── turnos e disponibilidade dos agentes (067): leitura para todos, escrita só admin (a API recusa com 403) ── */
