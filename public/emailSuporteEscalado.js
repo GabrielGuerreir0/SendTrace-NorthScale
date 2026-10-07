@@ -14,7 +14,7 @@ import {
 import { n, relativo, dataHora, duracaoH } from './format.js';
 import { desenharColunas } from './charts.js';
 import { abrirNaTabela } from './emailTickets.js';
-import { abrirModalEmails } from './emailDetalhes.js';
+import { abrirModalEmails, itensDaConversa, carregarConversaDoCliente } from './emailDetalhes.js';
 import { carregarFormularios } from './formulariosEscalado.js';
 
 /* ═══════════════════════════════  estado  ═══════════════════════════════ */
@@ -640,13 +640,11 @@ export function abrirDetalheEscalado(item) {
   });
   const atendimentoContainer = document.createElement('div');
   atendimentoContainer.className = 'esc-atendimento';
-  atendimentoContainer.append(botaoConversa, montarMesclagem(item));
+  botaoConversa.textContent = 'Abrir a conversa em tela cheia →';
+  atendimentoContainer.append(montarAtendimento(item, botaoConversa));
   const ticketEl = document.createElement('span');
   ticketEl.textContent = `#${item.id}`;
 
-  const atividadesContainer = document.createElement('div');
-  atividadesContainer.className = 'esc-atividades';
-  atividadesContainer.textContent = 'Carregando…';
   const alertaEl = document.createElement('span');
   alertaEl.textContent = ROTULO_AMEACA[item.alerta_ameaca] ? `🚨 ${ROTULO_AMEACA[item.alerta_ameaca]} — responder em até 2 dias úteis` : '—';
 
@@ -674,7 +672,6 @@ export function abrirDetalheEscalado(item) {
       { rotulo: 'Atendimento', valor: atendimentoContainer, bloco: true },
       { rotulo: 'Logística', valor: logisticaContainer, bloco: true, metade: true },
       { rotulo: 'Ajuda — escalar para alguém da equipe', valor: ajudaContainer, bloco: true, metade: true },
-      { rotulo: 'Histórico de atividades', valor: atividadesContainer, recolhivel: true },
       { rotulo: 'Notas internas', valor: notasContainer, bloco: true },
     ],
   });
@@ -682,7 +679,98 @@ export function abrirDetalheEscalado(item) {
   carregarContexto(item, contextoContainer);
   carregarFichaAgente(item, propriedadesContainer, logisticaContainer, ajudaContainer, alertaEl, ticketEl);
   carregarNotas(item.id, notasContainer);
-  carregarAtividades(item.id, atividadesContainer);
+}
+
+/* ═══════════════════  Atendimento: conversa em abas + responder pelo SendTrace  ═══════════════════
+   PDF de 07/10, itens 2 e 18. Abas dentro da ficha — Atendimento humano (cliente ↔ agentes), Atendimento IA (cliente ↔ IA e e-mails automáticos),
+   Tudo e Histórico do ticket — e, abaixo, o campo de resposta: o e-mail sai como support@ pela SMTP da Hostinger, sem abrir o webmail. */
+function montarAtendimento(item, botaoTelaCheia) {
+  const raiz = document.createElement('div');
+  raiz.className = 'esc-atend';
+  const ABAS = [['humano', 'Atendimento humano'], ['ia', 'Atendimento IA'], ['tudo', 'Tudo'], ['historico', 'Histórico do ticket']];
+  const PAPEIS = { humano: ['cliente', 'agente'], ia: ['cliente', 'ia', 'boasvindas', 'sistema'], tudo: null };
+  let aba = 'humano';
+  let itens = [];
+  let carregado = false;
+  let podeResponder = false;
+  let destinos = [item.remetente_email];
+
+  const barra = document.createElement('div'); barra.className = 'esc-atend-abas'; barra.setAttribute('role', 'tablist');
+  const painel = document.createElement('div'); painel.className = 'esc-atend-painel';
+  const compor = document.createElement('form'); compor.className = 'esc-atend-compor';
+  const acoes = document.createElement('div'); acoes.className = 'esc-atend-acoes';
+  acoes.append(botaoTelaCheia, montarMesclagem(item));
+
+  const caixa = document.createElement('textarea');
+  caixa.rows = 4; caixa.maxLength = 8000; caixa.placeholder = 'Escreva a resposta ao cliente… (sai como support@, na mesma conversa do e-mail dele)';
+  const contador = document.createElement('span'); contador.className = 'esc-atend-contador'; contador.textContent = '0/8000';
+  caixa.addEventListener('input', () => { contador.textContent = `${caixa.value.length}/8000`; });
+  const para = document.createElement('select'); para.hidden = true;
+  const enviar = document.createElement('button'); enviar.type = 'submit'; enviar.className = 'btn btn-forte'; enviar.textContent = 'Responder';
+  const rodape = document.createElement('div'); rodape.className = 'esc-atend-compor-rodape';
+  rodape.append(para, contador, enviar);
+  compor.append(caixa, rodape);
+
+  const contar = (papeis) => itens.filter((i) => papeis.includes(i.papel)).length;
+  function desenhar() {
+    barra.replaceChildren();
+    for (const [chave, rotulo] of ABAS) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'subaba-btn'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(aba === chave));
+      const qtd = chave === 'humano' ? contar(['agente']) : chave === 'ia' ? contar(['ia', 'boasvindas', 'sistema']) : null;
+      b.textContent = qtd != null && carregado ? `${rotulo} (${qtd})` : rotulo;
+      b.addEventListener('click', () => { aba = chave; desenhar(); });
+      barra.append(b);
+    }
+    compor.hidden = !(podeResponder && (aba === 'humano' || aba === 'tudo'));
+    if (aba === 'historico') {
+      painel.textContent = 'Carregando…';
+      carregarAtividades(item.id, painel);
+      return;
+    }
+    if (!carregado) { painel.textContent = 'Carregando a conversa…'; return; }
+    const papeis = PAPEIS[aba];
+    const visiveis = itens.filter((i) => !papeis || papeis.includes(i.papel));
+    if (!visiveis.length) { painel.textContent = 'Nenhuma mensagem nesta aba ainda.'; return; }
+    painel.replaceChildren(...visiveis.map((i) => i.b.cloneNode(true)));
+    painel.scrollTop = painel.scrollHeight;
+  }
+
+  async function carregar() {
+    try {
+      const { ok, dados } = await api(`/api/suporte-escalado/${item.id}/ficha`);
+      const filhos = ok ? (dados.mesclagem?.filhos ?? []).map((f) => f.remetente_email).filter(Boolean) : [];
+      podeResponder = ok && !!dados.pode_editar;
+      destinos = [item.remetente_email, ...filhos];
+      para.hidden = filhos.length === 0;
+      para.replaceChildren(...destinos.map((e) => { const o = document.createElement('option'); o.value = e; o.textContent = `Para: ${e}`; return o; }));
+      const conv = await carregarConversaDoCliente(item.remetente_email, filhos);
+      itens = itensDaConversa(conv);
+    } catch { itens = []; }
+    carregado = true;
+    desenhar();
+  }
+
+  compor.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const texto = caixa.value.trim();
+    if (!texto) return;
+    const destino = para.hidden ? item.remetente_email : para.value;
+    if (!window.confirm(`Enviar esta resposta para ${destino}? O e-mail sai agora, como support@.`)) return;
+    enviar.disabled = true;
+    const { ok, dados } = await api(`/api/suporte-escalado/${item.id}/responder`, { metodo: 'POST', corpo: { texto, para_email: destino } });
+    enviar.disabled = false;
+    if (!ok) { window.alert(dados?.erro ?? dados?.detail ?? dados?.message ?? 'Não consegui enviar a resposta.'); return; }
+    caixa.value = ''; contador.textContent = '0/8000';
+    if (dados.copiado_para_enviados === false) window.alert('Resposta enviada. Aviso: não consegui guardar a cópia na pasta Enviados do webmail.');
+    document.dispatchEvent(new CustomEvent('escalado:ficha-salva'));   // a fila e o card andam na hora
+    carregado = false; desenhar(); carregar();
+  });
+
+  raiz.append(barra, painel, compor, acoes);
+  desenhar();
+  carregar();
+  return raiz;
 }
 
 /* ═══════════════════  mesclar tickets  ═══════════════════

@@ -3,6 +3,7 @@
  *
  *   GET  /api/suporte-escalado/opcoes                    → listas suspensas (Propriedades/Logística) + equipe (quem pode receber ajuda)
  *   GET  /api/suporte-escalado/:id/ficha                 → Propriedades + Logística + pedidos de ajuda do caso
+ *   POST /api/suporte-escalado/:id/responder             → o agente responde o cliente pelo SendTrace (SMTP da Hostinger, como support@) — PDF de 07/10, item 2
  *   GET  /api/suporte-escalado/buscar?q=                 → procura outro ticket por e-mail, nome ou nº (para mesclar)
  *   POST /api/suporte-escalado/:id/mesclar               → junta este ticket a outro (ticket-mãe = o mais antigo; migração 086)
  *   GET  /api/suporte-escalado/:id/atividades            → linha do tempo do ticket (chegada, coluna, propriedades, notas, ajuda, respostas) — PDF de 07/10, item 6
@@ -18,6 +19,7 @@
 import { query } from '../../server/db.js';
 import { ErroHttp } from '../comum.js';
 import { pedidoDoCliente } from '../pedidoDoCliente.js';
+import { enviarRespostaSuporte, respostaConfigurada } from '../../server/emailSuporte.js';
 
 export const OPCOES = {
   motivo_contato: ['Reembolso', 'Chargeback', 'Logística', 'Dúvidas'],
@@ -231,6 +233,73 @@ export default async function rotasSuporteEscaladoFicha(app) {
         pode_responder: !a.respondido_em && (!!req.usuario.admin || (destinoId != null && destinoId === req.usuario.user_id)),
       })),
     };
+  });
+
+  /* ═══════════════════  POST /api/suporte-escalado/:id/responder  ═══════════════════
+     O agente responde o cliente sem sair do SendTrace. Sai como support@ (SMTP da Hostinger), na mesma conversa do e-mail do cliente
+     (In-Reply-To/References do último e-mail dele); uma cópia vai para a pasta Enviados e a resposta é registrada na hora em
+     `respostas_agente` — o gatilho do ciclo agente ↔ lead (070) move o card para "Esperando resposta" e o SLA da vez do agente fecha.
+     Dono do board, admin ou gestor. Sem login de SMTP no servidor, responde 503 e nada é enviado. */
+  app.post('/api/suporte-escalado/:id/responder', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Responde o cliente do ticket por e-mail (como support@)',
+      security: [{ bearerAuth: [] }],
+      params: idCaso,
+      body: {
+        type: 'object', required: ['texto'], additionalProperties: false,
+        properties: {
+          texto: { type: 'string', minLength: 1, maxLength: 8000 },
+          assunto: { type: 'string', maxLength: 300 },
+          para_email: { type: 'string', maxLength: 320 },
+        },
+      },
+    },
+  }, async (req, resposta) => {
+    if (!respostaConfigurada) throw new ErroHttp(503, 'O envio de respostas pelo SendTrace ainda não está configurado neste servidor (falta o login SMTP do suporte).');
+    await exigirEscrita(req, req.params.id);
+    const texto = req.body.texto.trim();
+    if (!texto) throw new ErroHttp(400, 'Escreva a resposta.');
+    const { rows: [caso] } = await query(
+      'SELECT id, remetente_email, board_id FROM email_ia.suporte_escalado WHERE id = $1', [req.params.id],
+    );
+    // Destino: o e-mail do ticket, ou o de um ticket-filho mesclado a ele.
+    const { rows: filhos } = await query('SELECT remetente_email FROM email_ia.suporte_escalado WHERE ticket_mae_id = $1', [caso.id]);
+    const permitidos = [caso.remetente_email, ...filhos.map((f) => f.remetente_email)].filter(Boolean).map((e) => e.toLowerCase());
+    const para = (req.body.para_email ?? caso.remetente_email).trim().toLowerCase();
+    if (!permitidos.includes(para)) throw new ErroHttp(400, 'Este e-mail não pertence ao ticket.');
+    // Trava de clique duplo: o mesmo texto para o mesmo cliente no último minuto.
+    const { rows: dup } = await query(
+      `SELECT 1 FROM email_ia.respostas_agente WHERE caso_id = $1 AND lower(para_email) = $2 AND corpo_texto = $3 AND enviado_em > now() - interval '60 seconds' LIMIT 1`,
+      [caso.id, para, texto],
+    );
+    if (dup.length) throw new ErroHttp(409, 'Esta mesma resposta acabou de ser enviada.');
+    // Último e-mail do cliente: dá o assunto ("Re: …") e o encadeamento da conversa.
+    const { rows: [ultimo] } = await query(
+      `SELECT message_id, assunto FROM email_ia.emails WHERE lower(remetente_email) = $1 AND plataforma_origem IS NULL ORDER BY data_email DESC LIMIT 1`,
+      [para],
+    );
+    const base = (req.body.assunto?.trim() || ultimo?.assunto || 'Your support request').replace(/^\s*(re|res)\s*:\s*/i, '');
+    let envio;
+    try {
+      envio = await enviarRespostaSuporte({
+        para, assunto: `Re: ${base}`, texto, inReplyTo: ultimo?.message_id || undefined,
+      });
+    } catch (err) {
+      req.log.error({ err: err.message }, 'falha ao enviar resposta ao cliente');
+      throw new ErroHttp(502, 'Não consegui enviar o e-mail agora (SMTP recusou ou está fora do ar). Nada foi registrado; tente de novo.');
+    }
+    await query(
+      `INSERT INTO email_ia.respostas_agente (message_id, in_reply_to, para_email, assunto, corpo_texto, enviado_em, caso_id, board_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (message_id) DO NOTHING`,
+      [envio.messageId, ultimo?.message_id ?? null, para, `Re: ${base}`, texto, envio.enviadoEm, caso.id, caso.board_id],
+    );
+    await query(
+      `UPDATE email_ia.suporte_escalado SET primeiro_toque_humano_em = coalesce(primeiro_toque_humano_em, now()), atualizado_em = now() WHERE id = $1`,
+      [caso.id],
+    );
+    return resposta.code(201).send({ enviado_em: envio.enviadoEm, copiado_para_enviados: envio.copiadoParaEnviados });
   });
 
   /* ═══════════════════  GET /api/suporte-escalado/buscar  ═══════════════════

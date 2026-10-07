@@ -167,11 +167,15 @@ function balaoConversa(papel, remetente, texto, quando) {
   return div;
 }
 
-function renderConversa() {
-  const alvo = $('dt-emails-conversa');
+/**
+ * Mensagens da conversa em ordem de data, já como balões. Compartilhada pela conversa completa (modal) e pelo bloco Atendimento da ficha do
+ * ticket (abas Atendimento humano / IA / Tudo). `papel`: cliente, ia, boasvindas, sistema, agente. O texto do cliente sai sem a citação do
+ * e-mail anterior (`textoReal`): só a última resposta dele, não a cópia de tudo.
+ */
+export function itensDaConversa({ emails, respostasAgente = [], boasVindas = null, mensagensSistema = [] }) {
   // ASC (mais antigo primeiro): a API devolve DESC (certo pra tabela/lista),
   // aqui é leitura cronológica de cima pra baixo, como qualquer chat.
-  const emOrdem = [...emailsModalTodos].sort(
+  const emOrdem = [...emails].sort(
     (a, b) => new Date(a.data_email ?? 0) - new Date(b.data_email ?? 0),
   );
   const itens = [];
@@ -186,22 +190,49 @@ function renderConversa() {
     }
   }
   // Boas-vindas automática (destacada): hora real do envio + texto padrão. Conta como "IA" no filtro.
-  if (boasVindasModal?.texto) {
-    itens.push({ papel: 'boasvindas', t: new Date(boasVindasModal.enviada_em ?? 0), b: balaoConversa('boasvindas', '👋 Boas-vindas automática', `${boasVindasModal.assunto}\n\n${boasVindasModal.texto}`, boasVindasModal.enviada_em) });
+  if (boasVindas?.texto) {
+    itens.push({ papel: 'boasvindas', t: new Date(boasVindas.enviada_em ?? 0), b: balaoConversa('boasvindas', '👋 Boas-vindas automática', `${boasVindas.assunto}\n\n${boasVindas.texto}`, boasVindas.enviada_em) });
   }
   // E-mails automáticos do sistema (ex.: regra dos 30 dias): texto exato que foi enviado, destacado, na hora do envio.
   const ROTULO_SISTEMA = { pos_forms_30d: '📤 E-mail automático — regra dos 30 dias' };
-  for (const m of mensagensSistemaModal) {
+  for (const m of mensagensSistema) {
     itens.push({ papel: 'sistema', t: new Date(m.enviado_em ?? 0), b: balaoConversa('sistema', ROTULO_SISTEMA[m.tipo] ?? '📤 E-mail automático', `${m.assunto ? m.assunto + '\n\n' : ''}${m.texto}`, m.enviado_em) });
   }
-  // Respostas dos agentes (lidas da pasta Enviados de support@): entram na ordem do tempo, ao lado do cliente e da IA.
-  for (const r of respostasAgenteModal) {
+  // Respostas dos agentes (lidas da pasta Enviados de support@ ou enviadas pelo SendTrace): entram na ordem do tempo, ao lado do cliente e da IA.
+  for (const r of respostasAgente) {
     if (r.corpo_texto) {
       const quem = r.agente ? `👤 Agente (${r.agente})` : '👤 Agente';
       itens.push({ papel: 'agente', t: new Date(r.enviado_em ?? 0), b: balaoConversa('agente', quem, r.corpo_texto, r.enviado_em) });
     }
   }
   itens.sort((x, y) => x.t - y.t);
+  return itens;
+}
+
+/** Busca os e-mails do cliente (e de e-mails extras, de tickets-filhos) e as respostas dos agentes, prontos para `itensDaConversa`. */
+export async function carregarConversaDoCliente(email, extras = []) {
+  const emails = [];
+  const respostasAgente = [];
+  const mensagensSistema = [];
+  let boasVindas = null;
+  for (const [i, end] of [email, ...extras].entries()) {
+    const p = qsFiltroCE();
+    p.set('email', end);
+    const { ok, dados } = await api(`/api/emails?${p}`);
+    if (ok) emails.push(...(dados.itens ?? []));
+    const { ok: okR, dados: dr } = await api(`/api/respostas-agente?email=${encodeURIComponent(end)}`);
+    if (okR) {
+      respostasAgente.push(...(dr.respostas ?? []));
+      mensagensSistema.push(...(dr.mensagens_sistema ?? []));
+      if (i === 0) boasVindas = dr.boas_vindas ?? null;
+    }
+  }
+  return { emails, respostasAgente, boasVindas, mensagensSistema };
+}
+
+function renderConversa() {
+  const alvo = $('dt-emails-conversa');
+  const itens = itensDaConversa({ emails: emailsModalTodos, respostasAgente: respostasAgenteModal, boasVindas: boasVindasModal, mensagensSistema: mensagensSistemaModal });
   const qIA = itens.filter((i) => i.papel === 'ia' || i.papel === 'boasvindas' || i.papel === 'sistema').length;
   const qAgente = itens.filter((i) => i.papel === 'agente').length;
   // Filtro: "Só IA" mostra cliente + IA; "Só agente" mostra cliente + agente (o cliente fica sempre, para dar contexto).
