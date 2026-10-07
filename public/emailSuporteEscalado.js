@@ -629,9 +629,20 @@ export function abrirDetalheEscalado(item) {
   botaoConversa.className = 'btn btn-fantasma';
   botaoConversa.textContent = 'Ver conversa completa (cliente ↔ IA) →';
   botaoConversa.disabled = !item.remetente_email;
-  botaoConversa.addEventListener('click', () => {
-    abrirModalEmails('email', item.remetente_email, `conversa com ${item.nome || item.remetente_email}`, null, 'conversa');
+  botaoConversa.addEventListener('click', async () => {
+    // Ticket-mãe: a conversa junta também os e-mails dos tickets-filhos mesclados (PDF de 07/10, item 9).
+    let extras = [];
+    try {
+      const { ok, dados } = await api(`/api/suporte-escalado/${item.id}/ficha`);
+      if (ok) extras = (dados.mesclagem?.filhos ?? []).map((f) => f.remetente_email).filter(Boolean);
+    } catch { /* abre só a conversa do próprio e-mail */ }
+    abrirModalEmails('email', item.remetente_email, `conversa com ${item.nome || item.remetente_email}`, null, 'conversa', extras);
   });
+  const atendimentoContainer = document.createElement('div');
+  atendimentoContainer.className = 'esc-atendimento';
+  atendimentoContainer.append(botaoConversa, montarMesclagem(item));
+  const ticketEl = document.createElement('span');
+  ticketEl.textContent = `#${item.id}`;
 
   const atividadesContainer = document.createElement('div');
   atividadesContainer.className = 'esc-atividades';
@@ -647,6 +658,7 @@ export function abrirDetalheEscalado(item) {
     subtitulo: item.remetente_email || '',
     larga: true,
     campos: [
+      { rotulo: 'Nº do ticket', valor: ticketEl },
       { rotulo: 'Status no kanban', valor: rotuloStatus },
       { rotulo: 'Escalado em', valor: item.criado_em ? dataHora(item.criado_em) : '—' },
       { rotulo: 'Iniciado em', valor: item.iniciado_em ? dataHora(item.iniciado_em) : '—' },
@@ -659,7 +671,7 @@ export function abrirDetalheEscalado(item) {
       { rotulo: 'Propriedades', valor: propriedadesContainer, bloco: true, metade: true },
       { rotulo: 'Mensagem da cliente — foco da reclamação', valor: item.resumo_conversa || '—', recolhivel: true, metade: true },
       { rotulo: 'Motivo do escalonamento', valor: item.motivo_escalonamento || '—', recolhivel: true, metade: true },
-      { rotulo: 'Atendimento', valor: botaoConversa, bloco: true },
+      { rotulo: 'Atendimento', valor: atendimentoContainer, bloco: true },
       { rotulo: 'Logística', valor: logisticaContainer, bloco: true, metade: true },
       { rotulo: 'Ajuda — escalar para alguém da equipe', valor: ajudaContainer, bloco: true, metade: true },
       { rotulo: 'Histórico de atividades', valor: atividadesContainer, recolhivel: true },
@@ -668,9 +680,60 @@ export function abrirDetalheEscalado(item) {
   });
 
   carregarContexto(item, contextoContainer);
-  carregarFichaAgente(item, propriedadesContainer, logisticaContainer, ajudaContainer, alertaEl);
+  carregarFichaAgente(item, propriedadesContainer, logisticaContainer, ajudaContainer, alertaEl, ticketEl);
   carregarNotas(item.id, notasContainer);
   carregarAtividades(item.id, atividadesContainer);
+}
+
+/* ═══════════════════  mesclar tickets  ═══════════════════
+   Busca outro ticket (e-mail, nome ou nº) e junta os dois: o mais antigo vira ticket-mãe e o agente dele passa a tratar os dois (PDF de 07/10, item 9). */
+function montarMesclagem(item) {
+  const caixa = document.createElement('details');
+  caixa.className = 'esc-mesclar';
+  const sum = document.createElement('summary');
+  sum.textContent = '🔗 Mesclar tickets';
+  const corpo = document.createElement('div');
+  corpo.className = 'esc-mesclar-corpo';
+  const busca = document.createElement('input');
+  busca.type = 'search'; busca.placeholder = 'E-mail, nome ou nº do outro ticket…'; busca.maxLength = 120;
+  const btnBuscar = document.createElement('button');
+  btnBuscar.type = 'button'; btnBuscar.className = 'btn'; btnBuscar.textContent = 'Buscar';
+  const lista = document.createElement('div');
+  lista.className = 'esc-mesclar-lista';
+  const buscar = async () => {
+    const q = busca.value.trim();
+    if (q.length < 2) return;
+    lista.textContent = 'Buscando…';
+    const { ok, dados } = await api(`/api/suporte-escalado/buscar?q=${encodeURIComponent(q)}`);
+    lista.replaceChildren();
+    if (!ok) { lista.textContent = 'Não consegui buscar.'; return; }
+    const achados = (dados.tickets ?? []).filter((t) => String(t.id) !== String(item.id));
+    if (!achados.length) { lista.textContent = 'Nenhum outro ticket encontrado.'; return; }
+    for (const t of achados) {
+      const linha = document.createElement('div');
+      linha.className = 'esc-mesclar-item';
+      const txt = document.createElement('span');
+      txt.textContent = `#${t.id} · ${t.remetente_email}${t.nome ? ` (${t.nome})` : ''} · ${t.agente || 'sem agente'} · ${t.status}${t.ticket_mae_id ? ` · já é filho de #${t.ticket_mae_id}` : ''}`;
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'btn btn-forte'; b.textContent = 'Juntar';
+      b.addEventListener('click', async () => {
+        if (!window.confirm(`Mesclar #${item.id} e #${t.id}? O ticket mais antigo vira o ticket-mãe e o outro passa para o agente dele.`)) return;
+        b.disabled = true;
+        const { ok: okM, dados: r } = await api(`/api/suporte-escalado/${item.id}/mesclar`, { metodo: 'POST', corpo: { outro_id: t.id } });
+        if (!okM) { b.disabled = false; window.alert(r?.erro ?? r?.detail ?? r?.message ?? 'Não consegui mesclar.'); return; }
+        window.alert(`Pronto: ticket-mãe #${r.mae_id}; ticket-filho #${r.filho_id}.`);
+        document.dispatchEvent(new CustomEvent('escalado:ficha-salva'));
+        $('modal-ficha').close();
+      });
+      linha.append(txt, b);
+      lista.append(linha);
+    }
+  };
+  btnBuscar.addEventListener('click', buscar);
+  busca.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); buscar(); } });
+  corpo.append(busca, btnBuscar, lista);
+  caixa.append(sum, corpo);
+  return caixa;
 }
 
 /* ═══════════════════  histórico de atividades do ticket  ═══════════════════
@@ -1007,12 +1070,16 @@ function formResposta(ajudaId, aoResponder) {
   return form;
 }
 
-async function carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl) {
+async function carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl, ticketEl) {
   try {
     const [opc, { ok, dados }] = await Promise.all([obterOpcoes(), api(`/api/suporte-escalado/${item.id}/ficha`)]);
     if (!ok) throw new Error('ficha');
-    const recarregar = () => { carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl); carregarAjudaRecebida(); };
+    const recarregar = () => { carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl, ticketEl); carregarAjudaRecebida(); };
     const f = dados.ficha;
+    if (ticketEl) {
+      const m = dados.mesclagem ?? {};
+      ticketEl.textContent = `#${item.id}${m.mae ? ` · filho do ticket-mãe #${m.mae.id}` : ''}${m.filhos?.length ? ` · ticket-mãe de ${m.filhos.map((x) => `#${x.id}`).join(', ')}` : ''}`;
+    }
     const base = { casoId: item.id, ficha: f, podeEditar: dados.pode_editar, recarregar };
     // Alerta "Virou chargeback" (item 11): o tipo de resolução escolhido pelo agente OU o chargeback já registrado no dash para o pedido.
     const avisos = [];

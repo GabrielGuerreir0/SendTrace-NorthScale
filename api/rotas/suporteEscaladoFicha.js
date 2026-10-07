@@ -3,6 +3,8 @@
  *
  *   GET  /api/suporte-escalado/opcoes                    → listas suspensas (Propriedades/Logística) + equipe (quem pode receber ajuda)
  *   GET  /api/suporte-escalado/:id/ficha                 → Propriedades + Logística + pedidos de ajuda do caso
+ *   GET  /api/suporte-escalado/buscar?q=                 → procura outro ticket por e-mail, nome ou nº (para mesclar)
+ *   POST /api/suporte-escalado/:id/mesclar               → junta este ticket a outro (ticket-mãe = o mais antigo; migração 086)
  *   GET  /api/suporte-escalado/:id/atividades            → linha do tempo do ticket (chegada, coluna, propriedades, notas, ajuda, respostas) — PDF de 07/10, item 6
  *   PUT  /api/suporte-escalado/:id/ficha                 → salva os campos enviados (dono do board ou admin)
  *   POST /api/suporte-escalado/:id/ajuda                 → o agente escala o caso a alguém da equipe, com uma nota (dono do board ou admin)
@@ -101,6 +103,18 @@ async function sincronizarRetencao(casoId, ficha) {
     [pedido.externo_id ?? pedido.transacao_id, pedido.plataforma, caso.remetente_email, oferta.degrau,
       oferta.status === 'aceito' ? oferta.degrau : null, oferta.status, oferta.preservado, oferta.concedido, casoId],
   );
+}
+
+/** Ticket-mãe e tickets-filhos de um caso (mesclagem, migração 086). */
+async function mesclagemDe(id) {
+  const { rows } = await query(
+    `SELECT 'mae' AS papel, m.id, m.remetente_email, m.nome FROM email_ia.suporte_escalado s
+       JOIN email_ia.suporte_escalado m ON m.id = s.ticket_mae_id WHERE s.id = $1
+     UNION ALL
+     SELECT 'filho', f.id, f.remetente_email, f.nome FROM email_ia.suporte_escalado f WHERE f.ticket_mae_id = $1 ORDER BY 1, 2`,
+    [id],
+  );
+  return { mae: rows.find((r) => r.papel === 'mae') ?? null, filhos: rows.filter((r) => r.papel === 'filho') };
 }
 
 export default async function rotasSuporteEscaladoFicha(app) {
@@ -208,6 +222,7 @@ export default async function rotasSuporteEscaladoFicha(app) {
     return {
       pode_editar: ehDono(req, caso),
       pode_editar_logistica: ehDono(req, caso) || (await ehResponsavelLogistica(req, req.params.id)),
+      mesclagem: await mesclagemDe(req.params.id),
       pedido_sugerido: pedido ? { valor_usd: pedido.valor_usd ?? null, plataforma: pedido.plataforma } : null,
       chargeback_pedido_em: pedido?.chargeback ? (pedido.chargeback_em ?? true) : null,
       ficha: { ...Object.fromEntries(CAMPOS_FICHA.map((c) => [c, null])), status_ticket: 'Aberto', ...ficha },
@@ -216,6 +231,67 @@ export default async function rotasSuporteEscaladoFicha(app) {
         pode_responder: !a.respondido_em && (!!req.usuario.admin || (destinoId != null && destinoId === req.usuario.user_id)),
       })),
     };
+  });
+
+  /* ═══════════════════  GET /api/suporte-escalado/buscar  ═══════════════════
+     Acha outro ticket (e-mail, nome ou nº) para mesclar. Devolve só identificação e situação — nada do conteúdo. */
+  app.get('/api/suporte-escalado/buscar', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Procura tickets por e-mail, nome ou número (para mesclar)',
+      security: [{ bearerAuth: [] }],
+      querystring: { type: 'object', required: ['q'], properties: { q: { type: 'string', minLength: 2, maxLength: 120 } } },
+    },
+  }, async (req) => {
+    const q = req.query.q.trim();
+    const like = `%${q.replace(/[\\%_]/g, '\\$&')}%`;
+    const porId = /^#?\d{1,12}$/.test(q) ? Number(q.replace('#', '')) : null;
+    const { rows } = await query(
+      `SELECT s.id, s.remetente_email, s.nome, s.status, s.criado_em, s.ticket_mae_id, b.nome AS agente
+         FROM email_ia.suporte_escalado s LEFT JOIN email_ia.suporte_escalado_boards b ON b.id = s.board_id
+        WHERE s.remetente_email ILIKE $1 OR s.nome ILIKE $1 OR s.id = $2
+        ORDER BY s.criado_em DESC LIMIT 15`,
+      [like, porId],
+    );
+    return { tickets: rows };
+  });
+
+  /* ═══════════════════  POST /api/suporte-escalado/:id/mesclar  ═══════════════════
+     Junta este ticket e outro. O ticket-mãe é o MAIS ANTIGO entre os dois (sempre a raiz, se algum já é filho); o outro vira filho, vai para o
+     board da mãe e o agente da mãe passa a tratar os dois (PDF de 07/10, item 9). Dono do board de qualquer um dos dois, admin ou gestor. */
+  app.post('/api/suporte-escalado/:id/mesclar', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Mescla dois tickets (ticket-mãe e ticket-filho)',
+      security: [{ bearerAuth: [] }],
+      params: idCaso,
+      body: { type: 'object', required: ['outro_id'], additionalProperties: false, properties: { outro_id: { type: 'integer' } } },
+    },
+  }, async (req) => {
+    const a = Number(req.params.id);
+    const b = req.body.outro_id;
+    if (a === b) throw new ErroHttp(400, 'Escolha outro ticket: não dá para mesclar um ticket com ele mesmo.');
+    const { rows } = await query(
+      `SELECT s.id, s.criado_em, s.ticket_mae_id, bd.usuario_id AS dono_id
+         FROM email_ia.suporte_escalado s LEFT JOIN email_ia.suporte_escalado_boards bd ON bd.id = s.board_id
+        WHERE s.id = ANY($1::bigint[])`,
+      [[a, b]],
+    );
+    if (rows.length !== 2) throw new ErroHttp(404, 'Ticket não encontrado.');
+    const podeAlgum = rows.some((r) => ehDono(req, { dono_id: r.dono_id }));
+    if (!podeAlgum) throw new ErroHttp(403, 'Nenhum dos dois tickets é de um board seu.');
+    // raízes (se um já é filho, a mãe dele entra no lugar)
+    const raiz = (r) => r.ticket_mae_id ?? r.id;
+    const { rows: raizes } = await query(
+      'SELECT id, criado_em FROM email_ia.suporte_escalado WHERE id = ANY($1::bigint[]) ORDER BY criado_em, id',
+      [[...new Set(rows.map(raiz))]],
+    );
+    if (raizes.length < 2) throw new ErroHttp(409, 'Estes tickets já estão mesclados.');
+    const [mae, filho] = raizes;
+    await query('SELECT email_ia.mesclar_tickets($1, $2, $3)', [mae.id, filho.id, nomeDe(req) || 'Sistema']);
+    return { mae_id: Number(mae.id), filho_id: Number(filho.id) };
   });
 
   /* ═══════════════════  GET /api/suporte-escalado/:id/atividades  ═════════════════
@@ -255,7 +331,7 @@ export default async function rotasSuporteEscaladoFicha(app) {
            FROM email_ia.suporte_escalado_eventos ev WHERE ev.caso_id = $1
          UNION ALL
          SELECT n.criado_em, coalesce(n.autor, 'Sem autor'), 'nota', 'Nota interna adicionada', left(n.nota, 240)
-           FROM email_ia.suporte_escalado_notas n WHERE n.suporte_escalado_id = $1
+           FROM email_ia.suporte_escalado_notas n WHERE n.suporte_escalado_id IN (SELECT id FROM email_ia.suporte_escalado WHERE id = $1 OR ticket_mae_id = $1)
          UNION ALL
          SELECT a.criado_em, a.pedido_por, 'ajuda', 'Pediu ajuda a ' || b.nome, left(a.nota, 240)
            FROM email_ia.suporte_escalado_ajuda a JOIN email_ia.suporte_escalado_boards b ON b.id = a.para_board_id
@@ -266,12 +342,12 @@ export default async function rotasSuporteEscaladoFicha(app) {
          UNION ALL
          SELECT r.enviado_em, coalesce(b.nome, 'Agente'), 'resposta_agente', 'Agente respondeu ao cliente', r.assunto
            FROM email_ia.respostas_agente r LEFT JOIN email_ia.suporte_escalado_boards b ON b.id = r.board_id
-          WHERE r.caso_id = $1
+          WHERE r.caso_id IN (SELECT id FROM email_ia.suporte_escalado WHERE id = $1 OR ticket_mae_id = $1)
          UNION ALL
          (SELECT e.data_email, coalesce(s.nome, s.remetente_email), 'cliente', 'Cliente enviou um e-mail', e.assunto
             FROM email_ia.suporte_escalado s
             JOIN email_ia.emails e ON lower(e.remetente_email) = lower(s.remetente_email) AND e.plataforma_origem IS NULL
-           WHERE s.id = $1 ORDER BY e.data_email DESC LIMIT 100)
+           WHERE s.id = $1 OR s.ticket_mae_id = $1 ORDER BY e.data_email DESC LIMIT 150)
        ) t
        WHERE t.quando IS NOT NULL
        ORDER BY t.quando DESC LIMIT 400`,

@@ -1987,6 +1987,21 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 .esc-ficha-bloco { display: flex; flex-direction: column; gap: 8px; }
 .esc-ficha-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; align-items: end; }
 .esc-ficha-form .btn { justify-self: start; }
+.esc-dash { margin-top: 14px; }
+.esc-dash h3 { margin: 0 0 10px; font-size: 14px; font-weight: 650; }
+.esc-barras { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.esc-barras li { display: grid; grid-template-columns: minmax(120px, 280px) 1fr minmax(90px, auto); gap: 10px; align-items: center; font-size: 13px; }
+.esc-barras-nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tinta-2); }
+.esc-barras-trilho { height: 10px; border-radius: 5px; background: var(--trilho); overflow: hidden; }
+.esc-barras-barra { display: block; height: 100%; border-radius: 5px; background: var(--st-em-dia); }
+.esc-barras-num { text-align: right; font-variant-numeric: tabular-nums; color: var(--tinta); }
+@media (max-width: 640px) { .esc-barras li { grid-template-columns: 1fr auto; } .esc-barras-trilho { grid-column: 1 / -1; order: 3; } }
+.esc-atendimento { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: flex-start; }
+.esc-mesclar > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--tinta-2); padding: 7px 0; }
+.esc-mesclar-corpo { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: min(560px, 100%); }
+.esc-mesclar-corpo input { flex: 1 1 260px; padding: 8px 12px; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--superficie); color: var(--tinta); }
+.esc-mesclar-lista { flex: 1 1 100%; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.esc-mesclar-item { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; justify-content: space-between; padding: 6px 10px; border: 1px solid var(--borda); border-radius: var(--raio); }
 .esc-atividades { display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto; }
 .esc-atividade { padding: 8px 10px; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--superficie); font-size: 13px; }
 .esc-atividade-cab { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; }

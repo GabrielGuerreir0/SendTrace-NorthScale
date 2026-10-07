@@ -248,7 +248,8 @@ function mudarModoEmailsModal(modo) {
 $('dt-emails-modo-tabela').addEventListener('click', () => mudarModoEmailsModal('tabela'));
 $('dt-emails-modo-conversa').addEventListener('click', () => mudarModoEmailsModal('conversa'));
 
-export async function abrirModalEmails(tipo, valor, rotulo, ficha = null, modoInicial = 'tabela') {
+export async function abrirModalEmails(tipo, valor, rotulo, ficha = null, modoInicial = 'tabela', emailsExtras = []) {
+  // emailsExtras: outros e-mails do mesmo cliente (tickets-filhos mesclados) — a conversa sai consolidada, em ordem de data.
   $('dt-emails-sub').textContent = `filtrando: ${rotulo}`;
   const elFicha = $('dt-emails-ficha');
   elFicha.hidden = !ficha;
@@ -274,6 +275,15 @@ export async function abrirModalEmails(tipo, valor, rotulo, ficha = null, modoIn
     if (meu !== emailsModalGeracao) return;
     if (!ok) throw new Error(resp?.erro ?? resp?.detail ?? 'falha ao carregar');
     emailsModalTodos = resp.itens ?? [];
+    if (tipo === 'email') {
+      for (const extra of emailsExtras) {
+        const pe = qsFiltroCE();
+        pe.set('email', extra);
+        const { ok: okE, dados: re } = await api(`/api/emails?${pe}`);
+        if (okE) emailsModalTodos = emailsModalTodos.concat(re.itens ?? []);
+      }
+      if (meu !== emailsModalGeracao) return;
+    }
     respostasAgenteModal = [];
     boasVindasModal = null;
     mensagensSistemaModal = [];
@@ -281,6 +291,10 @@ export async function abrirModalEmails(tipo, valor, rotulo, ficha = null, modoIn
       try {
         const { ok: okR, dados: dr } = await api(`/api/respostas-agente?email=${encodeURIComponent(valor)}`);
         if (okR) { respostasAgenteModal = dr.respostas ?? []; boasVindasModal = dr.boas_vindas ?? null; mensagensSistemaModal = dr.mensagens_sistema ?? []; }
+        for (const extra of emailsExtras) {
+          const { ok: okX, dados: dx } = await api(`/api/respostas-agente?email=${encodeURIComponent(extra)}`);
+          if (okX) { respostasAgenteModal = respostasAgenteModal.concat(dx.respostas ?? []); mensagensSistemaModal = mensagensSistemaModal.concat(dx.mensagens_sistema ?? []); }
+        }
       } catch { /* a conversa abre sem as respostas dos agentes */ }
       if (meu !== emailsModalGeracao) return;
     }

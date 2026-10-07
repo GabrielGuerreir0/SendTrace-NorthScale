@@ -3,7 +3,7 @@
  * Página própria no menu, separada do Suporte Escalado (Kanban): usa os MESMOS casos (email_ia.suporte_escalado), só que vistos pelo que está pendente de
  * resposta do agente, não pela coluna do card. O agente vê só o próprio board; administrador e gestor (papel do Suporte Escalado) veem todos.
  */
-import { $, api, kpiCard, renderTabela, botaoCopiar, debounce } from './emailComum.js';
+import { $, api, kpiCard, renderTabela, botaoCopiar, debounce, baixarCsv } from './emailComum.js';
 import { n, dataHora } from './format.js';
 import { abrirDetalheEscalado, abrirNoWebmail, ROTULO_TAG, rotuloDe, obterOpcoes } from './emailSuporteEscalado.js';
 
@@ -185,6 +185,67 @@ function passaFiltros(c) {
   return true;
 }
 
+/* ── relatório (item 21): todas as informações da ficha do ticket, exceto e-mails e notas, num período personalizado (CSV) ── */
+const ROTULO_ALERTA = { chargeback: 'Chargeback', legal: 'Ameaça legal', ambos: 'Chargeback + ameaça legal' };
+const dt = (v) => (v ? dataHora(v) : '');
+const dia = (v) => (v ? String(v).slice(0, 10).split('-').reverse().join('/') : '');
+const COLUNAS_RELATORIO = [
+  ['Nº do ticket', (r) => `#${r.numero}`], ['Ticket-mãe', (r) => (r.ticket_mae_id ? `#${r.ticket_mae_id}` : '')],
+  ['E-mail do cliente', (r) => r.remetente_email], ['Nome', (r) => r.nome], ['Assunto', (r) => r.assunto],
+  ['Agente responsável', (r) => r.agente], ['Status no Kanban', (r) => r.status_kanban],
+  ['Escalado em', (r) => dt(r.criado_em)], ['Iniciado em', (r) => dt(r.iniciado_em)], ['Finalizado em', (r) => dt(r.finalizado_em)],
+  ['Tag do motivo do contato', (r) => ROTULO_TAG[r.tag_motivo] || ''], ['Prioridade', (r) => (r.prioridade_nivel === 'alta' ? 'Alta' : r.prioridade_nivel === 'media' ? 'Média' : '')],
+  ['Alerta', (r) => ROTULO_ALERTA[r.alerta_ameaca] || ''],
+  ['Última movimentação (de)', (r) => r.movido_de], ['Última movimentação (por)', (r) => (r.movido_em ? (r.movido_por || 'Sistema') : '')], ['Última movimentação (em)', (r) => dt(r.movido_em)],
+  ['Produto', (r) => r.produto], ['Plataforma', (r) => r.plataforma], ['Status do pedido', (r) => r.status_pedido], ['Data da compra', (r) => dt(r.pedido_em)],
+  ['Valor do pedido', (r) => r.valor_pedido], ['Status da entrega', (r) => r.rastreio_status], ['Transportadora', (r) => r.carrier_code], ['Rastreio', (r) => r.tracking_number],
+  ['Data do 1º e-mail', (r) => dt(r.primeiro_email_em)],
+  ['Motivo do contato', (r) => r.motivo_contato], ['Detalhamento do motivo', (r) => r.detalhamento_motivo], ['Tipo de resolução', (r) => r.tipo_resolucao],
+  ['% do reembolso', (r) => r.percentual_reembolso], ['Valor da compra (reembolso)', (r) => r.valor_compra_usd], ['Dedução de frascos', (r) => r.deducao_frascos_usd],
+  ['Valor a reembolsar', (r) => r.valor_a_reembolsar_usd], ['Status do ticket', (r) => r.status_ticket], ['Virou chargeback em', (r) => dia(r.chargeback_em)],
+  ['Ticket reaberto em', (r) => dt(r.ticket_reaberto_em)], ['Propriedades — última alteração por', (r) => r.propriedades_atualizado_por], ['Propriedades — última alteração em', (r) => dt(r.propriedades_atualizado_em)],
+  ['Status logística', (r) => r.status_logistica], ['Motivo do reenvio', (r) => r.motivo_reenvio], ['Quantidade para reenvio', (r) => r.quantidade_reenvio],
+  ['Produto a ser enviado', (r) => r.produto_reenvio], ['Observação do reenvio', (r) => r.observacao_reenvio], ['Endereço (divergência)', (r) => r.endereco_divergencia],
+  ['Novo rastreio', (r) => r.novo_rastreio], ['Responsável (logística)', (r) => r.responsavel_logistica],
+  ['Logística — última alteração por', (r) => r.logistica_atualizado_por], ['Logística — última alteração em', (r) => dt(r.logistica_atualizado_em)],
+  ['Status de ajuda', (r) => r.status_ajuda], ['Pedidos de ajuda', (r) => r.pedidos_ajuda], ['Ajuda — última alteração por', (r) => r.ajuda_atualizado_por], ['Ajuda — última alteração em', (r) => dt(r.ajuda_atualizado_em)],
+  ['1ª resposta do agente em', (r) => dt(r.primeira_resposta_agente_em)], ['Última resposta do agente em', (r) => dt(r.ultima_resposta_agente_em)],
+  ['Meta de SLA (min de turno)', (r) => r.meta_min], ['Tempo da 1ª resposta (min de turno)', (r) => (r.primeira_resposta_min == null ? '' : Math.round(Number(r.primeira_resposta_min)))],
+  ['SLA da 1ª resposta', (r) => r.primeira_resposta_sla], ['SLA suspenso (Pendente)', (r) => (r.pausado ? 'Sim' : 'Não')],
+];
+
+function montarRelatorio() {
+  const detalhes = document.createElement('details');
+  detalhes.className = 'esc-filtros-lista';
+  const sum = document.createElement('summary');
+  sum.textContent = 'Relatório (CSV)';
+  const grade = document.createElement('div');
+  grade.className = 'esc-filtros-grade';
+  const hoje = new Date();
+  const iso = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const de = document.createElement('input'); de.type = 'date'; de.value = iso(new Date(hoje.getTime() - 29 * 86400000));
+  const ate = document.createElement('input'); ate.type = 'date'; ate.value = iso(hoje);
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'btn btn-forte'; btn.textContent = 'Baixar relatório';
+  const aviso = document.createElement('p');
+  aviso.className = 'rodape-nota';
+  aviso.textContent = 'Todos os tickets que chegaram no período (do board escolhido acima), com todas as informações da ficha — menos e-mails e notas.';
+  btn.addEventListener('click', async () => {
+    if (!boardId) { window.alert('Escolha um board.'); return; }
+    if (!de.value || !ate.value || de.value > ate.value) { window.alert('Confira o período: a data inicial precisa ser anterior à final.'); return; }
+    btn.disabled = true;
+    const { ok, dados } = await api(`/api/suporte-escalado/relatorio?board_id=${boardId}&de=${de.value}&ate=${ate.value}`);
+    btn.disabled = false;
+    if (!ok) { window.alert(dados?.erro ?? dados?.detail ?? dados?.message ?? 'Não consegui gerar o relatório.'); return; }
+    if (!dados.linhas.length) { window.alert('Nenhum ticket neste período.'); return; }
+    baixarCsv(`tickets-suporte-humano_${de.value}_a_${ate.value}.csv`, COLUNAS_RELATORIO.map(([t]) => t), dados.linhas.map((r) => COLUNAS_RELATORIO.map(([, f]) => f(r))));
+    if (dados.truncado) window.alert('O relatório foi limitado a 20.000 tickets. Reduza o período para ver o resto.');
+  });
+  grade.append(rotuloDe('De', de), rotuloDe('Até', ate), btn, aviso);
+  detalhes.append(sum, grade);
+  return detalhes;
+}
+
 async function montarBarraFiltros() {
   let opc = {};
   try { opc = await obterOpcoes(); } catch { /* sem listas: a barra mostra só a busca e o tempo */ }
@@ -226,7 +287,7 @@ async function montarBarraFiltros() {
   });
   grade.append(limpar);
   detalhes.append(sum, grade);
-  barra.append(campoBusca, detalhes);
+  barra.append(campoBusca, detalhes, montarRelatorio());
   return barra;
 }
 
@@ -458,6 +519,7 @@ function barraSelecao(linhasVisiveis) {
    tickets atribuídos, fila nova e aguardando 2ª em diante por agente. Só admin/gestor (GET /api/suporte-escalado/kpis-equipe). */
 let equipeDias = 7;
 let equipeDados = null;
+let dashDados = null;
 const PERIODOS_SLA = [{ dias: 0, rotulo: 'Hoje' }, { dias: 7, rotulo: '7 dias' }, { dias: 30, rotulo: '30 dias' }];
 
 function slaTexto(s) {
@@ -479,9 +541,13 @@ async function carregarEquipe() {
     raiz.append(p);
     return;
   }
-  const { ok, dados } = await api(`/api/suporte-escalado/kpis-equipe?dias=${equipeDias}`);
+  const [{ ok, dados }, dash] = await Promise.all([
+    api(`/api/suporte-escalado/kpis-equipe?dias=${equipeDias}`),
+    api(`/api/suporte-escalado/dashboard-propriedades?dias=${equipeDias}`),
+  ]);
   if (!ok) { if (!equipeDados) raiz.textContent = 'Não consegui carregar o painel da equipe.'; return; }
   equipeDados = dados;
+  dashDados = dash.ok ? dash.dados : null;
   renderEquipe();
 }
 
@@ -539,7 +605,73 @@ function renderEquipe() {
   const nota = document.createElement('p');
   nota.className = 'rodape-nota';
   nota.textContent = 'Tempos em minutos de turno (seg–sex, horário de Brasília); entre parênteses, quantas respostas ficaram dentro da meta (3 h Alta, 4 h Média). O agente é o dono do board. "Hoje" = dia atual em Brasília.';
-  raiz.replaceChildren(seletor, painel, tabela, nota);
+  raiz.replaceChildren(seletor, painel, tabela, nota, ...dashboardsPropriedades());
+}
+
+/* ── dashboards de Propriedades (itens 22 e 23): quantidade e % por tag de motivo × status e por campo de Propriedades ──
+   Barras de uma cor só (magnitude), com o valor e o percentual escritos ao lado: o número está sempre à vista, não depende da cor. */
+const ROTULO_STATUS_VAZIO = { sem_tag: 'Sem tag' };
+
+function barras(titulo, itens, total) {
+  const sec = document.createElement('section');
+  sec.className = 'cartao esc-dash';
+  const h = document.createElement('h3');
+  h.textContent = titulo;
+  const ul = document.createElement('ul');
+  ul.className = 'esc-barras';
+  const maior = Math.max(1, ...itens.map((i) => i.n));
+  for (const i of itens) {
+    const li = document.createElement('li');
+    const nome = document.createElement('span'); nome.className = 'esc-barras-nome'; nome.textContent = i.valor; nome.title = i.valor;
+    const trilho = document.createElement('span'); trilho.className = 'esc-barras-trilho';
+    const barra = document.createElement('span'); barra.className = 'esc-barras-barra'; barra.style.width = `${Math.max(2, (i.n / maior) * 100)}%`;
+    trilho.append(barra);
+    const num = document.createElement('span'); num.className = 'esc-barras-num'; num.textContent = `${n(i.n)} · ${String(i.pct).replace('.', ',')}%`;
+    li.append(nome, trilho, num);
+    ul.append(li);
+  }
+  const rodape = document.createElement('p');
+  rodape.className = 'rodape-nota';
+  rodape.textContent = `Total no período: ${n(total)} tickets.`;
+  sec.append(h, ul, rodape);
+  return sec;
+}
+
+function dashboardsPropriedades() {
+  if (!dashDados) return [];
+  const d = dashDados;
+  if (!d.total) { const p = document.createElement('p'); p.className = 'vazio-suave'; p.textContent = 'Nenhum ticket no período para os dashboards de Propriedades.'; return [p]; }
+  const pct = (v, t) => (t ? `${Math.round((v / t) * 1000) / 10}`.replace('.', ',') : '0') + '%';
+
+  // tag do motivo × status do ticket (quantidade e % do total da tag)
+  const sec = document.createElement('section');
+  sec.className = 'cartao esc-dash';
+  const h = document.createElement('h3'); h.textContent = 'Tickets por tag do motivo do contato e status';
+  const tabela = document.createElement('table');
+  tabela.className = 'sup-tabela';
+  const cab = tabela.createTHead().insertRow();
+  for (const t of ['Tag do motivo', ...d.status_ordem, 'Total']) { const th = document.createElement('th'); th.textContent = t; cab.append(th); }
+  const corpo = tabela.createTBody();
+  const linhas = d.por_tag;
+  const colunas = [
+    { render: (l) => `${ROTULO_TAG[l.tag] || ROTULO_STATUS_VAZIO[l.tag] || l.tag}` },
+    ...d.status_ordem.map((st) => ({ classe: 'num', render: (l) => `${n(l.status[st] ?? 0)} (${pct(l.status[st] ?? 0, l.total)})` })),
+    { classe: 'num', render: (l) => `${n(l.total)} (${pct(l.total, d.total)})` },
+  ];
+  renderTabela(corpo, linhas, colunas, { vazio: 'Sem tickets.' });
+  const nota = document.createElement('p');
+  nota.className = 'rodape-nota';
+  nota.textContent = 'Em cada status: quantidade e % do total daquela tag. Na última coluna: % do total do período. Ticket sem status na ficha conta como Aberto; tickets mesclados (filhos) não entram.';
+  sec.append(h, tabela, nota);
+
+  const p = d.propriedades;
+  return [
+    sec,
+    barras('Motivo do contato', p.motivo_contato, d.total),
+    barras('Detalhamento do motivo do contato', p.detalhamento_motivo, d.total),
+    barras('Tipo de resolução', p.tipo_resolucao, d.total),
+    barras('Status do ticket', p.status_ticket, d.total),
+  ];
 }
 
 
