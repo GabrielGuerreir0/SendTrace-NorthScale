@@ -261,7 +261,7 @@ function renderAlertas(s) {
 
 /* ═════════════════  Retenção registrada pelo CS (P10): R4, G2, G3, G4  ═════════════════ */
 
-const CONVITE_RETENCAO = 'Ninguém registrou oferta de retenção neste período. O CS registra na ficha do caso (Suporte Escalado → “Retenção — oferta feita ao cliente”).';
+const CONVITE_RETENCAO = 'Ninguém registrou oferta de retenção neste período. Ela vem do tipo de resolução salvo em Propriedades, na ficha do caso (Suporte Humano).';
 
 /** R4 — receita preservada pelo CS: ofertas aceitas em que o dash não mostra estorno depois. */
 function cardR4(s) {
