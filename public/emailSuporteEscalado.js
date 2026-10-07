@@ -14,7 +14,7 @@ import {
 import { n, relativo, dataHora, duracaoH } from './format.js';
 import { desenharColunas } from './charts.js';
 import { abrirNaTabela } from './emailTickets.js';
-import { abrirModalEmails, itensDaConversa, carregarConversaDoCliente } from './emailDetalhes.js';
+import { abrirModalEmails, itensDaConversa, carregarConversaDoCliente, balaoConversa } from './emailDetalhes.js';
 import { carregarFormularios } from './formulariosEscalado.js';
 
 /* ═══════════════════════════════  estado  ═══════════════════════════════ */
@@ -633,7 +633,7 @@ export function abrirDetalheEscalado(item) {
     // Ticket-mãe: a conversa junta também os e-mails dos tickets-filhos mesclados (PDF de 07/10, item 9).
     let extras = [];
     try {
-      const { ok, dados } = await api(`/api/suporte-escalado/${item.id}/ficha`);
+      const { ok, dados } = await obterFicha(item.id);
       if (ok) extras = (dados.mesclagem?.filhos ?? []).map((f) => f.remetente_email).filter(Boolean);
     } catch { /* abre só a conversa do próprio e-mail */ }
     abrirModalEmails('email', item.remetente_email, `conversa com ${item.nome || item.remetente_email}`, null, 'conversa', extras);
@@ -648,14 +648,23 @@ export function abrirDetalheEscalado(item) {
   // Bloco "Resumo da IA" (item 28): a mensagem da cliente e o motivo do escalonamento, recolhidos de início (item 19).
   const resumoIA = document.createElement('div');
   resumoIA.className = 'esc-resumo-ia';
+  const paragrafosResumo = [];
   for (const [titulo, texto] of [['Mensagem da cliente — foco da reclamação', item.resumo_conversa], ['Motivo do escalonamento', item.motivo_escalonamento]]) {
     const det = document.createElement('details');
     const sum = document.createElement('summary');
     sum.textContent = titulo;
     const corpoTxt = document.createElement('p');
-    corpoTxt.textContent = texto || '—';
+    corpoTxt.textContent = texto === undefined ? 'Carregando…' : (texto || '—');
+    paragrafosResumo.push(corpoTxt);
     det.append(sum, corpoTxt);
     resumoIA.append(det);
+  }
+  // Itens vindos da fila do Suporte Humano não trazem estes textos (a lista ficou muito menor): entram quando a ficha chega.
+  if (item.resumo_conversa === undefined) {
+    item._preencherResumo = (c) => {
+      paragrafosResumo[0].textContent = c?.resumo_conversa || '—';
+      paragrafosResumo[1].textContent = c?.motivo_escalonamento || '—';
+    };
   }
   const alertaEl = document.createElement('span');
   alertaEl.textContent = ROTULO_AMEACA[item.alerta_ameaca] ? `🚨 ${ROTULO_AMEACA[item.alerta_ameaca]} — responder em até 2 dias úteis` : '—';
@@ -699,12 +708,13 @@ function montarAtendimento(item, botaoTelaCheia) {
   const raiz = document.createElement('div');
   raiz.className = 'esc-atend';
   const ABAS = [['humano', 'Atendimento humano'], ['ia', 'Atendimento IA'], ['tudo', 'Tudo'], ['historico', 'Histórico do ticket']];
-  const PAPEIS = { humano: ['cliente', 'agente'], ia: ['cliente', 'ia', 'boasvindas', 'sistema'], tudo: null };
+  const PAPEIS = { humano: ['cliente', 'agente', 'falha'], ia: ['cliente', 'ia', 'boasvindas', 'sistema'], tudo: null };
   let aba = 'humano';
   let itens = [];
   let carregado = false;
   let podeResponder = false;
   let destinos = [item.remetente_email];
+  let acompanhando = null;   // temporizador que confere se o que está saindo já saiu
 
   const barra = document.createElement('div'); barra.className = 'esc-atend-abas'; barra.setAttribute('role', 'tablist');
   const painel = document.createElement('div'); painel.className = 'esc-atend-painel';
@@ -716,6 +726,8 @@ function montarAtendimento(item, botaoTelaCheia) {
   caixa.rows = 4; caixa.maxLength = 8000; caixa.placeholder = 'Escreva a resposta ao cliente… (sai como support@, na mesma conversa do e-mail dele)';
   const contador = document.createElement('span'); contador.className = 'esc-atend-contador'; contador.textContent = '0/8000';
   caixa.addEventListener('input', () => { contador.textContent = `${caixa.value.length}/8000`; });
+  // Ctrl/⌘ + Enter envia (agente escreve muito; evita sair do teclado).
+  caixa.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); compor.requestSubmit(); } });
   const para = document.createElement('select'); para.hidden = true;
   const enviar = document.createElement('button'); enviar.type = 'submit'; enviar.className = 'btn btn-forte'; enviar.textContent = 'Responder';
   const rodape = document.createElement('div'); rodape.className = 'esc-atend-compor-rodape';
@@ -744,22 +756,66 @@ function montarAtendimento(item, botaoTelaCheia) {
     const visiveis = itens.filter((i) => !papeis || papeis.includes(i.papel));
     if (!visiveis.length) { painel.textContent = 'Nenhuma mensagem nesta aba ainda.'; return; }
     painel.replaceChildren(...visiveis.map((i) => i.b.cloneNode(true)));
+    // O botão "Tentar de novo" vive no balão; o clone perde o evento, então religa pelos dados do item.
+    painel.querySelectorAll('[data-reenviar]').forEach((btn) => btn.addEventListener('click', () => reenviar(Number(btn.dataset.reenviar))));
     painel.scrollTop = painel.scrollHeight;
+  }
+
+  /** Respostas ainda saindo aparecem como enviadas (o envio é em segundo plano); as que falharam 3 vezes ganham aviso e botão. */
+  function itensDeEnvio(envios) {
+    return envios.map((e) => {
+      if (e.status === 'falhou') {
+        const b = balaoConversa('falha', `⚠ Não foi enviada (${e.para_email})`, e.texto, e.criado_em);
+        const aviso = document.createElement('p');
+        aviso.className = 'esc-atend-falha';
+        aviso.textContent = `O e-mail não saiu${e.erro ? ` (${e.erro})` : ''}.`;
+        const btn = document.createElement('button');
+        btn.type = 'button'; btn.className = 'btn'; btn.textContent = 'Tentar de novo'; btn.dataset.reenviar = String(e.id);
+        b.querySelector('.ch-balao-corpo').append(aviso, btn);
+        return { papel: 'falha', t: new Date(e.criado_em), b };
+      }
+      return { papel: 'agente', t: new Date(e.criado_em), b: balaoConversa('agente', '👤 Agente', e.texto, e.criado_em) };
+    });
   }
 
   async function carregar() {
     try {
-      const { ok, dados } = await api(`/api/suporte-escalado/${item.id}/ficha`);
+      const [fichaRes, enviosRes] = await Promise.all([obterFicha(item.id), api(`/api/suporte-escalado/${item.id}/envios`)]);
+      const { ok, dados } = fichaRes;
       const filhos = ok ? (dados.mesclagem?.filhos ?? []).map((f) => f.remetente_email).filter(Boolean) : [];
       podeResponder = ok && !!dados.pode_editar;
       destinos = [item.remetente_email, ...filhos];
       para.hidden = filhos.length === 0;
       para.replaceChildren(...destinos.map((e) => { const o = document.createElement('option'); o.value = e; o.textContent = `Para: ${e}`; return o; }));
       const conv = await carregarConversaDoCliente(item.remetente_email, filhos);
-      itens = itensDaConversa(conv);
+      const envios = enviosRes.ok ? (enviosRes.dados.envios ?? []) : [];
+      itens = [...itensDaConversa(conv), ...itensDeEnvio(envios)].sort((x, y) => x.t - y.t);
+      if (envios.some((e) => e.status === 'fila' || e.status === 'enviando')) acompanhar();
     } catch { itens = []; }
     carregado = true;
     desenhar();
+  }
+
+  /** Enquanto algo estiver saindo, confere a cada 4 s (até 2 min); quando sair, a mensagem já vem da conversa real. */
+  function acompanhar() {
+    if (acompanhando) return;
+    let voltas = 0;
+    acompanhando = setInterval(async () => {
+      voltas += 1;
+      if (!raiz.isConnected || voltas > 30) { clearInterval(acompanhando); acompanhando = null; return; }
+      const { ok, dados } = await api(`/api/suporte-escalado/${item.id}/envios`);
+      if (ok && !(dados.envios ?? []).some((e) => e.status === 'fila' || e.status === 'enviando')) {
+        clearInterval(acompanhando); acompanhando = null;
+        document.dispatchEvent(new CustomEvent('escalado:ficha-salva'));   // o card e a fila já andaram
+        carregar();
+      }
+    }, 4000);
+  }
+
+  async function reenviar(envioId) {
+    const { ok, dados } = await api(`/api/suporte-escalado/${item.id}/envios/${envioId}/reenviar`, { metodo: 'POST', corpo: {} });
+    if (!ok) { window.alert(dados?.erro ?? dados?.detail ?? dados?.message ?? 'Não consegui tentar de novo.'); return; }
+    carregar();
   }
 
   compor.addEventListener('submit', async (e) => {
@@ -767,15 +823,21 @@ function montarAtendimento(item, botaoTelaCheia) {
     const texto = caixa.value.trim();
     if (!texto) return;
     const destino = para.hidden ? item.remetente_email : para.value;
-    if (!window.confirm(`Enviar esta resposta para ${destino}? O e-mail sai agora, como support@.`)) return;
-    enviar.disabled = true;
-    const { ok, dados } = await api(`/api/suporte-escalado/${item.id}/responder`, { metodo: 'POST', corpo: { texto, para_email: destino } });
-    enviar.disabled = false;
-    if (!ok) { window.alert(dados?.erro ?? dados?.detail ?? dados?.message ?? 'Não consegui enviar a resposta.'); return; }
+    // Sem pergunta de confirmação e sem esperar a SMTP: a resposta já aparece como enviada e o envio segue em segundo plano.
+    const agora = new Date();
+    itens.push({ papel: 'agente', t: agora, b: balaoConversa('agente', '👤 Agente', texto, agora) });
     caixa.value = ''; contador.textContent = '0/8000';
-    if (dados.copiado_para_enviados === false) window.alert('Resposta enviada. Aviso: não consegui guardar a cópia na pasta Enviados do webmail.');
-    document.dispatchEvent(new CustomEvent('escalado:ficha-salva'));   // a fila e o card andam na hora
-    carregado = false; desenhar(); carregar();
+    desenhar();
+    const { ok, dados } = await api(`/api/suporte-escalado/${item.id}/responder`, { metodo: 'POST', corpo: { texto, para_email: destino } });
+    if (!ok) {
+      // Só recusa imediata (sem permissão, resposta duplicada, envio não configurado): devolve o texto para o agente não perder o que escreveu.
+      caixa.value = texto; contador.textContent = `${texto.length}/8000`;
+      window.alert(dados?.erro ?? dados?.detail ?? dados?.message ?? 'Não consegui enviar a resposta.');
+      carregado = false; desenhar(); carregar();
+      return;
+    }
+    document.dispatchEvent(new CustomEvent('escalado:ficha-salva'));
+    acompanhar();
   });
 
   raiz.append(barra, painel, compor, acoes);
@@ -984,6 +1046,16 @@ function criarCampoDataEntrega(casoId, dataEntregaIso) {
    Pedido da Késsia (PDF de 05/10/2026, migração 066). Tudo vem de GET .../ficha (+ /opcoes, com as listas
    fechadas e a equipe) e salva com PUT .../ficha. Quem só recebeu um pedido de ajuda vê os campos sem editar. */
 
+/** GET .../ficha compartilhado: ao abrir o ticket três partes da tela pedem a mesma ficha — uma chamada só (vale 5 s; `forcar` refaz depois de salvar). */
+const fichasEmCache = new Map();
+function obterFicha(casoId, forcar = false) {
+  const guardada = fichasEmCache.get(casoId);
+  if (!forcar && guardada && Date.now() - guardada.t < 5000) return guardada.p;
+  const p = api(`/api/suporte-escalado/${casoId}/ficha`);
+  fichasEmCache.set(casoId, { t: Date.now(), p });
+  return p;
+}
+
 let opcoesEscalado = null;
 export async function obterOpcoes() {
   if (opcoesEscalado) return opcoesEscalado;
@@ -1169,11 +1241,12 @@ function formResposta(ajudaId, aoResponder) {
   return form;
 }
 
-async function carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl, ticketEl) {
+async function carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl, ticketEl, forcar = false) {
   try {
-    const [opc, { ok, dados }] = await Promise.all([obterOpcoes(), api(`/api/suporte-escalado/${item.id}/ficha`)]);
+    const [opc, { ok, dados }] = await Promise.all([obterOpcoes(), obterFicha(item.id, forcar)]);
     if (!ok) throw new Error('ficha');
-    const recarregar = () => { carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl, ticketEl); carregarAjudaRecebida(); };
+    item._preencherResumo?.(dados.caso);   // a fila não carrega os textos longos: chegam com a ficha
+    const recarregar = () => { carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl, ticketEl, true); carregarAjudaRecebida(); };
     const f = dados.ficha;
     if (ticketEl) {
       const m = dados.mesclagem ?? {};

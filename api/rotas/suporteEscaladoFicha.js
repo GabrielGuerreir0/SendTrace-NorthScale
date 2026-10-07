@@ -19,7 +19,10 @@
 import { query } from '../../server/db.js';
 import { ErroHttp } from '../comum.js';
 import { pedidoDoCliente } from '../pedidoDoCliente.js';
-import { enviarRespostaSuporte, respostaConfigurada } from '../../server/emailSuporte.js';
+import { respostaConfigurada, dominioDeEnvio } from '../../server/emailSuporte.js';
+import { acionarEnvio } from '../respostasFila.js';
+import { invalidar } from '../cacheCurto.js';
+import { randomUUID } from 'node:crypto';
 
 export const OPCOES = {
   motivo_contato: ['Reembolso', 'Chargeback', 'Logística', 'Dúvidas'],
@@ -105,6 +108,12 @@ async function sincronizarRetencao(casoId, ficha) {
     [pedido.externo_id ?? pedido.transacao_id, pedido.plataforma, caso.remetente_email, oferta.degrau,
       oferta.status === 'aceito' ? oferta.degrau : null, oferta.status, oferta.preservado, oferta.concedido, casoId],
   );
+}
+
+/** Textos longos do caso (resumo da IA e motivo do escalonamento): a fila não os carrega mais — vêm junto com a ficha ao abrir o ticket. */
+async function textosDoCaso(id) {
+  const { rows: [c] } = await query('SELECT resumo_conversa, motivo_escalonamento FROM email_ia.suporte_escalado WHERE id = $1', [id]);
+  return c ?? { resumo_conversa: null, motivo_escalonamento: null };
 }
 
 /** Ticket-mãe e tickets-filhos de um caso (mesclagem, migração 086). */
@@ -225,6 +234,7 @@ export default async function rotasSuporteEscaladoFicha(app) {
       pode_editar: ehDono(req, caso),
       pode_editar_logistica: ehDono(req, caso) || (await ehResponsavelLogistica(req, req.params.id)),
       mesclagem: await mesclagemDe(req.params.id),
+      caso: await textosDoCaso(req.params.id),
       pedido_sugerido: pedido ? { valor_usd: pedido.valor_usd ?? null, plataforma: pedido.plataforma } : null,
       chargeback_pedido_em: pedido?.chargeback ? (pedido.chargeback_em ?? true) : null,
       ficha: { ...Object.fromEntries(CAMPOS_FICHA.map((c) => [c, null])), status_ticket: 'Aberto', ...ficha },
@@ -236,15 +246,15 @@ export default async function rotasSuporteEscaladoFicha(app) {
   });
 
   /* ═══════════════════  POST /api/suporte-escalado/:id/responder  ═══════════════════
-     O agente responde o cliente sem sair do SendTrace. Sai como support@ (SMTP da Hostinger), na mesma conversa do e-mail do cliente
-     (In-Reply-To/References do último e-mail dele); uma cópia vai para a pasta Enviados e a resposta é registrada na hora em
-     `respostas_agente` — o gatilho do ciclo agente ↔ lead (070) move o card para "Esperando resposta" e o SLA da vez do agente fecha.
-     Dono do board, admin ou gestor. Sem login de SMTP no servidor, responde 503 e nada é enviado. */
+     O agente responde o cliente sem sair do SendTrace. A rota só valida e grava na fila de saída (087) e devolve NA HORA (202): o envio por SMTP
+     (como support@, na mesma conversa do e-mail do cliente), a cópia em Enviados e o registro em `respostas_agente` — que move o card e fecha o SLA —
+     acontecem em segundo plano, em poucos segundos (api/respostasFila.js). Se falhar 3 vezes, a ficha mostra o aviso com "Tentar de novo".
+     Dono do board, admin ou gestor. Sem login de SMTP no servidor, responde 503 e nada é gravado. */
   app.post('/api/suporte-escalado/:id/responder', {
     onRequest: [app.exigirSessao],
     schema: {
       tags: ['Central de E-mail IA'],
-      summary: 'Responde o cliente do ticket por e-mail (como support@)',
+      summary: 'Responde o cliente do ticket por e-mail (como support@) — o envio segue em segundo plano',
       security: [{ bearerAuth: [] }],
       params: idCaso,
       body: {
@@ -258,48 +268,70 @@ export default async function rotasSuporteEscaladoFicha(app) {
     },
   }, async (req, resposta) => {
     if (!respostaConfigurada) throw new ErroHttp(503, 'O envio de respostas pelo SendTrace ainda não está configurado neste servidor (falta o login SMTP do suporte).');
-    await exigirEscrita(req, req.params.id);
     const texto = req.body.texto.trim();
     if (!texto) throw new ErroHttp(400, 'Escreva a resposta.');
-    const { rows: [caso] } = await query(
-      'SELECT id, remetente_email, board_id FROM email_ia.suporte_escalado WHERE id = $1', [req.params.id],
+    // Uma consulta só: o caso, o dono do board, os e-mails dos tickets-filhos e se a mesma resposta acabou de entrar (clique duplo).
+    const { rows: [c] } = await query(
+      `SELECT s.id, s.remetente_email, s.board_id, bd.usuario_id AS dono_id,
+              coalesce((SELECT array_agg(f.remetente_email) FROM email_ia.suporte_escalado f WHERE f.ticket_mae_id = s.id), '{}') AS filhos
+         FROM email_ia.suporte_escalado s LEFT JOIN email_ia.suporte_escalado_boards bd ON bd.id = s.board_id
+        WHERE s.id = $1`,
+      [req.params.id],
     );
-    // Destino: o e-mail do ticket, ou o de um ticket-filho mesclado a ele.
-    const { rows: filhos } = await query('SELECT remetente_email FROM email_ia.suporte_escalado WHERE ticket_mae_id = $1', [caso.id]);
-    const permitidos = [caso.remetente_email, ...filhos.map((f) => f.remetente_email)].filter(Boolean).map((e) => e.toLowerCase());
-    const para = (req.body.para_email ?? caso.remetente_email).trim().toLowerCase();
+    if (!c) throw new ErroHttp(404, 'Caso escalado não encontrado.');
+    if (!ehDono(req, { dono_id: c.dono_id })) throw new ErroHttp(403, 'Este caso não é de um board seu.');
+    const permitidos = [c.remetente_email, ...c.filhos].filter(Boolean).map((e) => e.toLowerCase());
+    const para = (req.body.para_email ?? c.remetente_email).trim().toLowerCase();
     if (!permitidos.includes(para)) throw new ErroHttp(400, 'Este e-mail não pertence ao ticket.');
-    // Trava de clique duplo: o mesmo texto para o mesmo cliente no último minuto.
     const { rows: dup } = await query(
-      `SELECT 1 FROM email_ia.respostas_agente WHERE caso_id = $1 AND lower(para_email) = $2 AND corpo_texto = $3 AND enviado_em > now() - interval '60 seconds' LIMIT 1`,
-      [caso.id, para, texto],
+      `SELECT 1 FROM email_ia.respostas_fila WHERE caso_id = $1 AND para_email = $2 AND texto = $3 AND criado_em > now() - interval '60 seconds' AND status <> 'falhou' LIMIT 1`,
+      [c.id, para, texto],
     );
     if (dup.length) throw new ErroHttp(409, 'Esta mesma resposta acabou de ser enviada.');
-    // Último e-mail do cliente: dá o assunto ("Re: …") e o encadeamento da conversa.
-    const { rows: [ultimo] } = await query(
-      `SELECT message_id, assunto FROM email_ia.emails WHERE lower(remetente_email) = $1 AND plataforma_origem IS NULL ORDER BY data_email DESC LIMIT 1`,
-      [para],
+    const messageId = `<${randomUUID()}@${dominioDeEnvio()}>`;
+    const { rows: [novo] } = await query(
+      `INSERT INTO email_ia.respostas_fila (caso_id, board_id, para_email, assunto, texto, message_id, criado_por)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, criado_em`,
+      [c.id, c.board_id, para, req.body.assunto?.trim() || null, texto, messageId, nomeDe(req)],
     );
-    const base = (req.body.assunto?.trim() || ultimo?.assunto || 'Your support request').replace(/^\s*(re|res)\s*:\s*/i, '');
-    let envio;
-    try {
-      envio = await enviarRespostaSuporte({
-        para, assunto: `Re: ${base}`, texto, inReplyTo: ultimo?.message_id || undefined,
-      });
-    } catch (err) {
-      req.log.error({ err: err.message }, 'falha ao enviar resposta ao cliente');
-      throw new ErroHttp(502, 'Não consegui enviar o e-mail agora (SMTP recusou ou está fora do ar). Nada foi registrado; tente de novo.');
-    }
-    await query(
-      `INSERT INTO email_ia.respostas_agente (message_id, in_reply_to, para_email, assunto, corpo_texto, enviado_em, caso_id, board_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (message_id) DO NOTHING`,
-      [envio.messageId, ultimo?.message_id ?? null, para, `Re: ${base}`, texto, envio.enviadoEm, caso.id, caso.board_id],
+    invalidar();
+    acionarEnvio(req.log);
+    return resposta.code(202).send({ id: novo.id, message_id: messageId, enviado_em: novo.criado_em });
+  });
+
+  /* ═══════════════════  GET /api/suporte-escalado/:id/envios  ═══════════════════
+     O que ainda está saindo (fila/enviando — a tela mostra como enviado) e o que FALHOU nas últimas 48 h (a tela mostra o aviso e o botão de tentar de novo). */
+  app.get('/api/suporte-escalado/:id/envios', {
+    onRequest: [app.exigirSessao],
+    schema: { tags: ['Central de E-mail IA'], summary: 'Respostas em saída e envios que falharam no ticket', security: [{ bearerAuth: [] }], params: idCaso },
+  }, async (req) => {
+    await exigirLeitura(req, req.params.id);
+    const { rows } = await query(
+      `SELECT id, para_email, assunto, texto, status, erro, criado_em, criado_por
+         FROM email_ia.respostas_fila
+        WHERE caso_id = $1 AND (status IN ('fila', 'enviando') OR (status = 'falhou' AND criado_em > now() - interval '48 hours'))
+        ORDER BY criado_em`,
+      [req.params.id],
     );
-    await query(
-      `UPDATE email_ia.suporte_escalado SET primeiro_toque_humano_em = coalesce(primeiro_toque_humano_em, now()), atualizado_em = now() WHERE id = $1`,
-      [caso.id],
+    return { envios: rows };
+  });
+
+  app.post('/api/suporte-escalado/:id/envios/:envioId/reenviar', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'], summary: 'Tenta de novo um envio que falhou', security: [{ bearerAuth: [] }],
+      params: { type: 'object', required: ['id', 'envioId'], properties: { id: { type: 'integer' }, envioId: { type: 'integer' } } },
+    },
+  }, async (req) => {
+    await exigirEscrita(req, req.params.id);
+    const { rowCount } = await query(
+      `UPDATE email_ia.respostas_fila SET status = 'fila', tentativas = 0, erro = NULL, proxima_tentativa_em = now()
+        WHERE id = $1 AND caso_id = $2 AND status = 'falhou'`,
+      [req.params.envioId, req.params.id],
     );
-    return resposta.code(201).send({ enviado_em: envio.enviadoEm, copiado_para_enviados: envio.copiadoParaEnviados });
+    if (!rowCount) throw new ErroHttp(404, 'Não há envio com falha para tentar de novo.');
+    acionarEnvio(req.log);
+    return { ok: true };
   });
 
   /* ═══════════════════  GET /api/suporte-escalado/buscar  ═══════════════════
@@ -360,6 +392,7 @@ export default async function rotasSuporteEscaladoFicha(app) {
     if (raizes.length < 2) throw new ErroHttp(409, 'Estes tickets já estão mesclados.');
     const [mae, filho] = raizes;
     await query('SELECT email_ia.mesclar_tickets($1, $2, $3)', [mae.id, filho.id, nomeDe(req) || 'Sistema']);
+    invalidar();
     return { mae_id: Number(mae.id), filho_id: Number(filho.id) };
   });
 
@@ -536,6 +569,7 @@ export default async function rotasSuporteEscaladoFicha(app) {
       [req.params.id],
     );
     if (tocaProp) await sincronizarRetencao(req.params.id, rows[0]);
+    invalidar();
     return rows[0];
   });
 

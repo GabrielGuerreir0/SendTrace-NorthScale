@@ -12,6 +12,7 @@
 
 import { query } from '../../server/db.js';
 import { ErroHttp } from '../comum.js';
+import { memo } from '../cacheCurto.js';
 
 const ABERTOS = "('pendente', 'iniciado', 'lead_respondeu', 'esperando_resposta', 'em_analise', 'pendente_consulta')";
 const ENCERRADO_NA_FICHA = "coalesce(fi.status_ticket, '') NOT IN ('Resolvido', 'Fechado')";
@@ -31,6 +32,8 @@ export default async function rotasSuporteEscaladoKpis(app) {
     const dias = req.query.dias ?? 7;
     const desde = dias === 0 ? HOJE : `(now() - interval '${dias} days')`;
 
+    // Cache de 30 s por período: o painel recarrega sozinho e os gestores abrem a mesma tela (a conta de SLA por agente é a parte pesada).
+    return memo(`kpis:${dias}`, 30_000, async () => {
     const [agentesRes, filasRes, hojeRes, slaRes, equipeHojeRes] = await Promise.all([
       query(`SELECT id AS board_id, nome, ativo AS disponivel FROM email_ia.suporte_escalado_boards WHERE usuario_id IS NOT NULL ORDER BY nome`),
       query(
@@ -103,5 +106,6 @@ export default async function rotasSuporteEscaladoKpis(app) {
       },
       agentes,
     };
+    });
   });
 }

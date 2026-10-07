@@ -138,6 +138,8 @@ async function carregarBoards() {
    diante pendente e todos os atribuídos. O tempo restante vem do SLA dentro do turno (GET /api/suporte-escalado/fila, migrações 073/074). */
 let filaDados = null;
 let filaAba = 'primeiro';
+const POR_PAGINA_FILA = 100;   // a lista pode ter ~900 tickets; desenhar tudo travava a tela. O resto entra em "Mostrar mais" (filtros e busca valem para todos).
+let linhasVisiveis = POR_PAGINA_FILA;
 const FILAS = [
   { chave: 'primeiro', rotulo: '1º e-mail — pendente de resposta' },
   { chave: 'segundo', rotulo: '2º e-mail em diante — pendente de resposta' },
@@ -269,7 +271,7 @@ async function montarBarraFiltros() {
     const ativos = Object.values(filtros).filter(Boolean).length;
     sum.textContent = ativos ? `Filtros (${ativos} ativo${ativos > 1 ? 's' : ''})` : 'Filtros';
   };
-  const aoMudar = () => { atualizarTitulo(); selecionados.clear(); renderFila(); };
+  const aoMudar = () => { atualizarTitulo(); selecionados.clear(); linhasVisiveis = POR_PAGINA_FILA; renderFila(); };
   const campo = (chave, rotulo, itens) => {
     const sel = document.createElement('select');
     const o0 = document.createElement('option'); o0.value = ''; o0.textContent = 'Todos'; sel.append(o0);
@@ -368,8 +370,8 @@ function renderFila() {
   const sla1 = slaResumo(resumo.sla_primeira);
   const sla2 = slaResumo(resumo.sla_segunda);
   painel.append(
-    kpiCard({ icone: '●', tom: 'atrasado', rotulo: 'Pendentes de 1ª resposta', valor: n(resumo.pendentes_primeira), nota: 'sem nenhuma resposta do agente', onClick: () => { filaAba = 'primeiro'; renderFila(); }, ativo: filaAba === 'primeiro' }),
-    kpiCard({ icone: '●', tom: 'travado', rotulo: 'Pendentes de 2ª resposta em diante', valor: n(resumo.pendentes_segunda), nota: 'o cliente escreveu de novo', onClick: () => { filaAba = 'segundo'; renderFila(); }, ativo: filaAba === 'segundo' }),
+    kpiCard({ icone: '●', tom: 'atrasado', rotulo: 'Pendentes de 1ª resposta', valor: n(resumo.pendentes_primeira), nota: 'sem nenhuma resposta do agente', onClick: () => { filaAba = 'primeiro'; linhasVisiveis = POR_PAGINA_FILA; renderFila(); }, ativo: filaAba === 'primeiro' }),
+    kpiCard({ icone: '●', tom: 'travado', rotulo: 'Pendentes de 2ª resposta em diante', valor: n(resumo.pendentes_segunda), nota: 'o cliente escreveu de novo', onClick: () => { filaAba = 'segundo'; linhasVisiveis = POR_PAGINA_FILA; renderFila(); }, ativo: filaAba === 'segundo' }),
     kpiCard({ icone: '●', tom: 'finalizado', rotulo: 'Respondidos hoje', valor: n(resumo.respondidos_hoje), nota: 'tickets com resposta enviada hoje' }),
     kpiCard({ icone: '●', tom: 'em_dia', rotulo: 'SLA de 1ª resposta', valor: sla1.valor, nota: sla1.nota }),
     kpiCard({ icone: '●', tom: 'processando', rotulo: 'SLA de 2ª resposta em diante', valor: sla2.valor, nota: sla2.nota }),
@@ -387,7 +389,7 @@ function renderFila() {
     b.setAttribute('role', 'tab');
     b.setAttribute('aria-selected', String(filaAba === f.chave));
     b.textContent = `${f.rotulo} (${n(casosAba(f.chave).length)})`;
-    b.addEventListener('click', () => { filaAba = f.chave; renderFila(); });
+    b.addEventListener('click', () => { filaAba = f.chave; linhasVisiveis = POR_PAGINA_FILA; renderFila(); });
     grupoAbas.append(b);
   }
   abas.append(grupoAbas, barraFiltros.campoBusca);
@@ -460,7 +462,7 @@ function renderFila() {
   colunasFila.aoClicarLinha = interna
     ? (p) => abrirDetalheEscalado({ ...p, id: p.caso_id, criado_em: p.caso_criado_em })
     : (c) => abrirDetalheEscalado(c);
-  renderTabela(corpo, linhas, colunasFila, {
+  renderTabela(corpo, linhas.slice(0, linhasVisiveis), colunasFila, {
     vazio: interna ? 'Nenhuma pendência interna para este board. 🎉'
       : (Object.values(filtros).some(Boolean) || busca ? 'Nenhum ticket encontrado com estes filtros.'
         : (filaAba === 'todos' ? 'Nenhum ticket em aberto atribuído.' : 'Nada pendente de resposta nesta fila. 🎉')),
@@ -473,7 +475,23 @@ function renderFila() {
     : (truncado
       ? 'Mostrando os 1.000 mais urgentes. Ordenado por tempo restante (estourados primeiro). O tempo conta só dentro do turno (seg–sex, horário de Brasília).'
       : 'Ordenado por tempo restante (estourados primeiro). O tempo conta só dentro do turno (seg–sex, horário de Brasília). Clique numa linha para abrir o ticket.');
-  raiz.replaceChildren(painel, barraFiltros, abas, ...(podeSelecionar ? [barraSelecao(linhas)] : []), tabela, nota);
+  const extras = [];
+  if (linhas.length > linhasVisiveis) {
+    const mais = document.createElement('button');
+    mais.type = 'button'; mais.className = 'btn esc-fila-mais';
+    mais.textContent = `Mostrar mais ${Math.min(POR_PAGINA_FILA, linhas.length - linhasVisiveis)} (exibindo ${n(linhasVisiveis)} de ${n(linhas.length)})`;
+    mais.addEventListener('click', () => { linhasVisiveis += POR_PAGINA_FILA; renderFila(); });
+    extras.push(mais);
+  }
+  // Respostas que não saíram depois de 3 tentativas (migração 087): o agente precisa saber, mesmo sem abrir o ticket.
+  const avisos = [];
+  if (resumo.envios_falhos > 0) {
+    const av = document.createElement('p');
+    av.className = 'esc-aviso-falha';
+    av.textContent = `⚠ ${n(resumo.envios_falhos)} resposta${resumo.envios_falhos > 1 ? 's' : ''} não saiu${resumo.envios_falhos > 1 ? 'ram' : ''} (últimas 48 h). Abra o ticket e use "Tentar de novo".`;
+    avisos.push(av);
+  }
+  raiz.replaceChildren(painel, ...avisos, barraFiltros, abas, ...(podeSelecionar ? [barraSelecao(linhas)] : []), tabela, ...extras, nota);
 }
 
 /** Barra da seleção em massa: transferir os tickets marcados para outro agente de uma vez (item 7). */

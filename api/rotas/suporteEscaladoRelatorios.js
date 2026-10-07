@@ -11,6 +11,7 @@
 
 import { query } from '../../server/db.js';
 import { ErroHttp } from '../comum.js';
+import { memo } from '../cacheCurto.js';
 
 const HOJE = "(date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')";
 const LIMITE = 20000;
@@ -108,14 +109,14 @@ export default async function rotasSuporteEscaladoRelatorios(app) {
     if (!req.usuario.admin && !req.usuario.gestorHumano) throw new ErroHttp(403, 'Só administradores e gestores veem o painel da equipe.');
     const dias = req.query.dias ?? 30;
     const desde = dias === 0 ? HOJE : `(now() - interval '${dias} days')`;
-    const { rows } = await query(
+    const { rows } = await memo(`dash-prop:${dias}`, 60_000, () => query(
       `SELECT s.tag_motivo, coalesce(fi.status_ticket, 'Aberto') AS status_ticket, fi.motivo_contato, fi.detalhamento_motivo, fi.tipo_resolucao,
               count(*)::int AS n
          FROM email_ia.suporte_escalado s
          LEFT JOIN email_ia.suporte_escalado_ficha fi ON fi.suporte_escalado_id = s.id
         WHERE s.ticket_mae_id IS NULL AND s.criado_em >= ${desde}
         GROUP BY 1, 2, 3, 4, 5`,
-    );
+    ));
     const total = rows.reduce((a, r) => a + r.n, 0);
     const soma = (chave, rotuloVazio) => {
       const m = new Map();

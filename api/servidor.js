@@ -41,6 +41,8 @@ import rotasSuporteEscaladoTurnos from './rotas/suporteEscaladoTurnos.js';
 import rotasSuporteEscaladoFila from './rotas/suporteEscaladoFila.js';
 import rotasSuporteEscaladoKpis from './rotas/suporteEscaladoKpis.js';
 import rotasSuporteEscaladoRelatorios from './rotas/suporteEscaladoRelatorios.js';
+import { invalidar as invalidarCache } from './cacheCurto.js';
+import { iniciarFilaDeRespostas } from './respostasFila.js';
 import rotasRespostasAgente from './rotas/respostasAgente.js';
 import { verificarAcessoPagina } from './acessoPaginas.js';
 import rotasGaleriaExportar from './rotas/galeriaExportar.js';
@@ -423,6 +425,17 @@ const intervaloRisco = setInterval(recalcularRisco, RISCO_INTERVALO_MS);
  * email_ia.config (nasce 'false'). Resolvido há mais de 7 dias e Aberto sem resposta do cliente há mais de 10 dias viram Fechado.
  * Erro vira só log.
  */
+/*
+ * Qualquer escrita no Suporte Escalado/Humano (mover card, transferir, ficha, nota, resposta…) limpa o cache curto da fila e do painel da equipe,
+ * para quem acabou de agir ver o efeito na hora (api/cacheCurto.js). Erro (4xx/5xx) não limpa.
+ */
+app.addHook('onResponse', async (req, resposta) => {
+  if (req.method !== 'GET' && req.url.startsWith('/api/suporte-escalado') && resposta.statusCode < 400) invalidarCache();
+});
+
+/* Envio em segundo plano das respostas do agente (migração 087): reenvia o que falhou e o que sobrou de um reinício. */
+const desligarFilaDeRespostas = iniciarFilaDeRespostas(app.log);
+
 const FECHAMENTO_INTERVALO_MS = 15 * 60 * 1000;
 const fecharTicketsAutomatico = async () => {
   try {
@@ -447,6 +460,7 @@ for (const sinal of ['SIGINT', 'SIGTERM']) {
     clearInterval(intervaloAlertas);
     clearInterval(intervaloRisco);
     clearInterval(intervaloFechamento);
+    desligarFilaDeRespostas();
     await app.close();
     await pool.end();
     process.exit(0);

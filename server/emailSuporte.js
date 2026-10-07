@@ -25,12 +25,14 @@ const DE = env.SUPORTE_SMTP_DE || (USUARIO && USUARIO.includes('@') ? `NorthScal
 const PASTA_ENVIADOS = env.SUPORTE_PASTA_ENVIADOS || 'INBOX.Sent';
 
 export const respostaConfigurada = Boolean(USUARIO && SENHA && DE);
+/** Domínio do Message-ID (o mesmo do remetente), para a rota definir o id antes do envio. */
+export const dominioDeEnvio = () => (DE?.match(/@([^>\s]+)/)?.[1] ?? 'localhost').replace(/>$/, '');
 
 let transporte = null;
 function obterTransporte() {
   if (transporte) return transporte;
   transporte = nodemailer.createTransport({
-    host: HOST, port: PORTA, secure: PORTA === 465, auth: { user: USUARIO, pass: SENHA },
+    host: HOST, port: PORTA, secure: PORTA === 465, auth: { user: USUARIO, pass: SENHA }, pool: true, maxConnections: 2,
     connectionTimeout: 12000, greetingTimeout: 8000, socketTimeout: 30000,
   });
   return transporte;
@@ -51,10 +53,10 @@ async function copiarParaEnviados(raw) {
 }
 
 /** Envia a resposta. Devolve `{ messageId, enviadoEm, copiadoParaEnviados }`; lança se o SMTP recusar. */
-export async function enviarRespostaSuporte({ para, assunto, texto, inReplyTo, references }) {
+export async function enviarRespostaSuporte({ para, assunto, texto, inReplyTo, references, messageId: idDefinido }) {
   if (!respostaConfigurada) throw Object.assign(new Error('Envio de resposta não configurado neste servidor.'), { naoConfigurado: true });
   const dominio = (DE.match(/@([^>\s]+)/)?.[1] ?? 'localhost').replace(/>$/, '');
-  const messageId = `<${randomUUID()}@${dominio}>`;
+  const messageId = idDefinido || `<${randomUUID()}@${dominio}>`;
   const enviadoEm = new Date();
   const opcoes = {
     from: DE, to: para, subject: assunto, text: texto, messageId, date: enviadoEm,

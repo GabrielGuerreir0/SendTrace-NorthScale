@@ -156,7 +156,7 @@ function textoReal(corpo) {
   return t.trim();
 }
 
-function balaoConversa(papel, remetente, texto, quando) {
+export function balaoConversa(papel, remetente, texto, quando) {
   const div = document.createElement('div');
   div.className = 'ch-balao';
   div.dataset.papel = papel;
@@ -228,16 +228,19 @@ export async function carregarConversaDoCliente(email, extras = []) {
   const respostasAgente = [];
   const mensagensSistema = [];
   let boasVindas = null;
-  for (const [i, end] of [email, ...extras].entries()) {
+  // Todas as chamadas (e-mails e respostas, de cada endereço) saem juntas: o tempo é o da mais lenta, não a soma.
+  const chamadas = [email, ...extras].map(async (end) => {
     const p = qsFiltroCE();
     p.set('email', end);
-    const { ok, dados } = await api(`/api/emails?${p}`);
-    if (ok) emails.push(...(dados.itens ?? []));
-    const { ok: okR, dados: dr } = await api(`/api/respostas-agente?email=${encodeURIComponent(end)}`);
-    if (okR) {
-      respostasAgente.push(...(dr.respostas ?? []));
-      mensagensSistema.push(...(dr.mensagens_sistema ?? []));
-      if (i === 0) boasVindas = dr.boas_vindas ?? null;
+    const [e, r] = await Promise.all([api(`/api/emails?${p}`), api(`/api/respostas-agente?email=${encodeURIComponent(end)}`)]);
+    return { e, r };
+  });
+  for (const [i, { e, r }] of (await Promise.all(chamadas)).entries()) {
+    if (e.ok) emails.push(...(e.dados.itens ?? []));
+    if (r.ok) {
+      respostasAgente.push(...(r.dados.respostas ?? []));
+      mensagensSistema.push(...(r.dados.mensagens_sistema ?? []));
+      if (i === 0) boasVindas = r.dados.boas_vindas ?? null;
     }
   }
   return { emails, respostasAgente, boasVindas, mensagensSistema };

@@ -1683,13 +1683,18 @@ async function atender(req, res, url, sessao) {
   if (url.pathname === '/api/suporte-escalado/transferir-em-massa' && req.method === 'POST') {
     try { return json(res, 200, await criarApi('/api/suporte-escalado/transferir-em-massa', await lerJson(req))); } catch (err) { return erroFicha(err, 'Não consegui transferir os tickets.'); }
   }
-  const rotaTicketHumano = /^\/api\/suporte-escalado\/(\d+)\/(atividades|mesclar|responder)$/.exec(url.pathname);
+  const rotaReenviar = /^\/api\/suporte-escalado\/(\d+)\/envios\/(\d+)\/reenviar$/.exec(url.pathname);
+  if (rotaReenviar && req.method === 'POST') {
+    try { return json(res, 200, await criarApi(`/api/suporte-escalado/${rotaReenviar[1]}/envios/${rotaReenviar[2]}/reenviar`, {})); } catch (err) { return erroFicha(err, 'Não consegui reenviar.'); }
+  }
+  const rotaTicketHumano = /^\/api\/suporte-escalado\/(\d+)\/(atividades|mesclar|responder|envios)$/.exec(url.pathname);
   if (rotaTicketHumano) {
     const [, casoId, parte] = rotaTicketHumano;
     try {
       if (parte === 'atividades' && req.method === 'GET') return json(res, 200, await obterApi(`/api/suporte-escalado/${casoId}/atividades`));
       if (parte === 'mesclar' && req.method === 'POST') return json(res, 200, await criarApi(`/api/suporte-escalado/${casoId}/mesclar`, await lerJson(req)));
-      if (parte === 'responder' && req.method === 'POST') return json(res, 201, await criarApi(`/api/suporte-escalado/${casoId}/responder`, await lerJson(req)));
+      if (parte === 'responder' && req.method === 'POST') return json(res, 202, await criarApi(`/api/suporte-escalado/${casoId}/responder`, await lerJson(req)));
+      if (parte === 'envios' && req.method === 'GET') return json(res, 200, await obterApi(`/api/suporte-escalado/${casoId}/envios`));
     } catch (err) { return erroFicha(err, 'Não consegui concluir a ação.'); }
   }
 

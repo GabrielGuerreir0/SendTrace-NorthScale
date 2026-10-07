@@ -11,6 +11,7 @@
 
 import { query } from '../../server/db.js';
 import { ErroHttp } from '../comum.js';
+import { memo } from '../cacheCurto.js';
 
 const ABERTOS = "('pendente', 'iniciado', 'lead_respondeu', 'esperando_resposta', 'em_analise', 'pendente_consulta')";
 const ENCERRADO_NA_FICHA = "coalesce(fi.status_ticket, '') NOT IN ('Resolvido', 'Fechado')";   // ticket resolvido/fechado na ficha sai da fila
@@ -57,10 +58,12 @@ export default async function rotasSuporteEscaladoFila(app) {
         OR EXISTS (SELECT 1 FROM disparos_pos_venda d WHERE lower(d.email) = lower(s.remetente_email) AND d.transacao_id ILIKE ${ph}))`;
     }
 
-    const [casosRes, hojeRes, slaRes] = await Promise.all([
-      query(
+    // Cache de 10 s (a lista) e de 60 s (a média do SLA de 7 dias, que quase não muda): vários agentes e a recarga automática dividem a mesma consulta.
+    const chave = `fila:${todos ? 'todos' : boardId}:${q}`;
+    const [casosRes, hojeRes, slaRes, falhasRes] = await Promise.all([
+      memo(`${chave}:casos`, 10_000, () => query(
         `SELECT s.id, s.remetente_email, s.nome, e.assunto, s.status, s.tag_motivo, s.prioridade_nivel, s.prioridade, s.board_id,
-                b.nome AS agente, s.resumo_conversa, s.motivo_escalonamento, s.email_id, s.iniciado_em, s.finalizado_em, s.alerta_ameaca, s.criado_em, s.ultimo_email_cliente_em, s.primeira_resposta_agente_em, s.ultima_resposta_agente_em,
+                b.nome AS agente, s.email_id, s.iniciado_em, s.finalizado_em, s.alerta_ameaca, s.criado_em, s.ultimo_email_cliente_em, s.primeira_resposta_agente_em, s.ultima_resposta_agente_em,
                 fi.motivo_contato, fi.detalhamento_motivo, fi.tipo_resolucao, fi.status_ticket, fi.motivo_reenvio, fi.status_logistica,
                 fi.responsavel_board_id AS responsavel_logistica_id, fi.status_ajuda, fi.quantidade_reenvio, fi.percentual_reembolso,
                 fi.chargeback_em, fi.ticket_reaberto_em,
@@ -79,22 +82,27 @@ export default async function rotasSuporteEscaladoFila(app) {
                    s.criado_em ASC
           LIMIT ${LIMITE + 1}`,
         valoresCasos,
-      ),
-      query(
+      )),
+      memo(`${chave.split(':').slice(0, 2).join(':')}:hoje`, 10_000, () => query(
         `SELECT count(DISTINCT r.caso_id)::int AS casos
            FROM email_ia.respostas_agente r
           WHERE ${escopoResp} AND r.caso_id IS NOT NULL
             AND r.enviado_em >= (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo')) AT TIME ZONE 'America/Sao_Paulo'`,
         valores,
-      ),
-      query(
+      )),
+      memo(`${chave.split(':').slice(0, 2).join(':')}:sla7`, 60_000, () => query(
         `SELECT r.primeira, count(r.minutos)::int AS medidas, avg(r.minutos) AS media_min,
                 count(*) FILTER (WHERE r.dentro_da_meta)::int AS dentro
            FROM email_ia.v_sla_respostas_agente r
           WHERE ${escopoResp} AND r.enviado_em >= now() - interval '7 days'
           GROUP BY r.primeira`,
         valores,
-      ),
+      )),
+      // Respostas que não saíram (3 tentativas) nas últimas 48 h: a tela avisa o agente.
+      memo(`${chave.split(':').slice(0, 2).join(':')}:falhas`, 10_000, () => query(
+        `SELECT count(*)::int AS n FROM email_ia.respostas_fila r WHERE ${escopoResp} AND r.status = 'falhou' AND r.criado_em > now() - interval '48 hours'`,
+        valores,
+      )),
     ]);
 
     const truncado = casosRes.rows.length > LIMITE;
@@ -113,6 +121,7 @@ export default async function rotasSuporteEscaladoFila(app) {
         pendentes_primeira: casos.filter((c) => c.fila === 'primeiro').length,
         pendentes_segunda: casos.filter((c) => c.fila === 'segundo').length,
         respondidos_hoje: hojeRes.rows[0]?.casos ?? 0,
+        envios_falhos: falhasRes.rows[0]?.n ?? 0,
         sla_primeira: sla(true),
         sla_segunda: sla(false),
         janela_dias: 7,
