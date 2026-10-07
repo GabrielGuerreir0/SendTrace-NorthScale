@@ -14,6 +14,7 @@
 
 import { query } from '../../server/db.js';
 import { ErroHttp } from '../comum.js';
+import { pedidoDoCliente } from '../pedidoDoCliente.js';
 
 export const OPCOES = {
   motivo_contato: ['Reembolso', 'Chargeback', 'Logística', 'Dúvidas'],
@@ -31,16 +32,75 @@ export const OPCOES = {
   percentual_reembolso: Array.from({ length: 16 }, (_, i) => 15 + i * 5),
   status_ticket: ['Aberto', 'Pendente', 'Resolvido', 'Fechado'],
   motivo_reenvio: ['Itens quebrados', 'Pedido incompleto', 'Pedido não entregue', 'Cortesia'],
+  status_logistica: ['Solicitar', 'Solicitado', 'Responder cliente', 'Resolvido'],
+  status_ajuda: ['Preciso de ajuda', 'Orientado - seguir atendimento', 'Resolvido'],
 };
 
 const CAMPOS_FICHA = [
   'motivo_contato', 'detalhamento_motivo', 'tipo_resolucao', 'percentual_reembolso', 'status_ticket',
   'motivo_reenvio', 'quantidade_reenvio', 'produto_reenvio', 'observacao_reenvio',
   'endereco_divergencia', 'novo_rastreio', 'responsavel_board_id',
+  'status_logistica', 'status_ajuda', 'valor_compra_usd', 'deducao_frascos_usd', 'chargeback_em',
 ];
+// Colunas só lidas (calculadas/guardadas pela API): valor a reembolsar e a data/autor da última alteração de cada bloco.
+const CAMPOS_LEITURA = [
+  'valor_a_reembolsar_usd', 'atualizado_por', 'atualizado_em',
+  'propriedades_atualizado_por', 'propriedades_atualizado_em', 'logistica_atualizado_por', 'logistica_atualizado_em',
+  'ajuda_atualizado_por', 'ajuda_atualizado_em',
+];
+const BLOCO_PROPRIEDADES = ['motivo_contato', 'detalhamento_motivo', 'tipo_resolucao', 'percentual_reembolso', 'status_ticket', 'valor_compra_usd', 'deducao_frascos_usd', 'chargeback_em'];
+const BLOCO_LOGISTICA = ['motivo_reenvio', 'quantidade_reenvio', 'produto_reenvio', 'observacao_reenvio', 'endereco_divergencia', 'novo_rastreio', 'responsavel_board_id', 'status_logistica'];
+const BLOCO_AJUDA = ['status_ajuda'];
+// Item 17 do PDF (07/10): ao salvar Propriedades, estes quatro campos são obrigatórios.
+const PROPRIEDADES_OBRIGATORIAS = ['motivo_contato', 'detalhamento_motivo', 'tipo_resolucao', 'status_ticket'];
 
 const lista = (valores) => ({ type: ['string', 'null'], enum: [...valores, null] });
 const texto = (max) => ({ type: ['string', 'null'], maxLength: max });
+
+/**
+ * A Home (R4, G2, G3, G4) e o dash leem a retenção de `retencao_ofertas`. Desde 07/10/2026 a fonte é a ficha (Propriedades): cada vez que o
+ * tipo de resolução é salvo, a linha do caso (origem = 'ficha', uma por caso) é criada/atualizada.
+ *   Reembolso parcial            → oferta ACEITA; concedido = valor a reembolsar; preservado = compra − reembolso
+ *   Reversão total do reembolso  → oferta ACEITA; concedido 0; preservado = valor da compra
+ *   Não revertido / Virou chargeback → oferta RECUSADA
+ *   qualquer outro (verificando, cliente não retornou…) → se já havia linha, volta a "oferecido" sem valores (nunca apaga: o dash já pode tê-la lido)
+ * Sem pedido do cliente ligado ao dash não há o que gravar.
+ */
+async function sincronizarRetencao(casoId, ficha) {
+  const { rows: [caso] } = await query('SELECT remetente_email FROM email_ia.suporte_escalado WHERE id = $1', [casoId]);
+  if (!caso?.remetente_email) return;
+  const pedido = await pedidoDoCliente(caso.remetente_email);
+  if (!pedido) return;
+  const tipo = ficha.tipo_resolucao;
+  const valorCompra = Number(ficha.valor_compra_usd ?? pedido.valor_usd ?? 0) || null;
+  let oferta = null;
+  if (tipo === 'Reembolso parcial' && ficha.valor_a_reembolsar_usd != null) {
+    const reembolso = Number(ficha.valor_a_reembolsar_usd);
+    oferta = { degrau: 'Reembolso parcial', status: 'aceito', preservado: valorCompra == null ? null : Math.max(0, valorCompra - reembolso), concedido: reembolso };
+  } else if (tipo === 'Reversão total do reembolso') {
+    oferta = { degrau: 'Reversão total do reembolso', status: 'aceito', preservado: valorCompra, concedido: 0 };
+  } else if (tipo === 'Não revertido' || tipo === 'Virou chargeback') {
+    oferta = { degrau: 'Tentativa de retenção', status: 'recusado', preservado: null, concedido: null };
+  }
+  if (!oferta) {
+    await query(
+      `UPDATE retencao_ofertas SET status = 'oferecido', degrau_aceito = NULL, valor_preservado_usd = NULL, valor_concedido_usd = NULL
+        WHERE caso_id = $1 AND origem = 'ficha' AND status <> 'oferecido'`, [casoId],
+    );
+    return;
+  }
+  await query(
+    `INSERT INTO retencao_ofertas (transacao_id, plataforma, email, degrau_oferecido, degrau_aceito, status,
+                                   valor_preservado_usd, valor_concedido_usd, protecao, criado_por, caso_id, origem)
+     VALUES ($1, $2, lower($3), $4, $5, $6, $7, $8, false, 'ficha', $9, 'ficha')
+     ON CONFLICT (caso_id) WHERE origem = 'ficha' DO UPDATE SET
+       transacao_id = EXCLUDED.transacao_id, plataforma = EXCLUDED.plataforma, degrau_oferecido = EXCLUDED.degrau_oferecido,
+       degrau_aceito = EXCLUDED.degrau_aceito, status = EXCLUDED.status,
+       valor_preservado_usd = EXCLUDED.valor_preservado_usd, valor_concedido_usd = EXCLUDED.valor_concedido_usd`,
+    [pedido.externo_id ?? pedido.transacao_id, pedido.plataforma, caso.remetente_email, oferta.degrau,
+      oferta.status === 'aceito' ? oferta.degrau : null, oferta.status, oferta.preservado, oferta.concedido, casoId],
+  );
+}
 
 export default async function rotasSuporteEscaladoFicha(app) {
   const idCaso = { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } };
@@ -115,7 +175,7 @@ export default async function rotasSuporteEscaladoFicha(app) {
     const caso = await exigirLeitura(req, req.params.id);
     const [fichaRes, ajudaRes] = await Promise.all([
       query(
-        `SELECT ${CAMPOS_FICHA.join(', ')}, atualizado_por, atualizado_em
+        `SELECT ${[...CAMPOS_FICHA, ...CAMPOS_LEITURA].join(', ')}
            FROM email_ia.suporte_escalado_ficha WHERE suporte_escalado_id = $1`,
         [req.params.id],
       ),
@@ -129,8 +189,13 @@ export default async function rotasSuporteEscaladoFicha(app) {
       ),
     ]);
     const ficha = fichaRes.rows[0] ?? {};
+    // Pedido do cliente: sugere o valor da compra e acusa chargeback já registrado no dash (item 11).
+    const { rows: [c] } = await query('SELECT remetente_email FROM email_ia.suporte_escalado WHERE id = $1', [req.params.id]);
+    const pedido = c?.remetente_email ? await pedidoDoCliente(c.remetente_email) : null;
     return {
       pode_editar: ehDono(req, caso),
+      pedido_sugerido: pedido ? { valor_usd: pedido.valor_usd ?? null, plataforma: pedido.plataforma } : null,
+      chargeback_pedido_em: pedido?.chargeback ? (pedido.chargeback_em ?? true) : null,
       ficha: { ...Object.fromEntries(CAMPOS_FICHA.map((c) => [c, null])), status_ticket: 'Aberto', ...ficha },
       ajudas: ajudaRes.rows.map(({ destino_id: destinoId, ...a }) => ({
         ...a,
@@ -165,43 +230,77 @@ export default async function rotasSuporteEscaladoFicha(app) {
           endereco_divergencia: texto(500),
           novo_rastreio: texto(120),
           responsavel_board_id: { type: ['integer', 'null'] },
+          status_logistica: lista(OPCOES.status_logistica),
+          status_ajuda: lista(OPCOES.status_ajuda),
+          valor_compra_usd: { type: ['number', 'null'], minimum: 0, maximum: 100000 },
+          deducao_frascos_usd: { type: ['number', 'null'], minimum: 0, maximum: 100000 },
+          chargeback_em: { type: ['string', 'null'], format: 'date' },
         },
       },
     },
   }, async (req) => {
     await exigirEscrita(req, req.params.id);
-    const campos = CAMPOS_FICHA.filter((c) => Object.prototype.hasOwnProperty.call(req.body, c));
-    if (!campos.length) throw new ErroHttp(400, 'Nenhum campo reconhecido no corpo.');
-    // O percentual só existe com "Reembolso parcial": se o tipo muda para outro, o percentual é zerado; sem esse tipo, não aceita percentual.
+    const tem = (o, c) => Object.prototype.hasOwnProperty.call(o, c);
+    const limpa = (v) => (typeof v === 'string' ? (v.trim() === '' ? null : v.trim()) : (v ?? null));
+    const toca = (bloco) => bloco.some((c) => tem(req.body, c));
+    const tocaProp = toca(BLOCO_PROPRIEDADES);
+    const { rows: atualRows } = await query(
+      `SELECT ${CAMPOS_FICHA.join(', ')} FROM email_ia.suporte_escalado_ficha WHERE suporte_escalado_id = $1`, [req.params.id],
+    );
+    const atual = atualRows[0] ?? {};
     const corpo = { ...req.body };
-    if (Object.prototype.hasOwnProperty.call(corpo, 'tipo_resolucao') || corpo.percentual_reembolso != null) {
-      const { rows: atual } = await query('SELECT tipo_resolucao FROM email_ia.suporte_escalado_ficha WHERE suporte_escalado_id = $1', [req.params.id]);
-      const tipo = Object.prototype.hasOwnProperty.call(corpo, 'tipo_resolucao') ? corpo.tipo_resolucao : (atual[0]?.tipo_resolucao ?? null);
-      if (tipo !== 'Reembolso parcial') {
+    const final = (c) => (tem(corpo, c) ? limpa(corpo[c]) : (atual[c] ?? null));
+
+    const extras = {};   // colunas calculadas pela API (não vêm do corpo)
+    if (tocaProp) {
+      const tipo = final('tipo_resolucao');
+      const parcial = tipo === 'Reembolso parcial';
+      // O percentual, o valor da compra e a dedução só existem com "Reembolso parcial": o percentual enviado sem esse tipo é erro; os demais são zerados.
+      if (!parcial) {
         if (corpo.percentual_reembolso != null) throw new ErroHttp(400, 'O percentual só vale para o tipo de resolução "Reembolso parcial".');
-        corpo.percentual_reembolso = null;
+        corpo.percentual_reembolso = null; corpo.valor_compra_usd = null; corpo.deducao_frascos_usd = null;
       }
+      // Item 17 do PDF: Propriedades não salva incompleto.
+      const faltam = PROPRIEDADES_OBRIGATORIAS.filter((c) => final(c) == null);
+      if (parcial) {
+        if (final('percentual_reembolso') == null) faltam.push('percentual_reembolso');
+        if (final('valor_compra_usd') == null) faltam.push('valor_compra_usd');
+      }
+      if (faltam.length) throw new ErroHttp(422, `Preencha todos os campos de Propriedades antes de salvar (faltam: ${faltam.join(', ')}).`);
+      // Chargeback: a data nasce com hoje se o agente não informar; some se o tipo deixa de ser "Virou chargeback".
+      if (tipo === 'Virou chargeback') {
+        if (!final('chargeback_em')) corpo.chargeback_em = new Date().toISOString().slice(0, 10);
+      } else corpo.chargeback_em = null;
+      // MÁX(0; valor × % − dedução), a fórmula da planilha da JVZoo.
+      extras.valor_a_reembolsar_usd = parcial
+        ? Math.round(Math.max(0, final('valor_compra_usd') * (final('percentual_reembolso') / 100) - (final('deducao_frascos_usd') ?? 0)) * 100) / 100
+        : null;
     }
-    const campos2 = CAMPOS_FICHA.filter((c) => Object.prototype.hasOwnProperty.call(corpo, c));
+    const campos2 = CAMPOS_FICHA.filter((c) => tem(corpo, c));
+    if (!campos2.length) throw new ErroHttp(400, 'Nenhum campo reconhecido no corpo.');
     if (req.body.responsavel_board_id != null) {
       const { rows } = await query(
         'SELECT 1 FROM email_ia.suporte_escalado_boards WHERE id = $1 AND usuario_id IS NOT NULL', [req.body.responsavel_board_id],
       );
       if (!rows.length) throw new ErroHttp(400, 'Responsável inválido.');
     }
-    const valores = campos2.map((c) => {
-      const v = corpo[c];
-      return typeof v === 'string' ? (v.trim() === '' ? null : v.trim()) : v;
-    });
-    const colunas = campos2.join(', ');
-    const marcas = campos2.map((_, i) => `$${i + 3}`).join(', ');
-    const atualiza = campos2.map((c) => `${c} = EXCLUDED.${c}`).join(', ');
+    const quem = nomeDe(req);
+    const cols = Object.fromEntries(campos2.map((c) => [c, limpa(corpo[c])]));
+    Object.assign(cols, extras);
+    // Data e autor da última alteração de cada bloco (item 5): só o bloco tocado muda.
+    for (const [bloco, prefixo] of [[BLOCO_PROPRIEDADES, 'propriedades'], [BLOCO_LOGISTICA, 'logistica'], [BLOCO_AJUDA, 'ajuda']]) {
+      if (toca(bloco)) { cols[`${prefixo}_atualizado_por`] = quem; cols[`${prefixo}_atualizado_em`] = new Date(); }
+    }
+    cols.atualizado_por = quem;
+    const nomes = Object.keys(cols);
+    const marcas = nomes.map((_, i) => `$${i + 2}`).join(', ');
+    const atualiza = nomes.map((c) => `${c} = EXCLUDED.${c}`).join(', ');
     const { rows } = await query(
-      `INSERT INTO email_ia.suporte_escalado_ficha (suporte_escalado_id, atualizado_por, ${colunas})
-       VALUES ($1, $2, ${marcas})
-       ON CONFLICT (suporte_escalado_id) DO UPDATE SET ${atualiza}, atualizado_por = EXCLUDED.atualizado_por, atualizado_em = now()
-       RETURNING ${CAMPOS_FICHA.join(', ')}, atualizado_por, atualizado_em`,
-      [req.params.id, nomeDe(req), ...valores],
+      `INSERT INTO email_ia.suporte_escalado_ficha (suporte_escalado_id, ${nomes.join(', ')})
+       VALUES ($1, ${marcas})
+       ON CONFLICT (suporte_escalado_id) DO UPDATE SET ${atualiza}, atualizado_em = now()
+       RETURNING ${[...CAMPOS_FICHA, ...CAMPOS_LEITURA].join(', ')}`,
+      [req.params.id, ...nomes.map((c) => cols[c])],
     );
     // Mexer na ficha é atendimento humano: mesmo marco de "primeiro toque" que mover de coluna, anotar ou datar a entrega.
     await query(
@@ -209,6 +308,7 @@ export default async function rotasSuporteEscaladoFicha(app) {
         WHERE id = $1`,
       [req.params.id],
     );
+    if (tocaProp) await sincronizarRetencao(req.params.id, rows[0]);
     return rows[0];
   });
 

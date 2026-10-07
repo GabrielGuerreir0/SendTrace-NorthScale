@@ -636,6 +636,9 @@ export function abrirDetalheEscalado(item) {
     abrirModalEmails('email', item.remetente_email, `conversa com ${item.nome || item.remetente_email}`, null, 'conversa');
   });
 
+  const alertaEl = document.createElement('span');
+  alertaEl.textContent = ROTULO_AMEACA[item.alerta_ameaca] ? `🚨 ${ROTULO_AMEACA[item.alerta_ameaca]} — responder em até 2 dias úteis` : '—';
+
   // Ordem pedida pela Késsia (PDF 07/10, item 28): Resumo geral → Dados do
   // pedido → Propriedades → Resumo da IA → Atendimento → Logística → Ajuda.
   // Retenção e Notas ficam no fim (Retenção sai na troca da fonte da Home/dash).
@@ -650,7 +653,7 @@ export function abrirDetalheEscalado(item) {
       { rotulo: 'Finalizado em', valor: item.finalizado_em ? dataHora(item.finalizado_em) : '—' },
       { rotulo: 'Tag do motivo do contato', valor: ROTULO_TAG[item.tag_motivo] || '—' },
       { rotulo: 'Prioridade', valor: ROTULO_NIVEL[item.prioridade_nivel] || '—' },
-      { rotulo: 'Alerta', valor: ROTULO_AMEACA[item.alerta_ameaca] ? `🚨 ${ROTULO_AMEACA[item.alerta_ameaca]} — responder em até 2 dias úteis` : '—' },
+      { rotulo: 'Alerta', valor: alertaEl },
       { rotulo: 'Última movimentação', valor: item.movido_em ? `${item.movido_de ? 'de ' + item.movido_de + ' ' : ''}por ${item.movido_por || 'Sistema (automação)'} em ${dataHora(item.movido_em)}` : '—' },
       { rotulo: 'Dados do pedido', valor: contextoContainer, bloco: true, metade: true },
       { rotulo: 'Propriedades', valor: propriedadesContainer, bloco: true, metade: true },
@@ -665,7 +668,7 @@ export function abrirDetalheEscalado(item) {
   });
 
   carregarContexto(item, contextoContainer);
-  carregarFichaAgente(item, propriedadesContainer, logisticaContainer, ajudaContainer);
+  carregarFichaAgente(item, propriedadesContainer, logisticaContainer, ajudaContainer, alertaEl);
   carregarRetencao(item, retencaoContainer);
   carregarNotas(item.id, notasContainer);
 }
@@ -920,8 +923,10 @@ export function rotuloDe(texto, el) {
   return l;
 }
 
-/** Monta um bloco de campos (uma coluna de rótulos + controles) que salva só os campos dele. */
-function montarBlocoFicha({ casoId, container, ficha, podeEditar, definicao, recarregar }) {
+/** Monta um bloco de campos (uma coluna de rótulos + controles) que salva só os campos dele.
+ *  Tipos: lista, texto, area, dinheiro (US$), data e calculo (somente leitura, recalculado a cada digitação; não é enviado).
+ *  `obrigatorio` vale só enquanto o campo está visível (item 17 do PDF de 07/10). */
+function montarBlocoFicha({ casoId, container, ficha, podeEditar, definicao, recarregar, atualizadoPor, atualizadoEm }) {
   container.replaceChildren();
   const form = document.createElement('form');
   form.className = 'esc-ficha-form';
@@ -929,21 +934,35 @@ function montarBlocoFicha({ casoId, container, ficha, podeEditar, definicao, rec
   const rotulos = {};
   for (const d of definicao) {
     let el;
+    const atual = ficha[d.chave] ?? d.padrao ?? null;
     if (d.tipo === 'lista') el = selectLista(d.opcoes, ficha[d.chave]);
     else if (d.tipo === 'area') { el = document.createElement('textarea'); el.rows = 2; el.value = ficha[d.chave] ?? ''; el.maxLength = d.max; }
+    else if (d.tipo === 'dinheiro') { el = document.createElement('input'); el.type = 'number'; el.min = '0'; el.step = '0.01'; el.value = atual ?? ''; }
+    else if (d.tipo === 'data') { el = document.createElement('input'); el.type = 'date'; el.value = atual ? String(atual).slice(0, 10) : ''; }
+    else if (d.tipo === 'calculo') { el = document.createElement('output'); el.className = 'esc-calculo'; }
     else { el = document.createElement('input'); el.type = 'text'; el.value = ficha[d.chave] ?? ''; el.maxLength = d.max; }
-    el.disabled = !podeEditar;
+    if (d.tipo !== 'calculo') el.disabled = !podeEditar;
     controles[d.chave] = el;
-    rotulos[d.chave] = rotuloDe(d.rotulo, el);
+    rotulos[d.chave] = rotuloDe(d.obrigatorio ? `${d.rotulo} *` : d.rotulo, el);
     form.append(rotulos[d.chave]);
   }
   // Campo condicional (ex.: percentual do reembolso só aparece com "Reembolso parcial"): mostra ao lado do campo que o controla.
   const visivel = (d) => !d.visivelSe || controles[d.visivelSe.chave].value === d.visivelSe.valor;
+  const numero = (chave) => (controles[chave] && controles[chave].value !== '' ? Number(controles[chave].value) : null);
+  const recalcular = () => {
+    for (const d of definicao) {
+      if (d.tipo !== 'calculo') continue;
+      const v = d.calcular(numero);
+      controles[d.chave].textContent = v == null ? '—' : `US$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+  };
   const atualizarVisibilidade = () => {
     for (const d of definicao) if (d.visivelSe) rotulos[d.chave].hidden = !visivel(d);
   };
   for (const d of definicao) if (d.visivelSe) controles[d.visivelSe.chave].addEventListener('change', atualizarVisibilidade);
+  for (const c of Object.values(controles)) { c.addEventListener('input', recalcular); c.addEventListener('change', recalcular); }
   atualizarVisibilidade();
+  recalcular();
   if (podeEditar) {
     const btn = document.createElement('button');
     btn.type = 'submit'; btn.className = 'btn btn-forte'; btn.textContent = 'Salvar';
@@ -951,29 +970,36 @@ function montarBlocoFicha({ casoId, container, ficha, podeEditar, definicao, rec
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const corpo = {};
+      const faltam = [];
       for (const d of definicao) {
+        if (d.tipo === 'calculo') continue;
         const v = visivel(d) ? controles[d.chave].value.trim() : '';
-        corpo[d.chave] = v === '' ? null : (d.numero ? Number(v) : v);
+        if (d.obrigatorio && visivel(d) && v === '') faltam.push(d.rotulo);
+        corpo[d.chave] = v === '' ? null : ((d.numero || d.tipo === 'dinheiro') ? Number(v) : v);
       }
+      if (faltam.length) { window.alert(`Preencha todos os campos antes de salvar: ${faltam.join(', ')}.`); return; }
       btn.disabled = true;
       const { ok, dados: r } = await api(`/api/suporte-escalado/${casoId}/ficha`, { metodo: 'PUT', corpo });
       btn.disabled = false;
-      if (!ok) { window.alert(r?.erro ?? r?.detail ?? 'Não consegui salvar.'); return; }
+      if (!ok) { window.alert(r?.erro ?? r?.detail ?? r?.message ?? 'Não consegui salvar.'); return; }
       document.dispatchEvent(new CustomEvent('escalado:ficha-salva'));   // a fila do Suporte Humano atualiza na hora
       recarregar();
     });
   }
   container.append(form);
-  if (ficha.atualizado_em) {
+  if (atualizadoEm) {
     const nota = document.createElement('p');
     nota.className = 'vazio-suave';
-    nota.textContent = `Última alteração: ${ficha.atualizado_por || '—'} em ${dataHora(ficha.atualizado_em)}`;
+    nota.textContent = `Última alteração: ${atualizadoPor || '—'} em ${dataHora(atualizadoEm)}`;
     container.append(nota);
   }
 }
 
-function renderAjuda({ casoId, container, dados, opc, recarregar }) {
+function renderAjuda({ casoId, container, dados, opc, recarregar, montarStatus }) {
   container.replaceChildren();
+  const statusEl = document.createElement('div');
+  container.append(statusEl);
+  montarStatus(statusEl);
   const pedidos = dados.ajudas ?? [];
   if (!pedidos.length) {
     const vazio = document.createElement('p');
@@ -1051,26 +1077,46 @@ function formResposta(ajudaId, aoResponder) {
   return form;
 }
 
-async function carregarFichaAgente(item, contProp, contLog, contAjuda) {
+async function carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl) {
   try {
     const [opc, { ok, dados }] = await Promise.all([obterOpcoes(), api(`/api/suporte-escalado/${item.id}/ficha`)]);
     if (!ok) throw new Error('ficha');
-    const recarregar = () => { carregarFichaAgente(item, contProp, contLog, contAjuda); carregarAjudaRecebida(); };
-    const base = { casoId: item.id, ficha: dados.ficha, podeEditar: dados.pode_editar, recarregar };
+    const recarregar = () => { carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl); carregarAjudaRecebida(); };
+    const f = dados.ficha;
+    const base = { casoId: item.id, ficha: f, podeEditar: dados.pode_editar, recarregar };
+    // Alerta "Virou chargeback" (item 11): o tipo de resolução escolhido pelo agente OU o chargeback já registrado no dash para o pedido.
+    if (alertaEl && (f.tipo_resolucao === 'Virou chargeback' || dados.chargeback_pedido_em)) {
+      const quando = f.chargeback_em || (typeof dados.chargeback_pedido_em === 'string' ? dados.chargeback_pedido_em : null);
+      const txt = `🚨 Virou chargeback${quando ? ` em ${String(quando).slice(0, 10).split('-').reverse().join('/')}` : ''}`;
+      if (alertaEl.dataset.base === undefined) alertaEl.dataset.base = alertaEl.textContent;   // recarregar não empilha o aviso
+      alertaEl.textContent = alertaEl.dataset.base && alertaEl.dataset.base !== '—' ? `${alertaEl.dataset.base} · ${txt}` : txt;
+    }
     montarBlocoFicha({
-      ...base, container: contProp,
+      ...base, container: contProp, atualizadoPor: f.propriedades_atualizado_por, atualizadoEm: f.propriedades_atualizado_em,
       definicao: [
-        { chave: 'motivo_contato', rotulo: 'Motivo do contato', tipo: 'lista', opcoes: opc.motivo_contato },
-        { chave: 'detalhamento_motivo', rotulo: 'Detalhamento do motivo do contato', tipo: 'lista', opcoes: opc.detalhamento_motivo },
-        { chave: 'tipo_resolucao', rotulo: 'Tipo de resolução', tipo: 'lista', opcoes: opc.tipo_resolucao },
-        { chave: 'percentual_reembolso', rotulo: 'Percentual do reembolso', tipo: 'lista', numero: true,
+        { chave: 'motivo_contato', rotulo: 'Motivo do contato', tipo: 'lista', opcoes: opc.motivo_contato, obrigatorio: true },
+        { chave: 'detalhamento_motivo', rotulo: 'Detalhamento do motivo do contato', tipo: 'lista', opcoes: opc.detalhamento_motivo, obrigatorio: true },
+        { chave: 'tipo_resolucao', rotulo: 'Tipo de resolução', tipo: 'lista', opcoes: opc.tipo_resolucao, obrigatorio: true },
+        { chave: 'percentual_reembolso', rotulo: 'Percentual do reembolso', tipo: 'lista', numero: true, obrigatorio: true,
           opcoes: (opc.percentual_reembolso ?? []).map((p) => [p, `${p}%`]), visivelSe: { chave: 'tipo_resolucao', valor: 'Reembolso parcial' } },
-        { chave: 'status_ticket', rotulo: 'Status do ticket', tipo: 'lista', opcoes: opc.status_ticket },
+        { chave: 'valor_compra_usd', rotulo: 'Valor da compra (US$)', tipo: 'dinheiro', obrigatorio: true, padrao: dados.pedido_sugerido?.valor_usd ?? null,
+          visivelSe: { chave: 'tipo_resolucao', valor: 'Reembolso parcial' } },
+        { chave: 'deducao_frascos_usd', rotulo: 'Valor do frasco a deduzir (US$, se for o caso)', tipo: 'dinheiro',
+          visivelSe: { chave: 'tipo_resolucao', valor: 'Reembolso parcial' } },
+        { chave: 'valor_a_reembolsar', rotulo: 'Valor a reembolsar', tipo: 'calculo', visivelSe: { chave: 'tipo_resolucao', valor: 'Reembolso parcial' },
+          // MÁX(0; valor × % − dedução): a mesma fórmula da planilha da JVZoo; a API recalcula e grava ao salvar.
+          calcular: (n) => {
+            const v = n('valor_compra_usd'); const p = n('percentual_reembolso');
+            return v == null || p == null ? null : Math.round(Math.max(0, v * (p / 100) - (n('deducao_frascos_usd') ?? 0)) * 100) / 100;
+          } },
+        { chave: 'chargeback_em', rotulo: 'Data do chargeback', tipo: 'data', visivelSe: { chave: 'tipo_resolucao', valor: 'Virou chargeback' } },
+        { chave: 'status_ticket', rotulo: 'Status do ticket', tipo: 'lista', opcoes: opc.status_ticket, obrigatorio: true },
       ],
     });
     montarBlocoFicha({
-      ...base, container: contLog,
+      ...base, container: contLog, atualizadoPor: f.logistica_atualizado_por, atualizadoEm: f.logistica_atualizado_em,
       definicao: [
+        { chave: 'status_logistica', rotulo: 'Status logística', tipo: 'lista', opcoes: opc.status_logistica },
         { chave: 'motivo_reenvio', rotulo: 'Motivo do reenvio', tipo: 'lista', opcoes: opc.motivo_reenvio },
         { chave: 'quantidade_reenvio', rotulo: 'Quantidade para reenvio', tipo: 'lista', numero: true, opcoes: Array.from({ length: 30 }, (_, i) => i + 1) },
         { chave: 'produto_reenvio', rotulo: 'Produto a ser enviado', tipo: 'texto', max: 200 },
@@ -1080,7 +1126,13 @@ async function carregarFichaAgente(item, contProp, contLog, contAjuda) {
         { chave: 'responsavel_board_id', rotulo: 'Responsável', tipo: 'lista', numero: true, opcoes: (opc.equipe ?? []).map((e) => [e.id, e.nome]) },
       ],
     });
-    renderAjuda({ casoId: item.id, container: contAjuda, dados, opc, recarregar });
+    renderAjuda({
+      casoId: item.id, container: contAjuda, dados, opc, recarregar,
+      montarStatus: (cont) => montarBlocoFicha({
+        ...base, container: cont, atualizadoPor: f.ajuda_atualizado_por, atualizadoEm: f.ajuda_atualizado_em,
+        definicao: [{ chave: 'status_ajuda', rotulo: 'Status de ajuda', tipo: 'lista', opcoes: opc.status_ajuda }],
+      }),
+    });
   } catch {
     for (const c of [contProp, contLog, contAjuda]) {
       c.replaceChildren();

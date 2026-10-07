@@ -43,6 +43,7 @@
 import { pool, query } from '../../server/db.js';
 
 import { ErroHttp } from '../comum.js';
+import { pedidoDoCliente } from '../pedidoDoCliente.js';
 import {
   filtroEmails, filtroTickets, condicaoProdutoLoja, condicaoPeriodo, resolverEmailsProdutoLoja,
 } from '../filtrosEmailIA.js';
@@ -1872,25 +1873,6 @@ export default async function rotasEmailIACentral(app) {
     const { rows } = await query('SELECT id, remetente_email FROM email_ia.suporte_escalado WHERE id = $1', [req.params.id]);
     if (!rows.length) throw new ErroHttp(404, 'Caso escalado não encontrado.');
     return rows[0];
-  }
-
-  async function pedidoDoCliente(email) {
-    const { rows } = await query(
-      `SELECT d.transacao_id, lower(btrim(d.plataforma)) AS plataforma, d.produto, d.criado_em,
-              x.external_id AS externo_id, x.valor::float AS valor_usd
-       FROM disparos_pos_venda d
-       LEFT JOIN LATERAL (
-         SELECT p.external_id, v.valor FROM dash_pedidos p
-         JOIN dash_vendas v ON v.plataforma = p.plataforma AND v.external_id = p.external_id
-         WHERE p.plataforma = lower(btrim(d.plataforma))
-           AND ((p.plataforma = 'digistore24' AND p.session_id = d.transacao_id)
-             OR (p.plataforma <> 'digistore24' AND p.external_id = d.transacao_id))
-         ORDER BY p.funnel_step NULLS LAST LIMIT 1) x ON true
-       WHERE lower(d.email) = lower($1) AND d.transacao_id IS NOT NULL AND btrim(d.plataforma) NOT IN ('', 'teste')
-       ORDER BY d.criado_em DESC LIMIT 1`,
-      [email],
-    ).catch(() => ({ rows: [] }));
-    return rows[0] ?? null;
   }
 
   const CORPO_RETENCAO = {

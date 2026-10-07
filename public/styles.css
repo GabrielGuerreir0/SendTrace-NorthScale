@@ -1987,6 +1987,7 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 .esc-ficha-bloco { display: flex; flex-direction: column; gap: 8px; }
 .esc-ficha-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; align-items: end; }
 .esc-ficha-form .btn { justify-self: start; }
+.esc-calculo { display: block; padding: 8px 10px; font-weight: 650; font-size: 15px; border: 1px dashed var(--borda); border-radius: var(--raio); background: var(--plano); }
 .esc-campo { display: flex; flex-direction: column; gap: 3px; font-size: 0.78rem; color: var(--tinta-2); }
 .esc-campo select, .esc-campo input, .esc-campo textarea { font: inherit; font-size: 0.9rem; }
 .esc-ajuda-item { padding: 8px 10px; border: 1px solid var(--borda); border-radius: 9px; }
