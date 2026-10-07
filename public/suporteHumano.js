@@ -583,8 +583,11 @@ function barraSelecao(linhasVisiveis) {
   if (selecionados.size) {
     const destino = document.createElement('select');
     const o0 = document.createElement('option'); o0.value = ''; o0.textContent = 'Transferir para…'; destino.append(o0);
-    for (const b of boards.filter((x) => x.ativo !== false && x.usuario_id)) {
-      const o = document.createElement('option'); o.value = String(b.id); o.textContent = b.nome; destino.append(o);
+    // Qualquer agente serve de destino, ativo ou não (decisão do Lucas, 07/10): "inativo" só quer dizer que não recebe casos novos sozinho.
+    for (const b of boards.filter((x) => boardId === 'todos' || x.id !== boardId)) {
+      const o = document.createElement('option'); o.value = String(b.id);
+      o.textContent = `${b.nome}${b.ativo === false ? ' (inativo)' : ''}${b.usuario_id ? '' : ' (sem responsável)'}`;
+      destino.append(o);
     }
     const ir = document.createElement('button');
     ir.type = 'button'; ir.className = 'btn btn-forte'; ir.textContent = 'Transferir';
