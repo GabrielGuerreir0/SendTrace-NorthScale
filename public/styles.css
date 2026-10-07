@@ -1461,6 +1461,8 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
   font-size: 12px; color: var(--tinta-2); margin-bottom: 8px;
 }
 .mf-campo--bloco summary.mf-campo-rotulo { cursor: pointer; margin-bottom: 0; }
+.mf-campo--bloco summary.mf-campo-rotulo::before { content: '▸ '; }
+.mf-campo--bloco details[open] > summary.mf-campo-rotulo::before { content: '▾ '; }
 .mf-campo--bloco details[open] > summary.mf-campo-rotulo { margin-bottom: 8px; }
 @media (min-width: 900px) {
   /* Propriedades e Dados do pedido lado a lado, como no print. */
@@ -2068,7 +2070,9 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
 .esc-contexto-lista dd {
   margin: 0; font-size: 13px; line-height: 1.4; color: var(--tinta);
 }
-.esc-contexto-entrega { display: flex; align-items: center; gap: 8px; }
+.esc-contexto-entrega { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.esc-contexto-lista dd { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .esc-contexto-lista { grid-template-columns: 1fr; } .esc-contexto-lista dt { margin-top: 6px; } }
 
 /* Retenção (P10): oferta feita pelo CS, registrada na ficha do caso */
 .esc-retencao-pedido { margin: 0 0 8px; font-size: .9rem; color: var(--texto-suave, inherit); }

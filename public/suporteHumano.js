@@ -650,7 +650,7 @@ function dashboardsPropriedades() {
   const tabela = document.createElement('table');
   tabela.className = 'sup-tabela';
   const cab = tabela.createTHead().insertRow();
-  for (const t of ['Tag do motivo', ...d.status_ordem, 'Total']) { const th = document.createElement('th'); th.textContent = t; cab.append(th); }
+  ['Tag do motivo', ...d.status_ordem, 'Total'].forEach((t, i) => { const th = document.createElement('th'); th.textContent = t; if (i > 0) th.style.textAlign = 'right'; cab.append(th); });
   const corpo = tabela.createTBody();
   const linhas = d.por_tag;
   const colunas = [

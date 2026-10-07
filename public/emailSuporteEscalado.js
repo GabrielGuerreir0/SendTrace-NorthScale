@@ -664,7 +664,7 @@ export function abrirDetalheEscalado(item) {
       { rotulo: 'Tag do motivo do contato', valor: ROTULO_TAG[item.tag_motivo] || '—' },
       { rotulo: 'Prioridade', valor: ROTULO_NIVEL[item.prioridade_nivel] || '—' },
       { rotulo: 'Alerta', valor: alertaEl },
-      { rotulo: 'Última movimentação', valor: item.movido_em ? `${item.movido_de ? 'de ' + item.movido_de + ' ' : ''}por ${item.movido_por || 'Sistema (automação)'} em ${dataHora(item.movido_em)}` : '—' },
+      { rotulo: 'Última movimentação', largo: true, valor: item.movido_em ? `${item.movido_de ? 'de ' + item.movido_de + ' ' : ''}por ${item.movido_por || 'Sistema (automação)'} em ${dataHora(item.movido_em)}` : '—' },
       { rotulo: 'Dados do pedido', valor: contextoContainer, bloco: true, metade: true },
       { rotulo: 'Propriedades', valor: propriedadesContainer, bloco: true, metade: true },
       { rotulo: 'Mensagem da cliente — foco da reclamação', valor: item.resumo_conversa || '—', recolhivel: true, metade: true },
