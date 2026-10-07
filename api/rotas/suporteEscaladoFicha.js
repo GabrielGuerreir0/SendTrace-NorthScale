@@ -3,6 +3,7 @@
  *
  *   GET  /api/suporte-escalado/opcoes                    → listas suspensas (Propriedades/Logística) + equipe (quem pode receber ajuda)
  *   GET  /api/suporte-escalado/:id/ficha                 → Propriedades + Logística + pedidos de ajuda do caso
+ *   GET  /api/suporte-escalado/:id/atividades            → linha do tempo do ticket (chegada, coluna, propriedades, notas, ajuda, respostas) — PDF de 07/10, item 6
  *   PUT  /api/suporte-escalado/:id/ficha                 → salva os campos enviados (dono do board ou admin)
  *   POST /api/suporte-escalado/:id/ajuda                 → o agente escala o caso a alguém da equipe, com uma nota (dono do board ou admin)
  *   POST /api/suporte-escalado/ajuda/:ajudaId/responder  → quem recebeu o pedido responde (a pessoa do board de destino ou admin)
@@ -46,7 +47,7 @@ const CAMPOS_FICHA = [
 const CAMPOS_LEITURA = [
   'valor_a_reembolsar_usd', 'atualizado_por', 'atualizado_em',
   'propriedades_atualizado_por', 'propriedades_atualizado_em', 'logistica_atualizado_por', 'logistica_atualizado_em',
-  'ajuda_atualizado_por', 'ajuda_atualizado_em',
+  'ajuda_atualizado_por', 'ajuda_atualizado_em', 'ticket_reaberto_em',
 ];
 const BLOCO_PROPRIEDADES = ['motivo_contato', 'detalhamento_motivo', 'tipo_resolucao', 'percentual_reembolso', 'status_ticket', 'valor_compra_usd', 'deducao_frascos_usd', 'chargeback_em'];
 const BLOCO_LOGISTICA = ['motivo_reenvio', 'quantidade_reenvio', 'produto_reenvio', 'observacao_reenvio', 'endereco_divergencia', 'novo_rastreio', 'responsavel_board_id', 'status_logistica'];
@@ -215,6 +216,68 @@ export default async function rotasSuporteEscaladoFicha(app) {
         pode_responder: !a.respondido_em && (!!req.usuario.admin || (destinoId != null && destinoId === req.usuario.user_id)),
       })),
     };
+  });
+
+  /* ═══════════════════  GET /api/suporte-escalado/:id/atividades  ═════════════════
+     Linha do tempo do ticket, mais recente primeiro. Junta o que já existe (sem copiar): chegada do caso, mudanças de coluna e de agente
+     (suporte_escalado_historico), alterações da ficha (suporte_escalado_eventos, 085), notas, pedidos de ajuda e respostas, respostas do
+     agente (respostas_agente) e e-mails do cliente. Só metadados e trechos curtos — o texto completo dos e-mails fica na conversa. */
+  app.get('/api/suporte-escalado/:id/atividades', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Histórico de atividades do ticket (data, hora, quem e o quê)',
+      security: [{ bearerAuth: [] }],
+      params: idCaso,
+    },
+  }, async (req) => {
+    await exigirLeitura(req, req.params.id);
+    const { rows } = await query(
+      `SELECT * FROM (
+         SELECT s.criado_em AS quando, 'Sistema' AS ator, 'chegada' AS tipo, 'Ticket chegou' AS titulo,
+                concat_ws(' · ', 'Tag: ' || s.tag_motivo, 'Prioridade: ' || s.prioridade_nivel) AS detalhe
+           FROM email_ia.suporte_escalado s WHERE s.id = $1
+         UNION ALL
+         SELECT h.mudou_em, coalesce(h.movido_por, 'Sistema'), 'coluna', 'Coluna do Kanban alterada',
+                coalesce(h.status_anterior, '—') || ' → ' || h.status_novo
+           FROM email_ia.suporte_escalado_historico h WHERE h.suporte_escalado_id = $1
+         UNION ALL
+         SELECT x.mudou_em, coalesce(x.movido_por, 'Sistema'), 'atribuicao', 'Atribuído ao agente', x.nome
+           FROM (SELECT h.mudou_em, h.id, h.movido_por, h.board_id, b.nome,
+                        lag(h.board_id) OVER (ORDER BY h.mudou_em, h.id) AS anterior
+                   FROM email_ia.suporte_escalado_historico h
+                   LEFT JOIN email_ia.suporte_escalado_boards b ON b.id = h.board_id
+                  WHERE h.suporte_escalado_id = $1) x
+          WHERE x.board_id IS NOT NULL AND x.board_id IS DISTINCT FROM x.anterior
+         UNION ALL
+         SELECT ev.ocorrido_em, coalesce(ev.ator, 'Sistema'), 'propriedade:' || ev.bloco || ':' || ev.campo, ev.campo,
+                concat_ws(' → ', coalesce(ev.de, '—'), coalesce(ev.para, '—')) || coalesce(' (' || ev.detalhe || ')', '')
+           FROM email_ia.suporte_escalado_eventos ev WHERE ev.caso_id = $1
+         UNION ALL
+         SELECT n.criado_em, coalesce(n.autor, 'Sem autor'), 'nota', 'Nota interna adicionada', left(n.nota, 240)
+           FROM email_ia.suporte_escalado_notas n WHERE n.suporte_escalado_id = $1
+         UNION ALL
+         SELECT a.criado_em, a.pedido_por, 'ajuda', 'Pediu ajuda a ' || b.nome, left(a.nota, 240)
+           FROM email_ia.suporte_escalado_ajuda a JOIN email_ia.suporte_escalado_boards b ON b.id = a.para_board_id
+          WHERE a.suporte_escalado_id = $1
+         UNION ALL
+         SELECT a.respondido_em, a.respondido_por, 'ajuda', 'Respondeu ao pedido de ajuda', left(a.resposta, 240)
+           FROM email_ia.suporte_escalado_ajuda a WHERE a.suporte_escalado_id = $1 AND a.respondido_em IS NOT NULL
+         UNION ALL
+         SELECT r.enviado_em, coalesce(b.nome, 'Agente'), 'resposta_agente', 'Agente respondeu ao cliente', r.assunto
+           FROM email_ia.respostas_agente r LEFT JOIN email_ia.suporte_escalado_boards b ON b.id = r.board_id
+          WHERE r.caso_id = $1
+         UNION ALL
+         (SELECT e.data_email, coalesce(s.nome, s.remetente_email), 'cliente', 'Cliente enviou um e-mail', e.assunto
+            FROM email_ia.suporte_escalado s
+            JOIN email_ia.emails e ON lower(e.remetente_email) = lower(s.remetente_email) AND e.plataforma_origem IS NULL
+           WHERE s.id = $1 ORDER BY e.data_email DESC LIMIT 100)
+       ) t
+       WHERE t.quando IS NOT NULL
+       ORDER BY t.quando DESC LIMIT 400`,
+      [req.params.id],
+    );
+    return { atividades: rows };
   });
 
   /* ═══════════════════════  PUT /api/suporte-escalado/:id/ficha  ══════════════ */

@@ -240,6 +240,12 @@ function minutosTxt(min) {
 function selarSla(caso) {
   const el = document.createElement('span');
   el.className = 'esc-sla';
+  if (caso.pausado) {
+    el.dataset.estado = 'espera';
+    el.textContent = 'SLA suspenso (Pendente)';
+    el.title = 'O ticket está como Pendente: o SLA não conta até voltar para Aberto.';
+    return el;
+  }
   if (caso.restante_min === null || caso.fila === 'outros') {
     el.dataset.estado = 'espera';
     el.textContent = caso.fila === 'outros' ? 'aguardando o cliente' : '—';

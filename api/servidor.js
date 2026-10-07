@@ -417,6 +417,23 @@ recalcularRisco();
 const intervaloRisco = setInterval(recalcularRisco, RISCO_INTERVALO_MS);
 
 /*
+ * Fechamento automático dos tickets do Suporte Humano (migração 085) — a cada 15 min, só com `fechamento_automatico_ativo = 'true'` em
+ * email_ia.config (nasce 'false'). Resolvido há mais de 7 dias e Aberto sem resposta do cliente há mais de 10 dias viram Fechado.
+ * Erro vira só log.
+ */
+const FECHAMENTO_INTERVALO_MS = 15 * 60 * 1000;
+const fecharTicketsAutomatico = async () => {
+  try {
+    const { rows } = await pool.query("SELECT valor FROM email_ia.config WHERE chave = 'fechamento_automatico_ativo'");
+    if (rows[0]?.valor !== 'true') return;
+    const { rows: [r] } = await pool.query('SELECT * FROM email_ia.fechar_tickets_automatico(false)');
+    if (r && (r.resolvidos_fechados || r.abertos_fechados)) app.log.info(r, 'tickets fechados automaticamente');
+  } catch (err) { app.log.error(err, 'falha no fechamento automático de tickets'); }
+};
+fecharTicketsAutomatico();
+const intervaloFechamento = setInterval(fecharTicketsAutomatico, FECHAMENTO_INTERVALO_MS);
+
+/*
  * Sincronização com o dash (só leitura) — de hora em hora + varredura semanal de 90 dias. Só liga com
  * DASH_API_KEY no .env; sem a chave é um no-op e a API sobe igual. Erro vira só log.
  */
@@ -427,6 +444,7 @@ for (const sinal of ['SIGINT', 'SIGTERM']) {
     desligarDash();
     clearInterval(intervaloAlertas);
     clearInterval(intervaloRisco);
+    clearInterval(intervaloFechamento);
     await app.close();
     await pool.end();
     process.exit(0);

@@ -633,6 +633,9 @@ export function abrirDetalheEscalado(item) {
     abrirModalEmails('email', item.remetente_email, `conversa com ${item.nome || item.remetente_email}`, null, 'conversa');
   });
 
+  const atividadesContainer = document.createElement('div');
+  atividadesContainer.className = 'esc-atividades';
+  atividadesContainer.textContent = 'Carregando…';
   const alertaEl = document.createElement('span');
   alertaEl.textContent = ROTULO_AMEACA[item.alerta_ameaca] ? `🚨 ${ROTULO_AMEACA[item.alerta_ameaca]} — responder em até 2 dias úteis` : '—';
 
@@ -659,6 +662,7 @@ export function abrirDetalheEscalado(item) {
       { rotulo: 'Atendimento', valor: botaoConversa, bloco: true },
       { rotulo: 'Logística', valor: logisticaContainer, bloco: true, metade: true },
       { rotulo: 'Ajuda — escalar para alguém da equipe', valor: ajudaContainer, bloco: true, metade: true },
+      { rotulo: 'Histórico de atividades', valor: atividadesContainer, recolhivel: true },
       { rotulo: 'Notas internas', valor: notasContainer, bloco: true },
     ],
   });
@@ -666,6 +670,50 @@ export function abrirDetalheEscalado(item) {
   carregarContexto(item, contextoContainer);
   carregarFichaAgente(item, propriedadesContainer, logisticaContainer, ajudaContainer, alertaEl);
   carregarNotas(item.id, notasContainer);
+  carregarAtividades(item.id, atividadesContainer);
+}
+
+/* ═══════════════════  histórico de atividades do ticket  ═══════════════════
+   Linha do tempo (PDF de 07/10, item 6): chegada, atribuição, mudança de coluna e de propriedades, notas, ajuda e respostas — com data, hora e quem fez.
+   Vem de GET .../atividades. */
+
+const ROTULO_CAMPO = {
+  motivo_contato: 'Motivo do contato', detalhamento_motivo: 'Detalhamento do motivo', tipo_resolucao: 'Tipo de resolução',
+  percentual_reembolso: 'Percentual do reembolso (%)', valor_compra_usd: 'Valor da compra (US$)', deducao_frascos_usd: 'Dedução de frascos (US$)',
+  chargeback_em: 'Data do chargeback', status_ticket: 'Status do ticket', ticket_reaberto_em: 'Ticket reaberto',
+  status_logistica: 'Status logística', motivo_reenvio: 'Motivo do reenvio', quantidade_reenvio: 'Quantidade para reenvio',
+  produto_reenvio: 'Produto a ser enviado', observacao_reenvio: 'Observação do reenvio', endereco_divergencia: 'Endereço (divergência)',
+  novo_rastreio: 'Novo número de rastreio', responsavel_board_id: 'Responsável (logística)', status_ajuda: 'Status de ajuda',
+};
+const ICONE_ATIVIDADE = { chegada: '📥', coluna: '🔀', atribuicao: '👤', nota: '📝', ajuda: '🆘', resposta_agente: '✉️', cliente: '💬', propriedade: '✏️' };
+
+async function carregarAtividades(casoId, container) {
+  try {
+    const { ok, dados } = await api(`/api/suporte-escalado/${casoId}/atividades`);
+    if (!ok) throw new Error('atividades');
+    container.replaceChildren();
+    const itens = dados.atividades ?? [];
+    if (!itens.length) { container.textContent = 'Nenhuma atividade registrada.'; return; }
+    for (const a of itens) {
+      const linha = document.createElement('div');
+      linha.className = 'esc-atividade';
+      const [tipoBase, , campo] = String(a.tipo).split(':');
+      const titulo = tipoBase === 'propriedade' ? (ROTULO_CAMPO[campo] ?? a.titulo) : a.titulo;
+      const cab = document.createElement('div');
+      cab.className = 'esc-atividade-cab';
+      const t = document.createElement('strong');
+      t.textContent = `${ICONE_ATIVIDADE[tipoBase] ?? '•'} ${titulo}`;
+      const q = document.createElement('span');
+      q.className = 'esc-atividade-quando';
+      q.textContent = `${a.ator || 'Sistema'} · ${dataHora(a.quando)}`;
+      cab.append(t, q);
+      linha.append(cab);
+      if (a.detalhe) { const d = document.createElement('div'); d.className = 'esc-atividade-detalhe'; d.textContent = a.detalhe; linha.append(d); }
+      container.append(linha);
+    }
+  } catch {
+    container.textContent = 'Não consegui carregar o histórico.';
+  }
 }
 
 /* ═══════════════════════════  dados do pedido  ═══════════════════════════
@@ -967,9 +1015,14 @@ async function carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl)
     const f = dados.ficha;
     const base = { casoId: item.id, ficha: f, podeEditar: dados.pode_editar, recarregar };
     // Alerta "Virou chargeback" (item 11): o tipo de resolução escolhido pelo agente OU o chargeback já registrado no dash para o pedido.
-    if (alertaEl && (f.tipo_resolucao === 'Virou chargeback' || dados.chargeback_pedido_em)) {
+    const avisos = [];
+    if (f.tipo_resolucao === 'Virou chargeback' || dados.chargeback_pedido_em) {
       const quando = f.chargeback_em || (typeof dados.chargeback_pedido_em === 'string' ? dados.chargeback_pedido_em : null);
-      const txt = `🚨 Virou chargeback${quando ? ` em ${String(quando).slice(0, 10).split('-').reverse().join('/')}` : ''}`;
+      avisos.push(`🚨 Virou chargeback${quando ? ` em ${String(quando).slice(0, 10).split('-').reverse().join('/')}` : ''}`);
+    }
+    if (f.ticket_reaberto_em) avisos.push(`🔁 TICKET REABERTO em ${dataHora(f.ticket_reaberto_em)}`);
+    if (alertaEl && avisos.length) {
+      const txt = avisos.join(' · ');
       if (alertaEl.dataset.base === undefined) alertaEl.dataset.base = alertaEl.textContent;   // recarregar não empilha o aviso
       alertaEl.textContent = alertaEl.dataset.base && alertaEl.dataset.base !== '—' ? `${alertaEl.dataset.base} · ${txt}` : txt;
     }
