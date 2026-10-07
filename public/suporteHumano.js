@@ -14,6 +14,71 @@ let meuBoardId = null;
 let boardFormAberto = null;   // null = fechado; 'novo' = criando; um id = editando aquele board
 let usuariosCache = null;
 
+/* ── período dos SLAs (pedido do Lucas, 07/10/2026) ──
+   Um só filtro, nas duas telas (Fila de respostas e Painel da equipe): Hoje, 7 ou 30 dias, ou data personalizada (de/até, dia inclusive, horário de Brasília).
+   A escolha vale para as duas e fica guardada no navegador. */
+const PERIODOS_SLA = [{ dias: 0, rotulo: 'Hoje' }, { dias: 7, rotulo: '7 dias' }, { dias: 30, rotulo: '30 dias' }];
+let periodoSla = (() => {
+  try {
+    const salvo = JSON.parse(localStorage.getItem('shPeriodoSla') ?? 'null');
+    if (salvo?.tipo === 'personalizado' && /^\d{4}-\d{2}-\d{2}$/.test(salvo.de) && /^\d{4}-\d{2}-\d{2}$/.test(salvo.ate)) return salvo;
+    if (salvo?.tipo === 'dias' && PERIODOS_SLA.some((p) => p.dias === salvo.dias)) return salvo;
+  } catch { /* sem armazenamento: usa o padrão */ }
+  return { tipo: 'dias', dias: 7 };
+})();
+const paramsPeriodo = () => (periodoSla.tipo === 'personalizado' ? `de=${periodoSla.de}&ate=${periodoSla.ate}` : `dias=${periodoSla.dias}`);
+const diaBR = (iso) => iso.split('-').reverse().join('/');
+function rotuloPeriodo() {
+  if (periodoSla.tipo === 'personalizado') return periodoSla.de === periodoSla.ate ? `em ${diaBR(periodoSla.de)}` : `de ${diaBR(periodoSla.de)} a ${diaBR(periodoSla.ate)}`;
+  return periodoSla.dias === 0 ? 'hoje' : `nos últimos ${periodoSla.dias} dias`;
+}
+function definirPeriodo(novo) {
+  periodoSla = novo;
+  try { localStorage.setItem('shPeriodoSla', JSON.stringify(novo)); } catch { /* só não lembra na próxima visita */ }
+  // A tela que está aberta recarrega já; a outra recarrega quando for aberta (as duas buscam ao abrir).
+  if (!$('sh-subaba-fila').hidden) carregarFila();
+  if (!$('sh-subaba-equipe').hidden) carregarEquipe();
+}
+function seletorPeriodoSla() {
+  const caixa = document.createElement('div');
+  caixa.className = 'esc-fila-abas esc-periodo';
+  const rot = document.createElement('span');
+  rot.className = 'rodape-nota';
+  rot.textContent = 'Período dos SLAs:';
+  caixa.append(rot);
+  for (const p of PERIODOS_SLA) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'subaba-btn';
+    b.setAttribute('aria-selected', String(periodoSla.tipo === 'dias' && periodoSla.dias === p.dias));
+    b.textContent = p.rotulo;
+    b.addEventListener('click', () => definirPeriodo({ tipo: 'dias', dias: p.dias }));
+    caixa.append(b);
+  }
+  const hojeISO = (() => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); })();
+  const pers = document.createElement('button');
+  pers.type = 'button'; pers.className = 'subaba-btn';
+  pers.setAttribute('aria-selected', String(periodoSla.tipo === 'personalizado'));
+  pers.textContent = 'Personalizado';
+  const campos = document.createElement('span');
+  campos.className = 'esc-periodo-datas';
+  campos.hidden = periodoSla.tipo !== 'personalizado';
+  const de = document.createElement('input'); de.type = 'date'; de.max = hojeISO; de.value = periodoSla.tipo === 'personalizado' ? periodoSla.de : hojeISO;
+  const ate = document.createElement('input'); ate.type = 'date'; ate.max = hojeISO; ate.value = periodoSla.tipo === 'personalizado' ? periodoSla.ate : hojeISO;
+  const aplicar = document.createElement('button');
+  aplicar.type = 'button'; aplicar.className = 'btn btn-forte'; aplicar.textContent = 'Aplicar';
+  const aviso = document.createElement('span'); aviso.className = 'rodape-nota';
+  aplicar.addEventListener('click', () => {
+    if (!de.value || !ate.value) { aviso.textContent = 'Escolha as duas datas.'; return; }
+    if (de.value > ate.value) { aviso.textContent = 'A data inicial precisa ser anterior à final.'; return; }
+    if ((new Date(ate.value) - new Date(de.value)) / 86400000 > 366) { aviso.textContent = 'O período vai até 366 dias.'; return; }
+    definirPeriodo({ tipo: 'personalizado', de: de.value, ate: ate.value });
+  });
+  pers.addEventListener('click', () => { campos.hidden = false; pers.setAttribute('aria-selected', 'true'); de.focus(); });
+  campos.append(rotuloDe('De', de), rotuloDe('Até', ate), aplicar, aviso);
+  caixa.append(pers, campos);
+  return caixa;
+}
+
 const SUBABAS = { fila: 'sh-subaba-fila', equipe: 'sh-subaba-equipe', turnos: 'sh-subaba-turnos' };
 const paginaVisivel = () => !$('aba-suportehumano').hidden && !document.hidden;
 
@@ -330,8 +395,8 @@ function selarSla(caso) {
 }
 
 function slaResumo(s) {
-  if (!s || s.media_min === null) return { valor: '—', nota: `sem respostas medidas nos últimos ${filaDados?.resumo?.janela_dias ?? 7} dias` };
-  return { valor: minutosTxt(s.media_min), nota: `média dos últimos ${filaDados.resumo.janela_dias} dias · ${s.dentro} de ${s.medidas} dentro da meta` };
+  if (!s || s.media_min === null) return { valor: '—', nota: `sem respostas medidas ${rotuloPeriodo()}` };
+  return { valor: minutosTxt(s.media_min), nota: `média ${rotuloPeriodo()} · ${s.dentro} de ${s.medidas} dentro da meta` };
 }
 
 async function carregarFila() {
@@ -346,7 +411,7 @@ async function carregarFila() {
   }
   if (!barraFiltros) barraFiltros = await montarBarraFiltros();
   const [{ ok, dados }, pend] = await Promise.all([
-    api(`/api/suporte-escalado/fila?board_id=${boardId}${busca ? `&q=${encodeURIComponent(busca)}` : ''}`),
+    api(`/api/suporte-escalado/fila?board_id=${boardId}&${paramsPeriodo()}${busca ? `&q=${encodeURIComponent(busca)}` : ''}`),
     api(`/api/suporte-escalado/pendencias-internas?board_id=${boardId}`),
   ]);
   if (!ok) {
@@ -491,7 +556,7 @@ function renderFila() {
     av.textContent = `⚠ ${n(resumo.envios_falhos)} resposta${resumo.envios_falhos > 1 ? 's' : ''} não saiu${resumo.envios_falhos > 1 ? 'ram' : ''} (últimas 48 h). Abra o ticket e use "Tentar de novo".`;
     avisos.push(av);
   }
-  raiz.replaceChildren(painel, ...avisos, barraFiltros, abas, ...(podeSelecionar ? [barraSelecao(linhas)] : []), tabela, ...extras, nota);
+  raiz.replaceChildren(seletorPeriodoSla(), painel, ...avisos, barraFiltros, abas, ...(podeSelecionar ? [barraSelecao(linhas)] : []), tabela, ...extras, nota);
 }
 
 /** Barra da seleção em massa: transferir os tickets marcados para outro agente de uma vez (item 7). */
@@ -545,11 +610,8 @@ function barraSelecao(linhasVisiveis) {
 /* ═══════════════════  painel da equipe (item 7 do PDF da Késsia)  ═══════════════════
    10 indicadores: SLA por agente e geral (1ª e 2ª em diante), tickets novos / respondidos pelos clientes / respondidos pelos agentes no dia,
    tickets atribuídos, fila nova e aguardando 2ª em diante por agente. Só admin/gestor (GET /api/suporte-escalado/kpis-equipe). */
-let equipeDias = 7;
 let equipeDados = null;
 let dashDados = null;
-const PERIODOS_SLA = [{ dias: 0, rotulo: 'Hoje' }, { dias: 7, rotulo: '7 dias' }, { dias: 30, rotulo: '30 dias' }];
-
 function slaTexto(s) {
   if (!s || s.media_min === null) return '—';
   return minutosTxt(s.media_min);
@@ -570,8 +632,8 @@ async function carregarEquipe() {
     return;
   }
   const [{ ok, dados }, dash] = await Promise.all([
-    api(`/api/suporte-escalado/kpis-equipe?dias=${equipeDias}`),
-    api(`/api/suporte-escalado/dashboard-propriedades?dias=${equipeDias}`),
+    api(`/api/suporte-escalado/kpis-equipe?${paramsPeriodo()}`),
+    api(`/api/suporte-escalado/dashboard-propriedades?${paramsPeriodo()}`),
   ]);
   if (!ok) { if (!equipeDados) raiz.textContent = 'Não consegui carregar o painel da equipe.'; return; }
   equipeDados = dados;
@@ -582,23 +644,8 @@ async function carregarEquipe() {
 function renderEquipe() {
   const raiz = $('sh-subaba-equipe');
   const { equipe: e, agentes } = equipeDados;
-  const periodo = PERIODOS_SLA.find((p) => p.dias === equipeDias)?.rotulo.toLowerCase() ?? '';
-
-  const seletor = document.createElement('div');
-  seletor.className = 'esc-fila-abas';
-  const rot = document.createElement('span');
-  rot.className = 'rodape-nota';
-  rot.textContent = 'Período dos SLAs:';
-  seletor.append(rot);
-  for (const p of PERIODOS_SLA) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'subaba-btn';
-    b.setAttribute('aria-selected', String(p.dias === equipeDias));
-    b.textContent = p.rotulo;
-    b.addEventListener('click', () => { equipeDias = p.dias; carregarEquipe(); });
-    seletor.append(b);
-  }
+  const periodo = rotuloPeriodo();
+  const seletor = seletorPeriodoSla();
 
   const painel = document.createElement('section');
   painel.className = 'kpis kpis--suporte';

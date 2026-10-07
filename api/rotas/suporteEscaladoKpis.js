@@ -13,6 +13,7 @@
 import { query } from '../../server/db.js';
 import { ErroHttp } from '../comum.js';
 import { memo } from '../cacheCurto.js';
+import { lerPeriodo, descreverPeriodo } from '../periodo.js';
 
 const ABERTOS = "('pendente', 'iniciado', 'lead_respondeu', 'esperando_resposta', 'em_analise', 'pendente_consulta')";
 const ENCERRADO_NA_FICHA = "coalesce(fi.status_ticket, '') NOT IN ('Resolvido', 'Fechado')";
@@ -25,15 +26,14 @@ export default async function rotasSuporteEscaladoKpis(app) {
       tags: ['Central de E-mail IA'],
       summary: 'Painel da equipe do Suporte Escalado: SLA por agente e geral, tickets do dia e filas por agente (só admin ou gestor)',
       security: [{ bearerAuth: [] }],
-      querystring: { type: 'object', properties: { dias: { type: 'integer', enum: [0, 7, 30], default: 7 } } },
+      querystring: { type: 'object', properties: { dias: { type: 'integer', enum: [0, 7, 30, 90] }, de: { type: 'string' }, ate: { type: 'string' } } },
     },
   }, async (req) => {
     if (!req.usuario.admin && !req.usuario.gestorHumano) throw new ErroHttp(403, 'Só administradores e gestores veem o painel da equipe.');
-    const dias = req.query.dias ?? 7;
-    const desde = dias === 0 ? HOJE : `(now() - interval '${dias} days')`;
+    const periodo = lerPeriodo(req.query);   // hoje, últimos N dias ou datas personalizadas (só vale para os SLAs)
 
     // Cache de 30 s por período: o painel recarrega sozinho e os gestores abrem a mesma tela (a conta de SLA por agente é a parte pesada).
-    return memo(`kpis:${dias}`, 30_000, async () => {
+    return memo(`kpis:${periodo.chave}`, 30_000, async () => {
     const [agentesRes, filasRes, hojeRes, slaRes, equipeHojeRes] = await Promise.all([
       query(`SELECT id AS board_id, nome, ativo AS disponivel FROM email_ia.suporte_escalado_boards WHERE usuario_id IS NOT NULL ORDER BY nome`),
       query(
@@ -57,7 +57,7 @@ export default async function rotasSuporteEscaladoKpis(app) {
         `SELECT r.board_id, r.primeira, count(r.minutos)::int AS medidas, avg(r.minutos) AS media_min,
                 count(*) FILTER (WHERE r.dentro_da_meta)::int AS dentro
            FROM email_ia.v_sla_respostas_agente r
-          WHERE r.enviado_em >= ${desde}
+          WHERE r.enviado_em >= ${periodo.ini} AND r.enviado_em < ${periodo.fim}
           GROUP BY r.board_id, r.primeira`,
       ),
       query(
@@ -94,7 +94,8 @@ export default async function rotasSuporteEscaladoKpis(app) {
     const eh = equipeHojeRes.rows[0];
     const soma = (campo) => filasRes.rows.reduce((t, x) => t + (x[campo] ?? 0), 0);
     return {
-      dias,
+      dias: periodo.dias ?? null,
+      periodo: descreverPeriodo(periodo),
       equipe: {
         novos_hoje: eh.novos_hoje,
         clientes_responderam_hoje: eh.clientes_responderam_hoje,

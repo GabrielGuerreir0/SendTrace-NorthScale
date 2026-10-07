@@ -12,6 +12,7 @@
 import { query } from '../../server/db.js';
 import { ErroHttp } from '../comum.js';
 import { memo } from '../cacheCurto.js';
+import { lerPeriodo, descreverPeriodo } from '../periodo.js';
 
 const ABERTOS = "('pendente', 'iniciado', 'lead_respondeu', 'esperando_resposta', 'em_analise', 'pendente_consulta')";
 const ENCERRADO_NA_FICHA = "coalesce(fi.status_ticket, '') NOT IN ('Resolvido', 'Fechado')";   // ticket resolvido/fechado na ficha sai da fila
@@ -26,10 +27,11 @@ export default async function rotasSuporteEscaladoFila(app) {
       security: [{ bearerAuth: [] }],
       querystring: {
         type: 'object', required: ['board_id'],
-        properties: { board_id: { type: 'string' }, q: { type: 'string', maxLength: 120 } },
+        properties: { board_id: { type: 'string' }, q: { type: 'string', maxLength: 120 }, dias: { type: 'integer', enum: [0, 7, 30, 90] }, de: { type: 'string' }, ate: { type: 'string' } },
       },
     },
   }, async (req) => {
+    const periodo = lerPeriodo(req.query);   // período do SLA médio do resumo (padrão: 7 dias)
     const todos = req.query.board_id === 'todos';
     const gestor = !!req.usuario.admin || !!req.usuario.gestorHumano;
     let boardId = null;
@@ -90,11 +92,11 @@ export default async function rotasSuporteEscaladoFila(app) {
             AND r.enviado_em >= (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo')) AT TIME ZONE 'America/Sao_Paulo'`,
         valores,
       )),
-      memo(`${chave.split(':').slice(0, 2).join(':')}:sla7`, 60_000, () => query(
+      memo(`${chave.split(':').slice(0, 2).join(':')}:sla:${periodo.chave}`, 60_000, () => query(
         `SELECT r.primeira, count(r.minutos)::int AS medidas, avg(r.minutos) AS media_min,
                 count(*) FILTER (WHERE r.dentro_da_meta)::int AS dentro
            FROM email_ia.v_sla_respostas_agente r
-          WHERE ${escopoResp} AND r.enviado_em >= now() - interval '7 days'
+          WHERE ${escopoResp} AND r.enviado_em >= ${periodo.ini} AND r.enviado_em < ${periodo.fim}
           GROUP BY r.primeira`,
         valores,
       )),
@@ -124,7 +126,8 @@ export default async function rotasSuporteEscaladoFila(app) {
         envios_falhos: falhasRes.rows[0]?.n ?? 0,
         sla_primeira: sla(true),
         sla_segunda: sla(false),
-        janela_dias: 7,
+        janela_dias: periodo.dias ?? null,
+        periodo: descreverPeriodo(periodo),
       },
       casos,
     };

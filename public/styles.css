@@ -2941,6 +2941,10 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .esc-sla[data-estado="ok"] { color: var(--tinta); border-color: var(--borda); }
 .esc-sla[data-estado="espera"] { color: var(--tinta-fraca); border-color: var(--borda); font-weight: 400; }
 
+.esc-periodo { margin: 14px 0 8px; align-items: center; }
+.esc-periodo-datas { display: inline-flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; }
+.esc-periodo-datas[hidden] { display: none; }
+.esc-periodo-datas input[type="date"] { padding: 6px 8px; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--superficie); color: var(--tinta); }
 .esc-fila-mais { display: block; margin: 10px auto 0; }
 .esc-aviso-falha { margin: 10px 0 0; padding: 8px 12px; border: 1px solid var(--st-travado); border-radius: var(--raio); color: var(--st-travado); font-weight: 600; font-size: 13px; background: color-mix(in srgb, var(--st-travado) 8%, var(--superficie)); }
 .esc-filtros { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; margin: 4px 0 10px; }

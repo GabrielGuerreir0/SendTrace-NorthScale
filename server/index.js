@@ -1648,7 +1648,7 @@ async function atender(req, res, url, sessao) {
   /* ── painel de KPIs da equipe (item 7 do PDF da Késsia): só leitura; a API recusa quem não é admin/gestor (403) ── */
   if (url.pathname === '/api/suporte-escalado/kpis-equipe' && req.method === 'GET') {
     try {
-      return json(res, 200, await obterApi('/api/suporte-escalado/kpis-equipe', { dias: url.searchParams.get('dias') }));
+      return json(res, 200, await obterApi('/api/suporte-escalado/kpis-equipe', { dias: url.searchParams.get('dias'), de: url.searchParams.get('de'), ate: url.searchParams.get('ate') }));
     } catch (err) { return erroFicha(err, 'Não consegui carregar o painel da equipe.'); }
   }
 
@@ -1657,7 +1657,7 @@ async function atender(req, res, url, sessao) {
     const boardFila = url.searchParams.get('board_id');
     if (!boardFila) return json(res, 400, { erro: 'Informe o board.' });
     try {
-      return json(res, 200, await obterApi('/api/suporte-escalado/fila', { board_id: boardFila, q: url.searchParams.get('q') }));
+      return json(res, 200, await obterApi('/api/suporte-escalado/fila', { board_id: boardFila, q: url.searchParams.get('q'), dias: url.searchParams.get('dias'), de: url.searchParams.get('de'), ate: url.searchParams.get('ate') }));
     } catch (err) { return erroFicha(err, 'Não consegui carregar a fila.'); }
   }
 
@@ -1678,7 +1678,7 @@ async function atender(req, res, url, sessao) {
     } catch (err) { return erroFicha(err, 'Não consegui gerar o relatório.'); }
   }
   if (url.pathname === '/api/suporte-escalado/dashboard-propriedades' && req.method === 'GET') {
-    try { return json(res, 200, await obterApi('/api/suporte-escalado/dashboard-propriedades', { dias: url.searchParams.get('dias') })); } catch (err) { return erroFicha(err, 'Não consegui carregar os dashboards.'); }
+    try { return json(res, 200, await obterApi('/api/suporte-escalado/dashboard-propriedades', { dias: url.searchParams.get('dias'), de: url.searchParams.get('de'), ate: url.searchParams.get('ate') })); } catch (err) { return erroFicha(err, 'Não consegui carregar os dashboards.'); }
   }
   if (url.pathname === '/api/suporte-escalado/transferir-em-massa' && req.method === 'POST') {
     try { return json(res, 200, await criarApi('/api/suporte-escalado/transferir-em-massa', await lerJson(req))); } catch (err) { return erroFicha(err, 'Não consegui transferir os tickets.'); }
