@@ -149,13 +149,14 @@ export default async function rotasSuporteEscaladoFila(app) {
         `SELECT count(*)::int AS n FROM email_ia.respostas_fila r WHERE ${escopoResp} AND r.status = 'falhou' AND r.criado_em > now() - interval '48 hours'`,
         valores,
       )),
-      // Ranking anônimo do time (item 5): e-mails respondidos por agente no período, sem nomes. Só para quem vê o próprio board.
+      // Ranking anônimo do time (item 5): e-mails respondidos por agente no período, sem nomes, ATIVO OU NÃO (pedido da Késsia, 09/10). Só para quem vê o próprio board.
       todos ? { rows: [] } : memo(`ranking:${periodo.chave}`, 30_000, () => query(
         `SELECT b.id AS board_id, count(r.id)::int AS respostas
            FROM email_ia.suporte_escalado_boards b
            LEFT JOIN email_ia.respostas_agente r ON r.board_id = b.id AND r.caso_id IS NOT NULL AND r.enviado_em >= ${periodo.ini} AND r.enviado_em < ${periodo.fim}
-          WHERE b.usuario_id IS NOT NULL AND b.ativo
-          GROUP BY b.id`,
+          WHERE b.usuario_id IS NOT NULL
+          GROUP BY b.id, b.ativo
+         HAVING b.ativo OR count(r.id) > 0`,   // entra quem respondeu no período, esteja ativo ou não; inativo sem resposta não conta como concorrente
       )),
       // SLA médio de cada agente (para dizer se o agente está acima ou abaixo da média do time), também sem nomes.
       todos ? { rows: [] } : memo(`slaequipe:${periodo.chave}`, 60_000, () => query(

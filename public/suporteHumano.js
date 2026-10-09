@@ -482,7 +482,7 @@ function painelRanking(resumo) {
     if (b.voce) li.className = 'esc-barras-voce';
     const nome = document.createElement('span'); nome.className = 'esc-barras-nome'; nome.textContent = b.voce ? `${b.posicao}º · Você` : `${b.posicao}º`;
     const trilho = document.createElement('span'); trilho.className = 'esc-barras-trilho';
-    const barra = document.createElement('span'); barra.className = 'esc-barras-barra'; barra.style.width = `${Math.max(2, (b.respostas / maior) * 100)}%`;
+    const barra = document.createElement('span'); barra.className = 'esc-barras-barra'; barra.style.width = b.respostas ? `${Math.max(2, (b.respostas / maior) * 100)}%` : '0';   // 0 e-mails = barra vazia
     trilho.append(barra);
     const num = document.createElement('span'); num.className = 'esc-barras-num'; num.textContent = n(b.respostas);
     li.append(nome, trilho, num);

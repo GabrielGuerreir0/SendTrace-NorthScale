@@ -2962,3 +2962,4 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .esc-barras-voce .esc-barras-nome { font-weight: 700; color: var(--tinta); }
 .esc-barras-voce .esc-barras-barra { filter: saturate(1.4) brightness(.9); }
 .esc-ranking-lista { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.esc-ranking .rodape-nota { text-align: left; margin: 4px 0 10px; }
