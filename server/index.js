@@ -539,6 +539,8 @@ async function servirEstatico(req, res, urlPath) {
 /* ─────────────────────────  rotas de acesso  ───────────────────────── */
 
 /** Administrador, ou gestor do Suporte Escalado ou do Suporte Humano (papel por página, 072; é um papel só, vale nas duas). */
+// Filtros por lista suspensa da fila do Suporte Humano (3º momento, item 1): repassados à API, que aplica no servidor.
+const FILTROS_FILA = ['tag_motivo', 'motivo_contato', 'detalhamento_motivo', 'tipo_resolucao', 'status_ticket', 'motivo_reenvio', 'status_logistica', 'status_ajuda', 'responsavel_logistica_id', 'quantidade_reenvio', 'percentual_reembolso', 'ajuda_para_id'];
 const ehGestorEscalado = (u) => Boolean(u?.admin || (u?.acessos ?? []).some((a) => (a.pagina === 'suporteescalado' || a.pagina === 'suportehumano') && a.papel === 'gestor'));
 
 /**
@@ -1657,7 +1659,8 @@ async function atender(req, res, url, sessao) {
     const boardFila = url.searchParams.get('board_id');
     if (!boardFila) return json(res, 400, { erro: 'Informe o board.' });
     try {
-      return json(res, 200, await obterApi('/api/suporte-escalado/fila', { board_id: boardFila, q: url.searchParams.get('q'), dias: url.searchParams.get('dias'), de: url.searchParams.get('de'), ate: url.searchParams.get('ate') }));
+      return json(res, 200, await obterApi('/api/suporte-escalado/fila', { board_id: boardFila, q: url.searchParams.get('q'), dias: url.searchParams.get('dias'), de: url.searchParams.get('de'), ate: url.searchParams.get('ate'),
+        ...Object.fromEntries(FILTROS_FILA.map((k) => [k, url.searchParams.get(k)])) }));
     } catch (err) { return erroFicha(err, 'Não consegui carregar a fila.'); }
   }
 
@@ -1677,8 +1680,11 @@ async function atender(req, res, url, sessao) {
       }));
     } catch (err) { return erroFicha(err, 'Não consegui gerar o relatório.'); }
   }
+  if (url.pathname === '/api/suporte-escalado/efetividade' && req.method === 'GET') {
+    try { return json(res, 200, await obterApi('/api/suporte-escalado/efetividade', { dias: url.searchParams.get('dias'), de: url.searchParams.get('de'), ate: url.searchParams.get('ate') })); } catch (err) { return erroFicha(err, 'Não consegui carregar a efetividade.'); }
+  }
   if (url.pathname === '/api/suporte-escalado/dashboard-propriedades' && req.method === 'GET') {
-    try { return json(res, 200, await obterApi('/api/suporte-escalado/dashboard-propriedades', { dias: url.searchParams.get('dias'), de: url.searchParams.get('de'), ate: url.searchParams.get('ate') })); } catch (err) { return erroFicha(err, 'Não consegui carregar os dashboards.'); }
+    try { return json(res, 200, await obterApi('/api/suporte-escalado/dashboard-propriedades', { dias: url.searchParams.get('dias'), de: url.searchParams.get('de'), ate: url.searchParams.get('ate'), board_id: url.searchParams.get('board_id') })); } catch (err) { return erroFicha(err, 'Não consegui carregar os dashboards.'); }
   }
   if (url.pathname === '/api/suporte-escalado/transferir-em-massa' && req.method === 'POST') {
     try { return json(res, 200, await criarApi('/api/suporte-escalado/transferir-em-massa', await lerJson(req))); } catch (err) { return erroFicha(err, 'Não consegui transferir os tickets.'); }

@@ -38,8 +38,8 @@ export default async function rotasSuporteEscaladoTurnos(app) {
 
   app.get('/api/suporte-escalado/turnos', {
     onRequest: [app.exigirSessao],
-    schema: { tags: ['Central de E-mail IA'], summary: 'Turnos e agentes (com disponibilidade)', security: [{ bearerAuth: [] }] },
-  }, async () => dadosTurnos());
+    schema: { tags: ['Central de E-mail IA'], summary: 'Turnos e agentes (com disponibilidade) — só admin ou gestor', security: [{ bearerAuth: [] }] },
+  }, async (req) => { soAdmin(req); return dadosTurnos(); });   // 3º momento, item 10: turnos só para admin e gestor, também na leitura
 
   app.post('/api/suporte-escalado/turnos', {
     onRequest: [app.exigirSessao],

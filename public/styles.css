@@ -2959,3 +2959,6 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .esc-selecao-qtd { width: 72px; padding: 6px 8px; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--superficie); color: var(--tinta); }
 .esc-fila-email { display: flex; align-items: center; gap: 6px; }
 .esc-fila-email .btn-icone { padding: 2px 7px; }
+.esc-barras-voce .esc-barras-nome { font-weight: 700; color: var(--tinta); }
+.esc-barras-voce .esc-barras-barra { filter: saturate(1.4) brightness(.9); }
+.esc-ranking-lista { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }

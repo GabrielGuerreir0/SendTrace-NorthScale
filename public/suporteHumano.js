@@ -14,23 +14,49 @@ let meuBoardId = null;
 let boardFormAberto = null;   // null = fechado; 'novo' = criando; um id = editando aquele board
 let usuariosCache = null;
 
-/* ── período dos SLAs (pedido do Lucas, 07/10/2026) ──
-   Um só filtro, nas duas telas (Fila de respostas e Painel da equipe): Hoje, 7 ou 30 dias, ou data personalizada (de/até, dia inclusive, horário de Brasília).
-   A escolha vale para as duas e fica guardada no navegador. */
-const PERIODOS_SLA = [{ dias: 0, rotulo: 'Hoje' }, { dias: 7, rotulo: '7 dias' }, { dias: 30, rotulo: '30 dias' }];
+/* ── período (pedido do Lucas 07/10; 3º momento da Késsia, item 9) ──
+   Um só filtro, nas duas telas (Fila de respostas e Painel da equipe): Hoje, Ontem, Esta semana, Semana passada, Este mês, Mês passado ou
+   Personalizado (de/até, dia inclusive, horário de Brasília). Semana = segunda a domingo. Vale para os SLAs e para os contadores das duas telas
+   e fica guardado no navegador. Os atalhos viram datas (de/até) aqui no navegador; "Hoje" usa o próprio "hoje" do servidor. */
+const PERIODOS_SLA = [
+  { chave: 'hoje', rotulo: 'Hoje', texto: 'hoje' }, { chave: 'ontem', rotulo: 'Ontem', texto: 'ontem' },
+  { chave: 'semana', rotulo: 'Esta semana', texto: 'nesta semana' }, { chave: 'semana_passada', rotulo: 'Semana passada', texto: 'na semana passada' },
+  { chave: 'mes', rotulo: 'Este mês', texto: 'neste mês' }, { chave: 'mes_passado', rotulo: 'Mês passado', texto: 'no mês passado' },
+];
 let periodoSla = (() => {
   try {
     const salvo = JSON.parse(localStorage.getItem('shPeriodoSla') ?? 'null');
     if (salvo?.tipo === 'personalizado' && /^\d{4}-\d{2}-\d{2}$/.test(salvo.de) && /^\d{4}-\d{2}-\d{2}$/.test(salvo.ate)) return salvo;
-    if (salvo?.tipo === 'dias' && PERIODOS_SLA.some((p) => p.dias === salvo.dias)) return salvo;
+    if (salvo?.tipo === 'preset' && PERIODOS_SLA.some((p) => p.chave === salvo.chave)) return salvo;
   } catch { /* sem armazenamento: usa o padrão */ }
-  return { tipo: 'dias', dias: 7 };
+  return { tipo: 'preset', chave: 'hoje' };
 })();
-const paramsPeriodo = () => (periodoSla.tipo === 'personalizado' ? `de=${periodoSla.de}&ate=${periodoSla.ate}` : `dias=${periodoSla.dias}`);
+/** Data de hoje em Brasília como Date em UTC (só a parte da data vale). */
+const hojeBrasilia = () => {
+  const [a, m, d] = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()).split('-').map(Number);
+  return new Date(Date.UTC(a, m - 1, d));
+};
+const isoDia = (d) => d.toISOString().slice(0, 10);
+const somaDias = (d, k) => new Date(d.getTime() + k * 86400000);
+/** { de, ate } (AAAA-MM-DD) do período escolhido; null = "hoje" (o servidor resolve). */
+function intervaloPeriodo() {
+  if (periodoSla.tipo === 'personalizado') return { de: periodoSla.de, ate: periodoSla.ate };
+  const hoje = hojeBrasilia();
+  const segunda = somaDias(hoje, -((hoje.getUTCDay() + 6) % 7));
+  switch (periodoSla.chave) {
+    case 'ontem': return { de: isoDia(somaDias(hoje, -1)), ate: isoDia(somaDias(hoje, -1)) };
+    case 'semana': return { de: isoDia(segunda), ate: isoDia(hoje) };
+    case 'semana_passada': return { de: isoDia(somaDias(segunda, -7)), ate: isoDia(somaDias(segunda, -1)) };
+    case 'mes': return { de: isoDia(new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), 1))), ate: isoDia(hoje) };
+    case 'mes_passado': return { de: isoDia(new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() - 1, 1))), ate: isoDia(new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), 0))) };
+    default: return null;
+  }
+}
+const paramsPeriodo = () => { const i = intervaloPeriodo(); return i ? `de=${i.de}&ate=${i.ate}` : 'dias=0'; };
 const diaBR = (iso) => iso.split('-').reverse().join('/');
 function rotuloPeriodo() {
   if (periodoSla.tipo === 'personalizado') return periodoSla.de === periodoSla.ate ? `em ${diaBR(periodoSla.de)}` : `de ${diaBR(periodoSla.de)} a ${diaBR(periodoSla.ate)}`;
-  return periodoSla.dias === 0 ? 'hoje' : `nos últimos ${periodoSla.dias} dias`;
+  return PERIODOS_SLA.find((p) => p.chave === periodoSla.chave)?.texto ?? 'hoje';
 }
 function definirPeriodo(novo) {
   periodoSla = novo;
@@ -44,14 +70,14 @@ function seletorPeriodoSla() {
   caixa.className = 'esc-fila-abas esc-periodo';
   const rot = document.createElement('span');
   rot.className = 'rodape-nota';
-  rot.textContent = 'Período dos SLAs:';
+  rot.textContent = 'Período:';
   caixa.append(rot);
   for (const p of PERIODOS_SLA) {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'subaba-btn';
-    b.setAttribute('aria-selected', String(periodoSla.tipo === 'dias' && periodoSla.dias === p.dias));
+    b.setAttribute('aria-selected', String(periodoSla.tipo === 'preset' && periodoSla.chave === p.chave));
     b.textContent = p.rotulo;
-    b.addEventListener('click', () => definirPeriodo({ tipo: 'dias', dias: p.dias }));
+    b.addEventListener('click', () => definirPeriodo({ tipo: 'preset', chave: p.chave }));
     caixa.append(b);
   }
   const hojeISO = (() => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); })();
@@ -243,6 +269,10 @@ let barraFiltros = null;     // montada uma vez e reaproveitada a cada renderFil
 let selecionados = new Set();
 let pendenciasInternas = [];
 
+/** Filtros por lista suspensa vão ao servidor (acham também tickets resolvidos/fechados); só "tempo restante" roda no navegador. */
+const paramsFiltros = () => Object.entries(filtros).filter(([k, v]) => v && k !== 'vence').map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join('');
+const emConsulta = () => Boolean(busca) || Object.entries(filtros).some(([k, v]) => v && k !== 'vence');
+
 function passaFiltros(c) {
   for (const f of FILTROS_LISTA) {
     const v = filtros[f.chave];
@@ -325,7 +355,7 @@ async function montarBarraFiltros() {
   barra.className = 'esc-filtros';
   const campoBusca = document.createElement('input');
   campoBusca.type = 'search'; campoBusca.placeholder = 'Buscar por e-mail, nº do ticket, nº do pedido…'; campoBusca.className = 'esc-filtros-busca';
-  campoBusca.addEventListener('input', debounce(() => { busca = campoBusca.value.trim(); selecionados.clear(); carregarFila(); }, 350));
+  campoBusca.addEventListener('input', debounce(() => { busca = campoBusca.value.trim(); selecionados.clear(); linhasVisiveis = POR_PAGINA_FILA; if (busca && filaAba !== 'internas') filaAba = 'todos'; carregarFila(); }, 350));
   const detalhes = document.createElement('details');
   detalhes.className = 'esc-filtros-lista';
   const sum = document.createElement('summary');
@@ -336,7 +366,12 @@ async function montarBarraFiltros() {
     const ativos = Object.values(filtros).filter(Boolean).length;
     sum.textContent = ativos ? `Filtros (${ativos} ativo${ativos > 1 ? 's' : ''})` : 'Filtros';
   };
-  const aoMudar = () => { atualizarTitulo(); selecionados.clear(); linhasVisiveis = POR_PAGINA_FILA; renderFila(); };
+  const aoMudar = (chave) => {
+    atualizarTitulo(); selecionados.clear(); linhasVisiveis = POR_PAGINA_FILA;
+    if (chave === 'vence') { renderFila(); return; }     // só no navegador
+    if (emConsulta() && filaAba !== 'internas') filaAba = 'todos';   // filtro/busca mostram tudo (inclusive encerrados) na lista "Todos"
+    carregarFila();
+  };
   const campo = (chave, rotulo, itens) => {
     const sel = document.createElement('select');
     const o0 = document.createElement('option'); o0.value = ''; o0.textContent = 'Todos'; sel.append(o0);
@@ -345,7 +380,7 @@ async function montarBarraFiltros() {
       const o = document.createElement('option'); o.value = String(v); o.textContent = t; sel.append(o);
     }
     sel.value = filtros[chave] ?? '';
-    sel.addEventListener('change', () => { filtros[chave] = sel.value; aoMudar(); });
+    sel.addEventListener('change', () => { filtros[chave] = sel.value; aoMudar(chave); });
     return rotuloDe(rotulo, sel);
   };
   grade.append(campo('vence', 'Tempo restante para responder', VENCE_EM.map(([v, t]) => [v, t])));
@@ -355,7 +390,7 @@ async function montarBarraFiltros() {
   limpar.addEventListener('click', () => {
     filtros = {};
     for (const sel of grade.querySelectorAll('select')) sel.value = '';
-    aoMudar();
+    aoMudar('*');
   });
   grade.append(limpar);
   detalhes.append(sum, grade);
@@ -411,7 +446,7 @@ async function carregarFila() {
   }
   if (!barraFiltros) barraFiltros = await montarBarraFiltros();
   const [{ ok, dados }, pend] = await Promise.all([
-    api(`/api/suporte-escalado/fila?board_id=${boardId}&${paramsPeriodo()}${busca ? `&q=${encodeURIComponent(busca)}` : ''}`),
+    api(`/api/suporte-escalado/fila?board_id=${boardId}&${paramsPeriodo()}${busca ? `&q=${encodeURIComponent(busca)}` : ''}${paramsFiltros()}`),
     api(`/api/suporte-escalado/pendencias-internas?board_id=${boardId}`),
   ]);
   if (!ok) {
@@ -423,6 +458,50 @@ async function carregarFila() {
   const vivos = new Set(dados.casos.map((c) => c.id));
   for (const id of [...selecionados]) if (!vivos.has(id)) selecionados.delete(id);
   renderFila();
+}
+
+/** Ranking anônimo do dia (3º momento, item 5): a posição do agente entre os colegas, só com a quantidade de e-mails respondidos — sem nomes —,
+    e o SLA dele comparado com a média do time (menos tempo = melhor). */
+function painelRanking(resumo) {
+  const r = resumo.ranking;
+  const sec = document.createElement('section');
+  sec.className = 'cartao esc-dash esc-ranking';
+  const h = document.createElement('h3');
+  h.textContent = `Seu desempenho no time (${rotuloPeriodo()})`;
+  const eu = r.barras.find((b) => b.voce);
+  const resumoTxt = document.createElement('p');
+  resumoTxt.className = 'rodape-nota';
+  resumoTxt.textContent = r.posicao && r.total_agentes
+    ? `Você está em ${r.posicao}º de ${r.total_agentes} agentes em e-mails respondidos${eu ? ` (${n(eu.respostas)})` : ''}. Os outros aparecem só pela posição.`
+    : 'Você ainda não aparece no ranking deste período.';
+  const ul = document.createElement('ul');
+  ul.className = 'esc-barras';
+  const maior = Math.max(1, ...r.barras.map((b) => b.respostas));
+  for (const b of r.barras) {
+    const li = document.createElement('li');
+    if (b.voce) li.className = 'esc-barras-voce';
+    const nome = document.createElement('span'); nome.className = 'esc-barras-nome'; nome.textContent = b.voce ? `${b.posicao}º · Você` : `${b.posicao}º`;
+    const trilho = document.createElement('span'); trilho.className = 'esc-barras-trilho';
+    const barra = document.createElement('span'); barra.className = 'esc-barras-barra'; barra.style.width = `${Math.max(2, (b.respostas / maior) * 100)}%`;
+    trilho.append(barra);
+    const num = document.createElement('span'); num.className = 'esc-barras-num'; num.textContent = n(b.respostas);
+    li.append(nome, trilho, num);
+    ul.append(li);
+  }
+  const compara = (rotulo, meu, equipe) => {
+    const li = document.createElement('li');
+    li.className = 'esc-ranking-sla';
+    if (meu == null || equipe == null) { li.textContent = `${rotulo}: ainda sem respostas medidas no período.`; return li; }
+    const dif = meu - equipe;
+    const veredito = Math.abs(dif) <= Math.max(1, equipe * 0.05) ? 'na média do time' : dif < 0 ? 'melhor que a média do time' : 'acima da média do time (mais lento)';
+    li.textContent = `${rotulo}: você ${minutosTxt(meu)} · time ${minutosTxt(equipe)} → ${veredito}`;
+    return li;
+  };
+  const sla = document.createElement('ul');
+  sla.className = 'esc-ranking-lista';
+  sla.append(compara('SLA 1ª resposta', resumo.sla_primeira.media_min, r.sla_equipe_primeira_min), compara('SLA 2ª em diante', resumo.sla_segunda.media_min, r.sla_equipe_segunda_min));
+  sec.append(h, resumoTxt, ul, sla);
+  return sec;
 }
 
 function renderFila() {
@@ -437,7 +516,7 @@ function renderFila() {
   painel.append(
     kpiCard({ icone: '●', tom: 'atrasado', rotulo: 'Pendentes de 1ª resposta', valor: n(resumo.pendentes_primeira), nota: 'sem nenhuma resposta do agente', onClick: () => { filaAba = 'primeiro'; linhasVisiveis = POR_PAGINA_FILA; renderFila(); }, ativo: filaAba === 'primeiro' }),
     kpiCard({ icone: '●', tom: 'travado', rotulo: 'Pendentes de 2ª resposta em diante', valor: n(resumo.pendentes_segunda), nota: 'o cliente escreveu de novo', onClick: () => { filaAba = 'segundo'; linhasVisiveis = POR_PAGINA_FILA; renderFila(); }, ativo: filaAba === 'segundo' }),
-    kpiCard({ icone: '●', tom: 'finalizado', rotulo: 'Respondidos hoje', valor: n(resumo.respondidos_hoje), nota: 'tickets com resposta enviada hoje' }),
+    kpiCard({ icone: '●', tom: 'finalizado', rotulo: 'E-mails respondidos', valor: n(resumo.respondidos_hoje), nota: `${n(resumo.respondidos_tickets ?? 0)} tickets · ${rotuloPeriodo()} (1ª e 2ª resposta em diante)` }),
     kpiCard({ icone: '●', tom: 'em_dia', rotulo: 'SLA de 1ª resposta', valor: sla1.valor, nota: sla1.nota }),
     kpiCard({ icone: '●', tom: 'processando', rotulo: 'SLA de 2ª resposta em diante', valor: sla2.valor, nota: sla2.nota }),
   );
@@ -526,7 +605,13 @@ function renderFila() {
     : colunasBase;
   colunasFila.aoClicarLinha = interna
     ? (p) => abrirDetalheEscalado({ ...p, id: p.caso_id, criado_em: p.caso_criado_em })
-    : (c) => abrirDetalheEscalado(c);
+    : (c) => {
+      if (!souGestor && c.board_id != null && String(c.board_id) !== String(boardId)) {
+        window.alert(`O ticket #${c.id} está com ${c.agente || 'outro agente'}${c.em_aberto ? '' : ' (já encerrado)'}. Só quem é o responsável abre a ficha.`);
+        return;
+      }
+      abrirDetalheEscalado(c);
+    };
   renderTabela(corpo, linhas.slice(0, linhasVisiveis), colunasFila, {
     vazio: interna ? 'Nenhuma pendência interna para este board. 🎉'
       : (Object.values(filtros).some(Boolean) || busca ? 'Nenhum ticket encontrado com estes filtros.'
@@ -535,11 +620,11 @@ function renderFila() {
 
   const nota = document.createElement('p');
   nota.className = 'rodape-nota';
-  nota.textContent = interna
+  nota.textContent = (filaDados.consulta && !interna ? `${busca ? 'A busca vale para todos os tickets e todos os agentes, em qualquer fila. ' : ''}Com busca ou filtro a lista inclui tickets resolvidos e fechados. ` : '') + (interna
     ? 'Pendências que outro agente pediu a este board (logística e ajuda). Ficam fora das filas de resposta ao cliente. Clique numa linha para abrir o ticket.'
     : (truncado
       ? 'Mostrando os 1.000 mais urgentes. Ordenado por tempo restante (estourados primeiro). O tempo conta só dentro do turno (seg–sex, horário de Brasília).'
-      : 'Ordenado por tempo restante (estourados primeiro). O tempo conta só dentro do turno (seg–sex, horário de Brasília). Clique numa linha para abrir o ticket.');
+      : 'Ordenado por tempo restante (estourados primeiro). O tempo conta só dentro do turno (seg–sex, horário de Brasília). Clique numa linha para abrir o ticket.'));
   const extras = [];
   if (linhas.length > linhasVisiveis) {
     const mais = document.createElement('button');
@@ -556,7 +641,7 @@ function renderFila() {
     av.textContent = `⚠ ${n(resumo.envios_falhos)} resposta${resumo.envios_falhos > 1 ? 's' : ''} não saiu${resumo.envios_falhos > 1 ? 'ram' : ''} (últimas 48 h). Abra o ticket e use "Tentar de novo".`;
     avisos.push(av);
   }
-  raiz.replaceChildren(seletorPeriodoSla(), painel, ...avisos, barraFiltros, abas, ...(podeSelecionar ? [barraSelecao(linhas)] : []), tabela, ...extras, nota);
+  raiz.replaceChildren(seletorPeriodoSla(), painel, ...(resumo.ranking ? [painelRanking(resumo)] : []), ...avisos, barraFiltros, abas, ...(podeSelecionar ? [barraSelecao(linhas)] : []), tabela, ...extras, nota);
 }
 
 /** Barra da seleção em massa: transferir os tickets marcados para outro agente de uma vez (item 7). */
@@ -615,6 +700,9 @@ function barraSelecao(linhasVisiveis) {
    tickets atribuídos, fila nova e aguardando 2ª em diante por agente. Só admin/gestor (GET /api/suporte-escalado/kpis-equipe). */
 let equipeDados = null;
 let dashDados = null;
+let efetDados = null;
+let efetModo = 'ranking';   // 'ranking' (por agente, do melhor ao pior) ou 'geral' (equipe toda)
+let dashBoard = '';   // '' = equipe toda; id do board = só aquele agente (3º momento, item 7)
 function slaTexto(s) {
   if (!s || s.media_min === null) return '—';
   return minutosTxt(s.media_min);
@@ -634,13 +722,15 @@ async function carregarEquipe() {
     raiz.append(p);
     return;
   }
-  const [{ ok, dados }, dash] = await Promise.all([
+  const [{ ok, dados }, dash, efet] = await Promise.all([
     api(`/api/suporte-escalado/kpis-equipe?${paramsPeriodo()}`),
-    api(`/api/suporte-escalado/dashboard-propriedades?${paramsPeriodo()}`),
+    api(`/api/suporte-escalado/dashboard-propriedades?${paramsPeriodo()}${dashBoard ? `&board_id=${dashBoard}` : ''}`),
+    api(`/api/suporte-escalado/efetividade?${paramsPeriodo()}`),
   ]);
   if (!ok) { if (!equipeDados) raiz.textContent = 'Não consegui carregar o painel da equipe.'; return; }
   equipeDados = dados;
   dashDados = dash.ok ? dash.dados : null;
+  efetDados = efet.ok ? efet.dados : null;
   renderEquipe();
 }
 
@@ -653,9 +743,9 @@ function renderEquipe() {
   const painel = document.createElement('section');
   painel.className = 'kpis kpis--suporte';
   painel.append(
-    kpiCard({ icone: '●', tom: 'finalizado', rotulo: 'Tickets novos hoje', valor: n(e.novos_hoje), nota: 'chegaram no dia' }),
-    kpiCard({ icone: '●', tom: 'travado', rotulo: 'Clientes que responderam hoje', valor: n(e.clientes_responderam_hoje), nota: 'tickets com novo e-mail do cliente' }),
-    kpiCard({ icone: '●', tom: 'em_dia', rotulo: 'Respondidos pelos agentes hoje', valor: n(e.agentes_responderam_hoje), nota: 'tickets com resposta enviada' }),
+    kpiCard({ icone: '●', tom: 'finalizado', rotulo: 'Tickets novos', valor: n(e.novos_hoje), nota: `chegaram ${periodo}` }),
+    kpiCard({ icone: '●', tom: 'travado', rotulo: 'Clientes que responderam', valor: n(e.clientes_responderam_hoje), nota: `tickets com novo e-mail do cliente ${periodo}` }),
+    kpiCard({ icone: '●', tom: 'em_dia', rotulo: 'E-mails respondidos pelos agentes', valor: n(e.agentes_responderam_hoje), nota: `${n(e.agentes_responderam_tickets ?? 0)} tickets · ${periodo} (1ª e 2ª resposta em diante)` }),
     kpiCard({ icone: '●', tom: 'atrasado', rotulo: 'Novos na fila, sem atendimento', valor: n(e.sem_atendimento), nota: 'aguardando a 1ª resposta' }),
     kpiCard({ icone: '●', tom: 'processando', rotulo: 'Aguardando 2ª resposta em diante', valor: n(e.aguardando_segunda), nota: 'o cliente escreveu de novo' }),
     kpiCard({ icone: '●', tom: 'em_dia', rotulo: 'SLA geral — 1ª resposta', valor: slaTexto(e.sla_primeira), nota: slaNota(e.sla_primeira, periodo) }),
@@ -665,7 +755,7 @@ function renderEquipe() {
   const tabela = document.createElement('table');
   tabela.className = 'sup-tabela esc-fila-tabela';
   const cab = tabela.createTHead().insertRow();
-  for (const t of ['Agente', 'Atribuídos (em aberto)', 'Novos sem atendimento', 'Aguardando 2ª em diante', 'Respondidos hoje', `SLA 1ª resposta (${periodo})`, `SLA 2ª em diante (${periodo})`]) {
+  for (const t of ['Agente', 'Atribuídos (em aberto)', 'Novos sem atendimento', 'Aguardando 2ª em diante', 'E-mails respondidos (tickets)', `SLA 1ª resposta (${periodo})`, `SLA 2ª em diante (${periodo})`]) {
     const th = document.createElement('th'); th.textContent = t; cab.append(th);
   }
   const corpo = tabela.createTBody();
@@ -674,7 +764,7 @@ function renderEquipe() {
     { classe: 'num', render: (a) => n(a.atribuidos) },
     { classe: 'num', render: (a) => n(a.sem_atendimento) },
     { classe: 'num', render: (a) => n(a.aguardando_segunda) },
-    { classe: 'num', render: (a) => n(a.respondidos_hoje) },
+    { classe: 'num', render: (a) => `${n(a.respondidos_hoje)} (${n(a.respondidos_tickets ?? 0)})` },
     { classe: 'num', render: (a) => `${slaTexto(a.sla_primeira)}${a.sla_primeira.medidas ? ` (${a.sla_primeira.dentro}/${a.sla_primeira.medidas})` : ''}` },
     { classe: 'num', render: (a) => `${slaTexto(a.sla_segunda)}${a.sla_segunda.medidas ? ` (${a.sla_segunda.dentro}/${a.sla_segunda.medidas})` : ''}` },
   ];
@@ -682,8 +772,59 @@ function renderEquipe() {
 
   const nota = document.createElement('p');
   nota.className = 'rodape-nota';
-  nota.textContent = 'Tempos em minutos de turno (seg–sex, horário de Brasília); entre parênteses, quantas respostas ficaram dentro da meta (3 h Alta, 4 h Média). O agente é o dono do board. "Hoje" = dia atual em Brasília.';
-  raiz.replaceChildren(seletor, painel, tabela, nota, ...dashboardsPropriedades());
+  nota.textContent = 'Tempos em minutos de turno (seg–sex, horário de Brasília); entre parênteses, quantas respostas ficaram dentro da meta (3 h Alta, 4 h Média). O agente é o dono do board. Os contadores de e-mails, tickets novos e respostas seguem o período escolhido acima (dias em horário de Brasília; semana de segunda a domingo); as filas (sem atendimento, 2ª em diante, atribuídos) são o retrato de agora.';
+  const escolha = document.createElement('div');
+  escolha.className = 'esc-fila-abas';
+  const sel = document.createElement('select');
+  const o0 = document.createElement('option'); o0.value = ''; o0.textContent = 'Equipe toda'; sel.append(o0);
+  for (const a of agentes) { const o = document.createElement('option'); o.value = String(a.board_id); o.textContent = a.nome; sel.append(o); }
+  sel.value = dashBoard;
+  sel.addEventListener('change', () => { dashBoard = sel.value; carregarEquipe(); });
+  escolha.append(rotuloDe('Dashboards de Propriedades — ver', sel));
+  raiz.replaceChildren(seletor, painel, tabela, nota, painelEfetividade(), escolha, ...dashboardsPropriedades());
+}
+
+/* ── efetividade dos agentes na reversão (3º momento, item 12) ──
+   Só tickets que entraram como Reembolso ou Chargeback; resultado = Tipo de resolução da ficha. Ranking do melhor ao pior (maior % de reversão total)
+   ou visão geral da equipe. O que não tem desfecho definitivo aparece em "Sem classificação definitiva" (quantidade e %), com o detalhe ao lado. */
+function painelEfetividade() {
+  const sec = document.createElement('section');
+  sec.className = 'cartao esc-dash';
+  const h = document.createElement('h3'); h.textContent = `Efetividade na reversão de Reembolso e Chargeback (${rotuloPeriodo()})`;
+  sec.append(h);
+  if (!efetDados) { const p = document.createElement('p'); p.className = 'vazio-suave'; p.textContent = 'Não consegui carregar a efetividade.'; sec.append(p); return sec; }
+  const sel = document.createElement('select');
+  for (const [v, t] of [['ranking', 'Ranking por agente (melhor → pior)'], ['geral', 'Geral (equipe toda)']]) { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.append(o); }
+  sel.value = efetModo;
+  sel.addEventListener('change', () => { efetModo = sel.value; renderEquipe(); });
+  sec.append(rotuloDe('Ver', sel));
+  const fmt = (i) => `${n(i.n)} · ${String(i.pct).replace('.', ',')}%`;
+  const semTxt = (a) => `${fmt(a.sem_classificacao)}`;
+  const detalheSem = (a) => a.sem_classificacao.detalhe.filter((d) => d.n).map((d) => `${d.rotulo}: ${n(d.n)} (${String(d.pct).replace('.', ',')}%)`).join(' · ') || '—';
+  if (efetModo === 'geral') {
+    const e = efetDados.equipe;
+    if (!e.total) { const p = document.createElement('p'); p.className = 'vazio-suave'; p.textContent = 'Nenhum ticket de Reembolso ou Chargeback no período.'; sec.append(p); return sec; }
+    sec.append(barras('Equipe toda', [...e.itens, { rotulo: 'Sem classificação definitiva', n: e.sem_classificacao.n, pct: e.sem_classificacao.pct }].map((i) => ({ valor: i.rotulo, n: i.n, pct: i.pct })), e.total));
+    const det = document.createElement('p'); det.className = 'rodape-nota'; det.textContent = `Sem classificação definitiva — ${detalheSem(e)}`; sec.append(det);
+    return sec;
+  }
+  const tabela = document.createElement('table');
+  tabela.className = 'sup-tabela';
+  const cab = tabela.createTHead().insertRow();
+  ['#', 'Agente', 'Tickets (Reemb. + Charge.)', ...efetDados.equipe.itens.map((i) => i.rotulo), 'Sem classificação definitiva'].forEach((t, i) => { const th = document.createElement('th'); th.textContent = t; if (i > 1) th.style.textAlign = 'right'; cab.append(th); });
+  const corpo = tabela.createTBody();
+  const colunas = [
+    { render: (a) => `${a.posicao}º` }, { render: (a) => a.agente },
+    { classe: 'num', render: (a) => n(a.total) },
+    ...efetDados.equipe.itens.map((_, k) => ({ classe: 'num', render: (a) => fmt(a.itens[k]) })),
+    { classe: 'num', render: (a) => { const sp = document.createElement('span'); sp.textContent = semTxt(a); sp.title = detalheSem(a); return sp; } },
+  ];
+  renderTabela(corpo, efetDados.agentes, colunas, { vazio: 'Nenhum ticket de Reembolso ou Chargeback no período.' });
+  const nota = document.createElement('p');
+  nota.className = 'rodape-nota';
+  nota.textContent = 'Conta só tickets que entraram como Reembolso ou Chargeback (tag automática ou motivo do contato), criados no período; % sobre o total de cada agente. Ordem: maior % de reversão total primeiro. Passe o mouse em "Sem classificação definitiva" para ver o detalhe (não preenchido, verificando, cliente não retornou, não respondido/autorizado pelo líder).';
+  sec.append(tabela, nota);
+  return sec;
 }
 
 /* ── dashboards de Propriedades (itens 22 e 23): quantidade e % por tag de motivo × status e por campo de Propriedades ──
@@ -710,7 +851,7 @@ function barras(titulo, itens, total) {
   }
   const rodape = document.createElement('p');
   rodape.className = 'rodape-nota';
-  rodape.textContent = `Total no período: ${n(total)} tickets.`;
+  rodape.textContent = `Total no período: ${n(total)} tickets${dashBoard ? ' do agente escolhido' : ''}.`;
   sec.append(h, ul, rodape);
   return sec;
 }

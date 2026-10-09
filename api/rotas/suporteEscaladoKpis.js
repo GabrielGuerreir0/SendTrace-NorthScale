@@ -3,10 +3,10 @@
  *
  *   GET /api/suporte-escalado/kpis-equipe?dias=<0|7|30>   (só admin ou gestor)
  *
- * `dias` vale só para os SLAs (itens 1–4): 0 = hoje (horário de Brasília), 7 ou 30 = últimos N dias. Os contadores "no dia" (itens 5, 7, 8)
- * são sempre de hoje e os de fila (itens 6, 9, 10) são o retrato de agora. Tempos em MINUTOS DE TURNO (seg–sex, horário de Brasília).
+ * O período (hoje, últimos N dias ou de/até) vale para os SLAs (itens 1–4) E para os contadores "no dia" (itens 5, 7, 8; 3º momento, item 6);
+ * os de fila (itens 6, 9, 10) são o retrato de agora. "Respondidos pelos agentes" conta E-MAILS enviados (1ª e 2ª resposta em diante); os tickets distintos vêm à parte. Tempos em MINUTOS DE TURNO (seg–sex, horário de Brasília).
  *   · Tickets "respondidos pelos clientes" no dia = tickets com e-mail do cliente recebido hoje DEPOIS da criação do ticket.
- *   · "Respondidos pelos agentes" = tickets com resposta enviada por support@ hoje.
+ *   · "Respondidos pelos agentes" = e-mails de resposta enviados por support@ no período.
  *   · Fila sem atendimento = ticket aberto sem nenhuma resposta do agente; aguardando 2ª em diante = o cliente escreveu depois da última resposta.
  */
 
@@ -17,7 +17,6 @@ import { lerPeriodo, descreverPeriodo } from '../periodo.js';
 
 const ABERTOS = "('pendente', 'iniciado', 'lead_respondeu', 'esperando_resposta', 'em_analise', 'pendente_consulta')";
 const ENCERRADO_NA_FICHA = "coalesce(fi.status_ticket, '') NOT IN ('Resolvido', 'Fechado')";
-const HOJE = "(date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')";
 
 export default async function rotasSuporteEscaladoKpis(app) {
   app.get('/api/suporte-escalado/kpis-equipe', {
@@ -48,9 +47,9 @@ export default async function rotasSuporteEscaladoKpis(app) {
           GROUP BY s.board_id`,
       ),
       query(
-        `SELECT r.board_id, count(DISTINCT r.caso_id)::int AS respondidos_hoje
+        `SELECT r.board_id, count(*)::int AS respondidos_hoje, count(DISTINCT r.caso_id)::int AS respondidos_tickets
            FROM email_ia.respostas_agente r
-          WHERE r.caso_id IS NOT NULL AND r.enviado_em >= ${HOJE}
+          WHERE r.caso_id IS NOT NULL AND r.enviado_em >= ${periodo.ini} AND r.enviado_em < ${periodo.fim}
           GROUP BY r.board_id`,
       ),
       query(
@@ -61,12 +60,13 @@ export default async function rotasSuporteEscaladoKpis(app) {
           GROUP BY r.board_id, r.primeira`,
       ),
       query(
-        `SELECT (SELECT count(*)::int FROM email_ia.suporte_escalado WHERE criado_em >= ${HOJE}) AS novos_hoje,
+        `SELECT (SELECT count(*)::int FROM email_ia.suporte_escalado WHERE criado_em >= ${periodo.ini} AND criado_em < ${periodo.fim}) AS novos_hoje,
                 (SELECT count(DISTINCT s.id)::int
                    FROM email_ia.suporte_escalado s
                    JOIN email_ia.emails e ON lower(e.remetente_email) = lower(s.remetente_email)
-                  WHERE e.data_email >= ${HOJE} AND e.data_email > s.criado_em) AS clientes_responderam_hoje,
-                (SELECT count(DISTINCT caso_id)::int FROM email_ia.respostas_agente WHERE caso_id IS NOT NULL AND enviado_em >= ${HOJE}) AS agentes_responderam_hoje`,
+                  WHERE e.data_email >= ${periodo.ini} AND e.data_email < ${periodo.fim} AND e.data_email > s.criado_em) AS clientes_responderam_hoje,
+                (SELECT count(*)::int FROM email_ia.respostas_agente r WHERE r.caso_id IS NOT NULL AND r.enviado_em >= ${periodo.ini} AND r.enviado_em < ${periodo.fim}) AS agentes_responderam_hoje,
+                (SELECT count(DISTINCT r.caso_id)::int FROM email_ia.respostas_agente r WHERE r.caso_id IS NOT NULL AND r.enviado_em >= ${periodo.ini} AND r.enviado_em < ${periodo.fim}) AS agentes_responderam_tickets`,
       ),
     ]);
 
@@ -86,6 +86,7 @@ export default async function rotasSuporteEscaladoKpis(app) {
         sem_atendimento: f.sem_atendimento ?? 0,
         aguardando_segunda: f.aguardando_segunda ?? 0,
         respondidos_hoje: hojeRes.rows.find((x) => x.board_id === a.board_id)?.respondidos_hoje ?? 0,
+        respondidos_tickets: hojeRes.rows.find((x) => x.board_id === a.board_id)?.respondidos_tickets ?? 0,
         sla_primeira: sla(doBoard(a.board_id, true)),
         sla_segunda: sla(doBoard(a.board_id, false)),
       };
@@ -100,6 +101,7 @@ export default async function rotasSuporteEscaladoKpis(app) {
         novos_hoje: eh.novos_hoje,
         clientes_responderam_hoje: eh.clientes_responderam_hoje,
         agentes_responderam_hoje: eh.agentes_responderam_hoje,
+        agentes_responderam_tickets: eh.agentes_responderam_tickets,
         sem_atendimento: soma('sem_atendimento'),
         aguardando_segunda: soma('aguardando_segunda'),
         sla_primeira: sla(slaRes.rows.filter((l) => l.primeira === true)),

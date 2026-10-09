@@ -908,6 +908,7 @@ const ROTULO_CAMPO = {
   status_logistica: 'Status logística', motivo_reenvio: 'Motivo do reenvio', quantidade_reenvio: 'Quantidade para reenvio',
   produto_reenvio: 'Produto a ser enviado', observacao_reenvio: 'Observação do reenvio', endereco_divergencia: 'Endereço (divergência)',
   novo_rastreio: 'Novo número de rastreio', responsavel_board_id: 'Responsável (logística)', status_ajuda: 'Status de ajuda',
+  agente: 'Agente responsável alterado', mesclagem: 'Tickets mesclados',
 };
 const ICONE_ATIVIDADE = { chegada: '📥', coluna: '🔀', atribuicao: '👤', nota: '📝', ajuda: '🆘', resposta_agente: '✉️', cliente: '💬', propriedade: '✏️' };
 

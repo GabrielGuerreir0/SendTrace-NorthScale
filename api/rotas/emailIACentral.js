@@ -1021,6 +1021,11 @@ export default async function rotasEmailIACentral(app) {
     return req.usuario.admin || req.usuario.gestorEscalado || req.usuario.gestorHumano || (board && board.usuario_id === req.usuario.user_id);
   }
 
+  /** Apagar dado (3º momento da Késsia, item 10): só administrador ou gestor — o agente do board não apaga caso nem coluna. */
+  function exigirGestorParaApagar(req) {
+    if (!req.usuario.admin && !req.usuario.gestorEscalado && !req.usuario.gestorHumano) throw new ErroHttp(403, 'Só administradores e gestores apagam informações.');
+  }
+
   /** Board do caso escalado `casoId` — usado pelas rotas que recebem o id do
    *  CASO (mover status, reativar, notas), não o id do board. */
   /** Leitura (contexto e notas) liberada também a quem recebeu um pedido de ajuda sobre o caso (066) — só leitura, só aquele caso. */
@@ -1659,6 +1664,7 @@ export default async function rotasEmailIACentral(app) {
     const { id } = req.body;
     const board = await boardDoCaso(id);
     if (!board) throw new ErroHttp(404, 'Caso escalado não encontrado.');
+    exigirGestorParaApagar(req);
     if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este caso não é de um board seu.');
     const r = await query('DELETE FROM email_ia.suporte_escalado WHERE id = $1', [id]);
     if (!r.rowCount) throw new ErroHttp(404, 'Caso escalado não encontrado.');
@@ -1781,6 +1787,7 @@ export default async function rotasEmailIACentral(app) {
     const coluna = await colunaPorId(req.params.id);
     if (!coluna) throw new ErroHttp(404, 'Coluna não encontrada.');
     const board = await boardPorId(coluna.board_id);
+    exigirGestorParaApagar(req);
     if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este board não é seu.');
     if (coluna.chave === 'pendente') {
       throw new ErroHttp(409, 'A coluna "Pendente" é a entrada padrão de todo caso novo — não pode ser apagada.');

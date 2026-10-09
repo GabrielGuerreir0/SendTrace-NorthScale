@@ -104,18 +104,21 @@ export default async function rotasSuporteEscaladoRelatorios(app) {
       tags: ['Central de E-mail IA'],
       summary: 'Dashboards do painel da equipe: tickets por tag de motivo × status e por campos de Propriedades (quantidade e %)',
       security: [{ bearerAuth: [] }],
-      querystring: { type: 'object', properties: { dias: { type: 'integer', enum: [0, 7, 30, 90] }, de: { type: 'string' }, ate: { type: 'string' } } },
+      querystring: { type: 'object', properties: { dias: { type: 'integer', enum: [0, 7, 30, 90] }, de: { type: 'string' }, ate: { type: 'string' }, board_id: { type: 'integer' } } },
     },
   }, async (req) => {
     if (!req.usuario.admin && !req.usuario.gestorHumano) throw new ErroHttp(403, 'Só administradores e gestores veem o painel da equipe.');
     const periodo = lerPeriodo(req.query, 30);
-    const { rows } = await memo(`dash-prop:${periodo.chave}`, 60_000, () => query(
+    const boardId = req.query.board_id ?? null;   // 3º momento, item 7: as mesmas contagens, de um agente só (sem board = equipe toda)
+    const { rows } = await memo(`dash-prop:${periodo.chave}:${boardId ?? 'geral'}`, 60_000, () => query(
       `SELECT s.tag_motivo, coalesce(fi.status_ticket, 'Aberto') AS status_ticket, fi.motivo_contato, fi.detalhamento_motivo, fi.tipo_resolucao,
               count(*)::int AS n
          FROM email_ia.suporte_escalado s
          LEFT JOIN email_ia.suporte_escalado_ficha fi ON fi.suporte_escalado_id = s.id
         WHERE s.ticket_mae_id IS NULL AND s.criado_em >= ${periodo.ini} AND s.criado_em < ${periodo.fim}
+          AND ($1::bigint IS NULL OR s.board_id = $1)
         GROUP BY 1, 2, 3, 4, 5`,
+      [boardId],
     ));
     const total = rows.reduce((a, r) => a + r.n, 0);
     const soma = (chave, rotuloVazio) => {
@@ -136,7 +139,7 @@ export default async function rotasSuporteEscaladoRelatorios(app) {
       matriz.set(tag, l);
     }
     return {
-      dias: periodo.dias ?? null, periodo: descreverPeriodo(periodo), total,
+      dias: periodo.dias ?? null, periodo: descreverPeriodo(periodo), board_id: boardId, total,
       por_tag: [...matriz.values()].sort((a, b) => b.total - a.total).map((l) => ({ ...l, pct: total ? Math.round((l.total / total) * 1000) / 10 : 0 })),
       status_ordem: STATUS_TICKET,
       propriedades: {
@@ -146,5 +149,63 @@ export default async function rotasSuporteEscaladoRelatorios(app) {
         status_ticket: soma('status_ticket', 'Aberto'),
       },
     };
+  });
+
+  /**
+   * GET /api/suporte-escalado/efetividade?dias|de&ate   (só admin ou gestor) — 3º momento da Késsia, item 12.
+   * Efetividade dos agentes na reversão: só tickets que entraram como Reembolso ou Chargeback (tag automática OU motivo do contato da ficha),
+   * sem os filhos de mesclagem, criados no período. O resultado vem do "Tipo de resolução" da ficha. Percentuais sobre o total de
+   * reembolso/chargeback do agente no período; o que não tem desfecho definitivo vai para "Sem classificação definitiva" (com o detalhe).
+   * Ordem: maior % de reversão total primeiro (desempate: mais reembolso parcial, depois menos chargeback, depois mais tickets).
+   */
+  const DESFECHOS = [
+    ['reversao_total', 'Reversão total', ['Reversão total do reembolso']],
+    ['nao_revertido', 'Não revertido', ['Não revertido']],
+    ['parcial', 'Reembolso parcial', ['Reembolso parcial']],
+    ['chargeback', 'Virou chargeback', ['Virou chargeback']],
+    ['plataforma', 'Reembolsado pela plataforma', ['Reembolsado pela plataforma']],
+  ];
+  const SEM_DEFINITIVO = ['Verificando - Ag. Cliente', 'Cliente não retornou', 'Não respondido - Autorizado pelo líder'];
+  app.get('/api/suporte-escalado/efetividade', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Painel de efetividade dos agentes na reversão de reembolso/chargeback (só admin ou gestor)',
+      security: [{ bearerAuth: [] }],
+      querystring: { type: 'object', properties: { dias: { type: 'integer', enum: [0, 7, 30, 90] }, de: { type: 'string' }, ate: { type: 'string' } } },
+    },
+  }, async (req) => {
+    if (!req.usuario.admin && !req.usuario.gestorHumano) throw new ErroHttp(403, 'Só administradores e gestores veem o painel da equipe.');
+    const periodo = lerPeriodo(req.query, 30);
+    const { rows } = await memo(`efetividade:${periodo.chave}`, 60_000, () => query(
+      `SELECT s.board_id, b.nome AS agente, coalesce(fi.tipo_resolucao, 'Não preenchido') AS tipo, count(*)::int AS n
+         FROM email_ia.suporte_escalado s
+         LEFT JOIN email_ia.suporte_escalado_ficha fi ON fi.suporte_escalado_id = s.id
+         LEFT JOIN email_ia.suporte_escalado_boards b ON b.id = s.board_id
+        WHERE s.ticket_mae_id IS NULL AND s.criado_em >= ${periodo.ini} AND s.criado_em < ${periodo.fim}
+          AND (s.tag_motivo IN ('reembolso', 'chargeback') OR fi.motivo_contato IN ('Reembolso', 'Chargeback'))
+        GROUP BY 1, 2, 3`,
+    ));
+    const pct = (v, t) => (t ? Math.round((v / t) * 1000) / 10 : 0);
+    const montar = (nome, board_id, linhas) => {
+      const total = linhas.reduce((a, l) => a + l.n, 0);
+      const cont = (tipos) => linhas.filter((l) => tipos.includes(l.tipo)).reduce((a, l) => a + l.n, 0);
+      const itens = DESFECHOS.map(([chave, rotulo, tipos]) => { const n = cont(tipos); return { chave, rotulo, n, pct: pct(n, total) }; });
+      const detalhe = ['Não preenchido', ...SEM_DEFINITIVO].map((rotulo) => { const n = cont([rotulo]); return { rotulo, n, pct: pct(n, total) }; });
+      const semN = detalhe.reduce((a, d) => a + d.n, 0);
+      return { board_id, agente: nome, total, itens, sem_classificacao: { n: semN, pct: pct(semN, total), detalhe } };
+    };
+    const porAgente = new Map();
+    for (const r of rows) {
+      const k = r.board_id ?? 0;
+      if (!porAgente.has(k)) porAgente.set(k, { nome: r.agente ?? 'Sem agente', linhas: [] });
+      porAgente.get(k).linhas.push(r);
+    }
+    const valor = (a, chave) => a.itens.find((i) => i.chave === chave).pct;
+    const agentes = [...porAgente.entries()].map(([id, v]) => montar(v.nome, id || null, v.linhas))
+      .sort((a, b) => valor(b, 'reversao_total') - valor(a, 'reversao_total') || valor(b, 'parcial') - valor(a, 'parcial')
+        || valor(a, 'chargeback') - valor(b, 'chargeback') || b.total - a.total)
+      .map((a, i) => ({ posicao: i + 1, ...a }));
+    return { dias: periodo.dias ?? null, periodo: descreverPeriodo(periodo), equipe: montar('Equipe toda', null, rows), agentes };
   });
 }

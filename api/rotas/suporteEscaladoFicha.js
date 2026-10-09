@@ -427,6 +427,8 @@ export default async function rotasSuporteEscaladoFicha(app) {
                    LEFT JOIN email_ia.suporte_escalado_boards b ON b.id = h.board_id
                   WHERE h.suporte_escalado_id = $1) x
           WHERE x.board_id IS NOT NULL AND x.board_id IS DISTINCT FROM x.anterior
+            AND NOT EXISTS (SELECT 1 FROM email_ia.suporte_escalado_eventos ev   -- troca já registrada pelo gatilho 089: não repetir
+                             WHERE ev.caso_id = $1 AND ev.campo = 'agente' AND abs(extract(epoch FROM ev.ocorrido_em - x.mudou_em)) < 5)
          UNION ALL
          SELECT ev.ocorrido_em, coalesce(ev.ator, 'Sistema'), 'propriedade:' || ev.bloco || ':' || ev.campo, ev.campo,
                 concat_ws(' → ', coalesce(ev.de, '—'), coalesce(ev.para, '—')) || coalesce(' (' || ev.detalhe || ')', '')
