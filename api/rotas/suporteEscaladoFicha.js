@@ -25,16 +25,16 @@ import { invalidar } from '../cacheCurto.js';
 import { randomUUID } from 'node:crypto';
 
 export const OPCOES = {
-  motivo_contato: ['Reembolso', 'Chargeback', 'Logística', 'Dúvidas'],
+  motivo_contato: ['Reembolso', 'Chargeback', 'Logística', 'Dúvidas', 'Compra'],
   detalhamento_motivo: [
     'Verificando - Ag. Cliente', 'Insatisfação após uso do produto', 'Dúvida - Esclarecimento', 'Alergia - Doença - Médico',
-    'Comprou muito - Upsell', 'Problemas Financeiros', 'Acha que é fraude/golpe', 'Rótulo ou Ingredientes', 'Pessoa incapaz comprou',
+    'Comprou muito - Upsell', 'Comprar mais potes', 'Problemas Financeiros', 'Acha que é fraude/golpe', 'Rótulo ou Ingredientes', 'Pessoa incapaz comprou',
     'Arrepen. pós compra - pedido não entregue', 'Arrepen. pós compra - pedido entregue', 'Logística - pedido não entregue',
     'Logística - pedido incompleto', 'Logística - pedido quebrado', 'Logística - divergência no produto', 'Cliente não retornou',
   ],
   tipo_resolucao: [
     'Verificando - Ag. Cliente', 'Reversão total do reembolso', 'Reembolso parcial', 'Reembolsado pela plataforma', 'Não revertido', 'Não respondido - Autorizado pelo líder',
-    'Virou chargeback', 'Cliente não retornou',
+    'Virou chargeback', 'Cliente não retornou', 'Link para compra enviado',
   ],
   // Aparece ao lado quando o tipo de resolução é "Reembolso parcial" (15% a 90%, de 5 em 5).
   percentual_reembolso: Array.from({ length: 16 }, (_, i) => 15 + i * 5),
