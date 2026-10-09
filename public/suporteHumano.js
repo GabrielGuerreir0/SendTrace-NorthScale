@@ -605,13 +605,7 @@ function renderFila() {
     : colunasBase;
   colunasFila.aoClicarLinha = interna
     ? (p) => abrirDetalheEscalado({ ...p, id: p.caso_id, criado_em: p.caso_criado_em })
-    : (c) => {
-      if (!souGestor && c.board_id != null && String(c.board_id) !== String(boardId)) {
-        window.alert(`O ticket #${c.id} está com ${c.agente || 'outro agente'}${c.em_aberto ? '' : ' (já encerrado)'}. Só quem é o responsável abre a ficha.`);
-        return;
-      }
-      abrirDetalheEscalado(c);
-    };
+    : (c) => abrirDetalheEscalado(c);   // de outro agente abre só para leitura (a ficha vem com pode_editar = false)
   renderTabela(corpo, linhas.slice(0, linhasVisiveis), colunasFila, {
     vazio: interna ? 'Nenhuma pendência interna para este board. 🎉'
       : (Object.values(filtros).some(Boolean) || busca ? 'Nenhum ticket encontrado com estes filtros.'

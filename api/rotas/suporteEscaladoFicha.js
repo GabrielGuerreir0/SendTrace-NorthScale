@@ -146,17 +146,6 @@ export default async function rotasSuporteEscaladoFicha(app) {
   // Dono do board, administrador ou gestor do Suporte Escalado (papel 072): lê e edita o caso.
   const ehDono = (req, caso) => !!req.usuario.admin || !!req.usuario.gestorEscalado || !!req.usuario.gestorHumano || (caso.dono_id != null && caso.dono_id === req.usuario.user_id);
 
-  async function recebeuAjuda(req, casoId) {
-    if (req.usuario.user_id == null) return false;
-    const { rows } = await query(
-      `SELECT 1 FROM email_ia.suporte_escalado_ajuda a
-         JOIN email_ia.suporte_escalado_boards b ON b.id = a.para_board_id
-        WHERE a.suporte_escalado_id = $1 AND b.usuario_id = $2 LIMIT 1`,
-      [casoId, req.usuario.user_id],
-    );
-    return rows.length > 0;
-  }
-
   // Responsável da logística do caso (pendência interna): lê o caso e edita só o bloco Logística.
   async function ehResponsavelLogistica(req, casoId) {
     if (req.usuario.user_id == null) return false;
@@ -172,7 +161,8 @@ export default async function rotasSuporteEscaladoFicha(app) {
   async function exigirLeitura(req, id) {
     const caso = await casoComBoard(id);
     if (!caso) throw new ErroHttp(404, 'Caso escalado não encontrado.');
-    if (!ehDono(req, caso) && !(await recebeuAjuda(req, id)) && !(await ehResponsavelLogistica(req, id))) throw new ErroHttp(403, 'Este caso não é de um board seu.');
+    // 3º momento da Késsia, item 11: qualquer agente LÊ a ficha de qualquer ticket (achado na busca, de outro agente); editar continua só para o dono do
+    // board, gestor/admin e quem recebeu o pedido de logística/ajuda (`pode_editar` na resposta; `exigirEscrita` recusa o resto).
     return caso;
   }
 
