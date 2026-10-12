@@ -30,6 +30,7 @@ import {
 import { n, dataHora, dia, duracaoH } from './format.js';
 import { desenharLinha } from './charts.js';
 import { criarTradutor, idiomaAtual, montarSeletorIdioma } from './i18n.js';
+import './rastreioSppl.js';   // SPPL: regras e feriados (seção recolhível no fim da aba)
 
 /** dia (col. `date` do Postgres, "AAAA-MM-DD" sem hora/fuso) → "DD/MM" sem
  * passar por `new Date()`: um `date` puro seria lido como meia-noite UTC e o

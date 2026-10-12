@@ -2049,6 +2049,30 @@ async function atender(req, res, url, sessao) {
     }));
   }
 
+  /*
+   * SPPL (migração 090) — regras editáveis e feriados, dentro do Rastreio de Pedidos. ANTES do detalhe `/api/rastreio/:id`, que senão
+   * trataria "sppl/regras" como um transacao_id. Leitura: qualquer conta com a página; escrita: só administrador (a API também confere).
+   */
+  if (url.pathname.startsWith('/api/rastreio/sppl/')) {
+    const resto = url.pathname.slice('/api/rastreio/sppl/'.length).replace(/\/$/, '');
+    const escrita = req.method !== 'GET';
+    if (escrita && !usuario.admin) return json(res, 403, { erro: 'Só administradores alteram as regras do SPPL.' });
+    const rotaRegra = /^regras\/(\d+)$/.exec(resto);
+    const rotaFeriado = /^feriados\/(\d{4}-\d{2}-\d{2})$/.exec(resto);
+    try {
+      if (resto === 'regras' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/regras'));
+      if (resto === 'regras' && req.method === 'POST') return json(res, 200, await criarApi('/api/rastreio/sppl/regras', await lerJson(req, 16 * 1024)));
+      if (rotaRegra && req.method === 'PATCH') return json(res, 200, await remendarApi(`/api/rastreio/sppl/regras/${rotaRegra[1]}`, await lerJson(req, 16 * 1024)));
+      if (resto === 'feriados' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/feriados'));
+      if (resto === 'feriados' && req.method === 'POST') return json(res, 200, await criarApi('/api/rastreio/sppl/feriados', await lerJson(req)));
+      if (rotaFeriado && req.method === 'DELETE') return json(res, 200, await apagarApi(`/api/rastreio/sppl/feriados/${rotaFeriado[1]}`));
+    } catch (err) {
+      if (err instanceof ErroApi) return json(res, err.status || 400, { erro: detalharErroApi(err, 'A API recusou a alteração.') });
+      throw err;
+    }
+    return json(res, 404, { erro: 'Rota do SPPL não encontrada.' });
+  }
+
   if (url.pathname.startsWith('/api/rastreio/')) {
     const id = decodeURIComponent(url.pathname.slice('/api/rastreio/'.length).replace(/\/$/, ''));
     if (!id) return json(res, 404, { erro: 'transacao_id ausente' });
@@ -2173,6 +2197,28 @@ const servidor = http.createServer(async (req, res) => {
             'X-Api-Key': String(req.headers['x-api-key'] ?? ''),
             'X-Forwarded-For': req.headers['x-forwarded-for'] || req.socket.remoteAddress || '',
           },
+        });
+        const corpo = await alvo.text();
+        res.writeHead(alvo.status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+        return res.end(corpo);
+      } catch {
+        return json(res, 502, { erro: 'sem conexão com o servidor' });
+      }
+    }
+
+    /*
+     * Webhook do 17TRACK (SPPL) — o 17TRACK chama aqui quando um rastreio muda. Repassa o corpo BRUTO (a assinatura é conferida
+     * na API, sobre os bytes originais) e o cabeçalho `sign`. ANTES da guarda de sessão: o 17TRACK não tem cookie. Só POST.
+     */
+    if (url.pathname === '/api/v1/17track/webhook' && req.method === 'POST') {
+      try {
+        const partes = []; let n = 0;
+        for await (const bloco of req) { n += bloco.length; if (n > 2 * 1024 * 1024) throw new Error('corpo grande demais'); partes.push(bloco); }
+        const alvo = await fetch(`${enderecoApi}/api/v1/17track/webhook`, {
+          method: 'POST',
+          signal: AbortSignal.timeout(15000),
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json', sign: String(req.headers.sign ?? '') },
+          body: Buffer.concat(partes),
         });
         const corpo = await alvo.text();
         res.writeHead(alvo.status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });

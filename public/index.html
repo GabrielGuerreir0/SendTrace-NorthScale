@@ -2406,6 +2406,64 @@
     <div class="paginacao" id="rst-tabela-paginacao"></div>
   </section>
 
+  <!-- ═══════════════════  SPPL: regras (status do 17TRACK e prazos)  ═══════════════════ -->
+  <section class="cartao" id="sppl-cartao">
+    <style>#sppl-cartao [hidden] { display: none !important; }</style>
+    <details id="sppl-detalhes">
+      <summary class="cartao-cabeca" style="cursor:pointer;">
+        <div>
+          <h2 data-t="spplTitulo">SPPL rules</h2>
+          <p class="cartao-sub" data-t="spplSub">What to do for each 17TRACK status and for orders that stop moving, who owns it and how long it takes. Only admins edit.</p>
+        </div>
+      </summary>
+      <p class="cartao-sub" data-t="spplPreparacao">Being prepared: these rules are not yet applied automatically to orders. You can already review and adjust the deadlines.</p>
+      <p class="cartao-sub" id="sppl-aviso" role="status"></p>
+      <div class="tabela-envolve">
+        <table class="tabela" id="sppl-tabela">
+          <thead>
+            <tr>
+              <th scope="col" data-t="spplColQuando">When</th>
+              <th scope="col" data-t="spplColTitulo">Case</th>
+              <th scope="col" data-t="spplColAcao">Action</th>
+              <th scope="col" data-t="spplColResp">Owner</th>
+              <th scope="col" data-t="spplColPrazo">Days</th>
+              <th scope="col" data-t="spplColPrio">Priority</th>
+              <th scope="col" data-t="spplColAtiva">On</th>
+              <th scope="col"></th>
+            </tr>
+          </thead>
+          <tbody id="sppl-corpo"><tr><td colspan="8" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody>
+        </table>
+      </div>
+      <form id="sppl-form" hidden style="margin:14px 0; display:grid; gap:10px;">
+        <h3 id="sppl-form-titulo"></h3>
+        <label class="campo"><span data-t="spplColTitulo">Case</span><input id="sppl-f-titulo" maxlength="160"></label>
+        <label class="campo"><span data-t="spplColAcao">Action</span><textarea id="sppl-f-acao" rows="3" maxlength="1000"></textarea></label>
+        <label class="campo"><span data-t="spplColResp">Owner</span><input id="sppl-f-resp" maxlength="200"></label>
+        <label class="campo"><span data-t="spplFDias">Days to trigger (empty = immediate)</span><input id="sppl-f-dias" type="number" min="0" max="365"></label>
+        <label class="campo"><span data-t="spplFPrazo">Days to resolve</span><input id="sppl-f-prazo" type="number" min="0" max="90"></label>
+        <label class="campo"><span data-t="spplColPrio">Priority</span>
+          <select id="sppl-f-prio"><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select></label>
+        <label class="campo"><input id="sppl-f-uteis" type="checkbox"> <span data-t="spplFUteis">Business days</span></label>
+        <label class="campo"><input id="sppl-f-imediato" type="checkbox"> <span data-t="spplFImediato">Immediate (do not wait for 5/10/15 days)</span></label>
+        <label class="campo"><input id="sppl-f-cliente" type="checkbox"> <span data-t="spplFCliente">Contact the customer</span></label>
+        <label class="campo"><input id="sppl-f-ativa" type="checkbox"> <span data-t="spplColAtiva">On</span></label>
+        <div style="display:flex; gap:10px;">
+          <button class="btn" type="submit" data-t="spplSalvar">Save</button>
+          <button class="btn" type="button" id="sppl-f-cancelar" data-t="spplCancelar">Cancel</button>
+        </div>
+      </form>
+      <h3 data-t="spplFeriados">Holidays (non-business days)</h3>
+      <p class="cartao-sub" data-t="spplFeriadosSub">Saturdays and Sundays are already skipped. Add US holidays here so deadlines skip them too.</p>
+      <ul id="sppl-feriados" class="cartao-sub"></ul>
+      <form id="sppl-feriado-form" hidden style="display:flex; gap:10px; flex-wrap:wrap;">
+        <input type="date" id="sppl-fer-data" required>
+        <input id="sppl-fer-desc" maxlength="120" data-t-placeholder="spplFerDesc" placeholder="Name (optional)">
+        <button class="btn" type="submit" data-t="spplAdicionar">Add</button>
+      </form>
+    </details>
+  </section>
+
 </main>
 
 <div class="tooltip" id="tooltip" role="status" aria-live="polite" hidden></div>
