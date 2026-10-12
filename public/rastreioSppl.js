@@ -25,6 +25,7 @@ const DIC = {
   spplMotorTit: { en: 'Engine simulation', pt: 'Simulação do motor' }, spplMotorSub: { en: 'Shows how many alerts the engine would open right now, without opening any. Turn the engine on only after you have seen this number.', pt: 'Mostra quantos alertas o motor abriria agora, sem abrir nenhum. Só ligue o motor depois de ver este número.' },
   spplMotorBtn: { en: 'Simulate now', pt: 'Simular agora' }, spplMotorLigado: { en: 'Engine is ON (max {max} new alerts per round).', pt: 'Motor LIGADO (no máximo {max} alertas novos por rodada).' }, spplMotorDesligado: { en: 'Engine is OFF. Nothing is opened automatically.', pt: 'Motor DESLIGADO. Nada é aberto automaticamente.' },
   spplMotorTotal: { en: 'It would open {total} alerts now:', pt: 'Abriria {total} alertas agora:' }, spplMotorNada: { en: 'It would open no alert now.', pt: 'Não abriria nenhum alerta agora.' },
+  spplFerData: { en: 'Date', pt: 'Data' }, spplFerNome: { en: 'Name', pt: 'Nome' },
   sim: { en: 'yes', pt: 'sim' }, nao: { en: 'no', pt: 'não' },
 };
 const t = criarTradutor(DIC);
@@ -49,15 +50,19 @@ function quando(r) {
   return r.imediato ? `${base} · ${t('spplImediato')}` : base;
 }
 
+const celula = (rotulo, conteudo) => { const td = document.createElement('td'); td.dataset.label = rotulo; if (conteudo instanceof Node) td.append(conteudo); else td.textContent = conteudo ?? ''; return td; };
+const seloPrio = (p) => { const e = el('span', p, `sppl-selo sppl-selo--${String(p).toLowerCase()}`); return e; };
+
 function desenharRegras() {
   const corpo = $('sppl-corpo');
   if (!corpo) return;
   corpo.replaceChildren(...regras.map((r) => {
     const tr = document.createElement('tr');
-    if (!r.ativa) tr.style.opacity = '0.5';
-    const acao = el('td', r.acao ?? '—'); acao.style.maxWidth = '34ch';
-    tr.append(el('td', quando(r)), el('td', r.titulo), acao, el('td', r.responsavel), el('td', r.dias ?? '—'), el('td', r.prioridade), el('td', r.ativa ? t('sim') : t('nao')));
-    const ultima = el('td');
+    if (!r.ativa) tr.style.opacity = '0.55';
+    const acao = celula(t('spplColAcao'), r.acao ?? '—'); acao.style.maxWidth = '34ch';
+    tr.append(celula(t('spplColQuando'), quando(r)), celula(t('spplColTitulo'), r.titulo), acao, celula(t('spplColResp'), r.responsavel), celula(t('spplColPrazo'), r.dias ?? '—'),
+      celula(t('spplColPrio'), seloPrio(r.prioridade)), celula(t('spplColAtiva'), r.ativa ? t('sim') : t('nao')));
+    const ultima = celula('', '');
     if (ehAdmin()) {
       const b = el('button', t('spplEditar'), 'btn'); b.type = 'button'; b.addEventListener('click', () => abrirForm(r));
       ultima.append(b);
@@ -89,7 +94,7 @@ function desenharFeriados(lista) {
   const ul = $('sppl-feriados');
   if (!lista.length) { ul.replaceChildren(el('li', t('spplSemFeriados'))); return; }
   ul.replaceChildren(...lista.map((f) => {
-    const li = el('li', `${f.data}${f.descricao ? ` — ${f.descricao}` : ''} `);
+    const li = el('li', `${f.data}${f.descricao ? ` · ${f.descricao}` : ''}`);
     if (ehAdmin()) {
       const b = el('button', t('spplRemover'), 'btn'); b.type = 'button';
       b.addEventListener('click', async () => { await api(`/api/rastreio/sppl/feriados/${f.data}`, { metodo: 'DELETE' }); carregar(); });

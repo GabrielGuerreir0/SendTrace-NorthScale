@@ -55,9 +55,11 @@ let ultimaSaude = null;
 function desenharSaude() {
   const s = ultimaSaude; if (!s) return;
   const caixa = $('saude-problemas');
-  if (s.ok) caixa.replaceChildren(el('p', t('saTudoOk'), 'saude-ok'));
-  else caixa.replaceChildren(...s.problemas.map((p) => { const d = el('div', undefined, 'saude-problema'); d.dataset.g = p.gravidade; d.append(el('strong', p.titulo), el('div', p.detalhe, 'cartao-sub')); return d; }));
-  const onoff = (b) => (b ? t('saLigado') : t('saDesligado'));
+  const msg = (g, icone, titulo, detalhe) => { const d = el('div', undefined, `sppl-saude-msg saude-problema${g === 'ok' ? ' sppl-saude-msg--ok' : ''}`); if (g !== 'ok') d.dataset.g = g;
+    const ic = el('span', icone, 'ic'); ic.setAttribute('aria-hidden', 'true'); const corpo = el('div'); corpo.append(el('strong', titulo)); if (detalhe) corpo.append(el('span', detalhe, 'det')); d.append(ic, corpo); return d; };
+  if (s.ok) caixa.replaceChildren(msg('ok', '✓', t('saTudoOk')));
+  else caixa.replaceChildren(...s.problemas.map((p) => msg(p.gravidade, p.gravidade === 'alta' ? '▲' : '◆', p.titulo, p.detalhe)));
+  const onoff = (b) => ({ txt: b ? t('saLigado') : t('saDesligado'), on: b ? '1' : '0' });
   const linhas = [
     [t('saMotor'), onoff(s.interruptores.motor)], [t('saRegistro'), onoff(s.interruptores.registro_17track)], [t('saReconc'), onoff(s.interruptores.reconciliacao_17track)],
     [t('saSorteio'), onoff(s.interruptores.sorteio)], [t('saCards'), onoff(s.interruptores.cards)],
@@ -65,7 +67,7 @@ function desenharSaude() {
     [t('saUltWebhook'), quando(s.ultimo_webhook_em)], [t('saUltReconc'), quando(s.ultima_reconciliacao_em)], [t('saUltRedRock'), quando(s.ultima_consulta_redrock)],
     [t('saAcompanhando'), String(s.em_acompanhamento)], [t('saRecusados'), `${s.registros_17track.recusado} / ${s.registros_17track.sem_dado}`], [t('saAbertas'), String(s.ocorrencias_abertas)],
   ];
-  $('saude-metricas').replaceChildren(...linhas.flatMap(([k, v]) => [el('dt', k), el('dd', v)]));
+  $('saude-metricas').replaceChildren(...linhas.map(([k, v]) => { const d = el('div', undefined, 'sppl-metrica'); const dd = el('dd', typeof v === 'object' ? v.txt : v); if (typeof v === 'object') dd.dataset.on = v.on; d.append(el('dt', k), dd); return d; }));
 }
 async function carregarSaude() {
   const r = await api('/api/rastreio/sppl/saude');
@@ -76,8 +78,8 @@ async function carregarSaude() {
 /* ══════════════════════  relatório  ══════════════════════ */
 let ultimoRelatorio = null;
 function tabela(cabecalhos, linhas) {
-  const tb = el('table', undefined, 'tabela'); const th = el('thead'); const trh = el('tr'); cabecalhos.forEach((c) => trh.append(el('th', c))); th.append(trh);
-  const body = el('tbody'); linhas.forEach((l) => { const tr = el('tr'); l.forEach((c) => tr.append(el('td', c))); body.append(tr); }); tb.append(th, body);
+  const tb = el('table', undefined, 'tabela tabela--empilha'); const th = el('thead'); const trh = el('tr'); cabecalhos.forEach((c) => trh.append(el('th', c))); th.append(trh);
+  const body = el('tbody'); linhas.forEach((l) => { const tr = el('tr'); l.forEach((c, i) => { const td = el('td', c); td.dataset.label = cabecalhos[i]; tr.append(td); }); body.append(tr); }); tb.append(th, body);
   const w = el('div', undefined, 'tabela-envolve'); w.append(tb); return w;
 }
 function textoResumo(r) {
@@ -95,16 +97,20 @@ function textoResumo(r) {
 function desenharRelatorio() {
   const r = ultimoRelatorio; const corpo = $('relatorio-corpo'); if (!r) return;
   const blocos = [];
-  const kp = el('p'); kp.append(el('b', `${t('reAbertasPeriodo')}: ${r.total_abertas_no_periodo}`), document.createTextNode(` · ${t('reResolvidas')}: ${r.resolvidas} · ${t('reCanceladas')}: ${r.canceladas}${r.horas_ate_resolver !== null ? ` · ${t('reHoras')}: ${r.horas_ate_resolver}` : ''}`)); blocos.push(kp);
-  blocos.push(el('p', `${t('reBacklog')}: ${r.backlog.abertas} ${t('reAbertasAgora')} · ${r.backlog.vencidas} ${t('reVencidas')} · P0 ${r.backlog.p0} · P1 ${r.backlog.p1} · P2 ${r.backlog.p2} · P3 ${r.backlog.p3}`));
+  const num = (v, rot) => { const d = el('div'); d.append(el('b', v), el('span', rot)); return d; };
+  const grade = el('div', undefined, 'sppl-resumo-num');
+  grade.append(num(r.total_abertas_no_periodo, t('reAbertasPeriodo')), num(r.resolvidas, t('reResolvidas')), num(r.canceladas, t('reCanceladas')), num(r.horas_ate_resolver !== null ? r.horas_ate_resolver : '—', t('reHoras')),
+    num(r.backlog.abertas, `${t('reBacklog')}: ${t('reAbertasAgora')}`), num(r.backlog.vencidas, `${t('reBacklog')}: ${t('reVencidas')}`));
+  blocos.push(grade);
+  blocos.push(el('p', `${t('reBacklog')}: P0 ${r.backlog.p0} · P1 ${r.backlog.p1} · P2 ${r.backlog.p2} · P3 ${r.backlog.p3}`, 'cartao-sub'));
   if (r.abertas_no_periodo.length) blocos.push(tabela([t('reAbertasPeriodo'), '#'], r.abertas_no_periodo.map((c) => [rotulo('cat', c.categoria), c.n])));
-  if (r.por_agente.length) { blocos.push(el('h3', t('rePorAgente'))); blocos.push(tabela([t('reAgente'), t('reColAbertas'), t('reColVencidas'), t('reColResolvidas')], r.por_agente.map((a) => [a.agente, a.abertas, a.vencidas, a.resolvidas]))); }
-  if (r.por_fulfillment.length) { blocos.push(el('h3', t('rePorFulfillment'))); blocos.push(tabela([t('reProvedor'), t('reTransportadora'), t('reColAbertas')], r.por_fulfillment.map((f) => [f.provedor, f.transportadora, f.abertas]))); }
-  const c = r.cobrancas; blocos.push(el('h3', t('reCobrancas')));
-  blocos.push(el('p', `${c.total} ${t('reCobTotal')} · ${c.respondidas} ${t('reCobResp')} · ${c.sem_resposta_no_prazo} ${t('reCobSem')}${c.horas_ate_responder !== null ? ` · ${c.horas_ate_responder} ${t('reCobHoras')}` : ''}`));
+  if (r.por_agente.length) { blocos.push(el('h3', t('rePorAgente'), 'sppl-relatorio-titulo')); blocos.push(tabela([t('reAgente'), t('reColAbertas'), t('reColVencidas'), t('reColResolvidas')], r.por_agente.map((a) => [a.agente, a.abertas, a.vencidas, a.resolvidas]))); }
+  if (r.por_fulfillment.length) { blocos.push(el('h3', t('rePorFulfillment'), 'sppl-relatorio-titulo')); blocos.push(tabela([t('reProvedor'), t('reTransportadora'), t('reColAbertas')], r.por_fulfillment.map((f) => [f.provedor, f.transportadora, f.abertas]))); }
+  const c = r.cobrancas; blocos.push(el('h3', t('reCobrancas'), 'sppl-relatorio-titulo'));
+  blocos.push(el('p', `${c.total} ${t('reCobTotal')} · ${c.respondidas} ${t('reCobResp')} · ${c.sem_resposta_no_prazo} ${t('reCobSem')}${c.horas_ate_responder !== null ? ` · ${c.horas_ate_responder} ${t('reCobHoras')}` : ''}`, 'cartao-sub'));
   if (c.por_destino.length) blocos.push(tabela([t('reCobrancas'), '#'], c.por_destino.map((d) => [rotulo('dest', d.destino), d.n])));
   blocos.push(el('p', `${t('reTrack')}: ${r.track17.entregas_confirmadas} ${t('reTrackEntregas')} · ${r.track17.recusados} ${t('reTrackRecusados')} · ${r.track17.sem_dado} ${t('reTrackSemDado')}`, 'cartao-sub'));
-  const pre = el('pre', textoResumo(r)); pre.id = 'relatorio-texto'; pre.style.cssText = 'white-space:pre-wrap; margin-top:12px;';
+  const pre = el('pre', textoResumo(r), 'sppl-texto-resumo'); pre.id = 'relatorio-texto';
   corpo.replaceChildren(...blocos, pre);
 }
 async function carregarRelatorio() {
@@ -129,11 +135,11 @@ async function carregarNaoEncontrados() {
   if (!r.ok || !Array.isArray(r.dados?.pedidos) || !Array.isArray(r.dados.resumo)) { $('naoenc-corpo').replaceChildren(vazioNe(t('neErro'))); return; }
   const d = r.dados;
   $('naoenc-resumo-corpo').replaceChildren(...d.resumo.map((x) => {
-    const tr = document.createElement('tr'); tr.append(el('td', x.plataforma));
-    for (const [k, f] of [['ate7', 'ate7'], ['de7a30', 'de7a30'], ['mais30', 'mais30'], ['total', '']]) { const td = el('td', x[k]); td.dataset.f = f; td.dataset.p = x.plataforma; td.dataset.k = k; tr.append(td); }
+    const tr = document.createElement('tr'); const t0 = el('td', x.plataforma); t0.dataset.label = t('colPlataforma'); tr.append(t0);
+    for (const [k, f, rot] of [['ate7', 'ate7', 'neAte7'], ['de7a30', 'de7a30', 'ne7a30'], ['mais30', 'mais30', 'neMais30'], ['total', '', 'neTotal']]) { const td = el('td', x[k]); td.dataset.f = f; td.dataset.p = x.plataforma; td.dataset.k = k; td.dataset.label = t(rot); tr.append(td); }
     return tr;
   }));
-  $('naoenc-corpo').replaceChildren(...(d.pedidos.length ? d.pedidos.map((p) => { const tr = document.createElement('tr'); tr.append(el('td', p.transacao_id), el('td', p.id_consulta), el('td', p.produto ?? '—'), el('td', p.plataforma ?? '—'), el('td', p.dias ?? '—')); return tr; }) : [vazioNe(t('neVazio'))]));
+  $('naoenc-corpo').replaceChildren(...(d.pedidos.length ? d.pedidos.map((p) => { const tr = document.createElement('tr'); const c = (rot, v) => { const td = el('td', v); td.dataset.label = rot; return td; }; tr.append(c(t('colPedido'), p.transacao_id), c(t('neIdConsulta'), p.id_consulta), c(t('colProduto'), p.produto ?? '—'), c(t('colPlataforma'), p.plataforma ?? '—'), c(t('neDias'), p.dias ?? '—')); return tr; }) : [vazioNe(t('neVazio'))]));
   montarPaginacao($('naoenc-paginacao'), { pagina: ne.pagina, totalPaginas: Math.max(1, Math.ceil(d.total / NE_POR_PAGINA)), total: d.total, rotuloItem: t('nePag') }, (p) => { ne.pagina = p; carregarNaoEncontrados(); });
 }
 const csvCelula = (v) => { let s = v === null || v === undefined ? '' : String(v); if (/^[=+\-@]/.test(s)) s = `'${s}`; return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };

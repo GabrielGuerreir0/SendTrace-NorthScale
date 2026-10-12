@@ -151,8 +151,10 @@ export async function atribuir({ limite = 500 } = {}) {
     const b = (await query('SELECT email_ia.sppl_escolher_board() AS board_id')).rows[0].board_id;
     if (!b) break;   // ninguém elegível: não adianta tentar as outras
     const r = await query(
-      `UPDATE sppl_ocorrencias o SET board_id = $2, atualizado_em = now(),
-              responsavel = coalesce((SELECT nome FROM email_ia.suporte_escalado_boards WHERE id = $2), o.responsavel)
+      // $2::bigint nos DOIS usos: em produção suporte_escalado_boards.id é bigint e sppl_ocorrencias.board_id é integer — sem o cast o Postgres
+      // deduz dois tipos para o mesmo parâmetro ("inconsistent types deduced for parameter $2") e o sorteio falha (12/10/2026).
+      `UPDATE sppl_ocorrencias o SET board_id = $2::bigint, atualizado_em = now(),
+              responsavel = coalesce((SELECT nome FROM email_ia.suporte_escalado_boards WHERE id = $2::bigint), o.responsavel)
         WHERE o.id = $1 AND o.board_id IS NULL`, [id, b]);
     n += r.rowCount;
   }
@@ -170,16 +172,55 @@ export async function abrirCards({ limite = 100 } = {}) {
   return n;
 }
 
+/**
+ * Resolve sozinho o alerta cuja CONDIÇÃO deixou de valer: o pedido ganhou código de rastreio, a etiqueta foi coletada, o pacote voltou a se mover, saiu da exceção.
+ * (`fechar()` só cuida de entregue/cancelado/reembolso; sem isto o time trabalharia alerta velho.) Reavalia a mesma consulta que abriu o alerta: se o pedido
+ * não aparece mais nela, o alerta é resolvido com o motivo no resultado. Só mexe em categorias com ao menos uma regra ATIVA e que tenham condição calculável
+ * (entregue_contestado, por exemplo, vem do ticket do cliente e nunca fecha por aqui). Teto de 500 por rodada, por segurança.
+ */
+/** Categorias cujo alerta NÃO nasce destas consultas (vem do ticket do cliente): nunca fecham por "condição superada". */
+const CATEGORIAS_SEM_CONDICAO_CALCULAVEL = ['entregue_contestado'];
+
+export async function resolverSuperadas({ teto = 500 } = {}) {
+  const porCategoria = new Map();
+  for (const r of await regrasAtivas()) {
+    if (CATEGORIAS_SEM_CONDICAO_CALCULAVEL.includes(r.categoria)) continue;
+    const sql = consultaDaRegra(r);
+    if (!sql) continue;
+    if (!porCategoria.has(r.categoria)) porCategoria.set(r.categoria, []);
+    porCategoria.get(r.categoria).push(sql);
+  }
+  let total = 0; const erros = [];
+  for (const [categoria, sqls] of porCategoria) {
+    if (total >= teto) break;
+    // cada consulta vai isolada num subselect: elas terminam em ORDER BY, e UNION ALL direto entre elas seria SQL inválido nas categorias com várias regras
+    const uniao = sqls.map((q) => `SELECT q.transacao_id FROM (${q}) q`).join('\n UNION ALL \n');
+    try {
+      const { rowCount } = await query(
+        `UPDATE sppl_ocorrencias o SET situacao = 'resolvida', resolvida_em = now(), atualizado_em = now(),
+                resultado = coalesce(nullif(o.resultado, ''), 'Resolvida automaticamente: a condição do alerta deixou de valer.')
+          WHERE o.id IN (SELECT o2.id FROM sppl_ocorrencias o2
+                          WHERE o2.categoria = $1 AND o2.situacao NOT IN ('resolvida','cancelada')
+                            AND NOT EXISTS (SELECT 1 FROM (${uniao}) x WHERE x.transacao_id = o2.transacao_id)
+                          LIMIT $2)`, [categoria, teto - total]);
+      total += rowCount;
+    } catch (e) { erros.push(`${categoria}: ${e.message}`); }   // uma categoria com problema não derruba as outras
+  }
+  if (erros.length) throw Object.assign(new Error(erros.join(' | ')), { parcial: total });
+  return total;
+}
+
 /** Uma rodada completa (usada pelo agendador). */
 export async function rodar({ forcar = false, log = () => {} } = {}) {
   const cfg = await configMotor();
   if (!cfg.ativo && !forcar) return { rodou: false, motivo: 'desligado' };
   const fechadas = await fechar();
+  const superadas = await resolverSuperadas().catch((e) => { log(`SPPL: fechamento por condição falhou: ${e.message}`); return e.parcial ?? 0; });
   const abertas = await abrir({ maxNovas: cfg.maxNovas });
   const atribuidas = cfg.sorteio ? await atribuir().catch((e) => { log(`SPPL: sorteio falhou: ${e.message}`); return 0; }) : 0;
   const cards = cfg.cards ? await abrirCards().catch((e) => { log(`SPPL: card falhou: ${e.message}`); return 0; }) : 0;
   const total = Object.values(abertas).reduce((a, b) => a + b, 0);
-  if (total || fechadas || atribuidas || cards) log(`SPPL: ${total} ocorrências abertas, ${fechadas} fechadas, ${atribuidas} com responsável sorteado, ${cards} cards`);
-  return { rodou: true, abertas, fechadas, atribuidas, cards };
+  if (total || fechadas || superadas || atribuidas || cards) log(`SPPL: ${total} ocorrências abertas, ${fechadas} fechadas, ${superadas} resolvidas por condição superada, ${atribuidas} com responsável sorteado, ${cards} cards`);
+  return { rodou: true, abertas, fechadas, superadas, atribuidas, cards };
 }
 void pool;
