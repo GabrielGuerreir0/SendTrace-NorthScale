@@ -1,0 +1,53 @@
+/**
+ * Job de registro no 17TRACK (SPPL): escolhe os pedidos abertos COM código de rastreio que ainda não foram registrados e os registra em lotes.
+ * Desligado por padrão: ligue com `UPDATE config_disparos SET valor='true' WHERE chave='sppl_17track_ativo'` (a chave abaixo é criada pela migração 091).
+ *
+ * Cuidados:
+ *  - só pedido ABERTO (enviado, não cancelado) e que NÃO foi reembolsado nem sofreu chargeback;
+ *  - o 17TRACK detecta a transportadora (não mandamos a nossa: o nome que a FullStack envia não é confiável);
+ *  - não gasta cota sem limite: para quando restar `sppl_17track_cota_reserva` (padrão 20) e respeita `sppl_17track_lote_por_rodada` (padrão 200);
+ *  - código recusado (ex.: USPS sem pacote pago) NÃO é reenviado a cada rodada: depois de comprar o pacote, reabra com
+ *    `UPDATE rastreio_17t_registros SET situacao_registro='pendente' WHERE situacao_registro='recusado' AND motivo_recusa ILIKE '%USPS%'`.
+ */
+import { query } from '../../server/db.js';
+import * as clientePadrao from './cliente.js';
+import { gravarRegistro } from './persistir.js';
+
+const num = (v, padrao) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : padrao; };
+
+async function config() {
+  const { rows } = await query(`SELECT chave, valor FROM config_disparos WHERE chave LIKE 'sppl_17track_%'`);
+  const c = Object.fromEntries(rows.map((r) => [r.chave, r.valor]));
+  return { ativo: c.sppl_17track_ativo === 'true', reserva: num(c.sppl_17track_cota_reserva, 20), lote: Math.min(num(c.sppl_17track_lote_por_rodada, 200), 1000) };
+}
+
+/** Códigos a registrar: abertos, com código, sem registro (ou 'pendente'), fora reembolso/chargeback/cancelado. Os mais recentes primeiro. */
+export async function candidatos(limite) {
+  const { rows } = await query(
+    `SELECT DISTINCT ON (p.tracking_number) p.tracking_number AS numero, p.shipped_at
+       FROM rastreio_pedidos p
+       LEFT JOIN rastreio_17t_registros r ON r.numero = p.tracking_number
+       LEFT JOIN disparos_pos_venda d ON d.transacao_id = p.transacao_id
+      WHERE p.tracking_number <> '' AND p.status_interno = 'shipped'
+        AND (r.numero IS NULL OR r.situacao_registro = 'pendente')
+        AND d.reembolsado_em IS NULL AND d.chargeback_em IS NULL
+      ORDER BY p.tracking_number, p.shipped_at DESC NULLS LAST
+      LIMIT $1`, [limite * 3]);
+  return rows.sort((a, b) => String(b.shipped_at).localeCompare(String(a.shipped_at))).slice(0, limite).map((r) => r.numero);
+}
+
+/** Uma rodada. Devolve o resumo (para o log e para os testes). */
+export async function registrarPendentes({ cliente = clientePadrao, forcar = false, log = () => {} } = {}) {
+  if (!cliente.chaveConfigurada()) return { rodou: false, motivo: 'sem chave' };
+  const cfg = await config();
+  if (!cfg.ativo && !forcar) return { rodou: false, motivo: 'desligado' };
+  const { quota_remain: restante } = await cliente.cota();
+  const disponivel = Math.min(cfg.lote, Math.max(0, Number(restante) - cfg.reserva));
+  if (disponivel <= 0) return { rodou: false, motivo: 'cota na reserva', restante };
+  const numeros = await candidatos(disponivel);
+  if (!numeros.length) return { rodou: true, candidatos: 0, aceitos: 0, recusados: 0, restante };
+  const { aceitos, recusados } = await cliente.registrar(numeros);
+  await gravarRegistro({ aceitos, recusados });
+  log(`17TRACK: ${numeros.length} candidatos, ${aceitos.length} aceitos, ${recusados.length} recusados`);
+  return { rodou: true, candidatos: numeros.length, aceitos: aceitos.length, recusados: recusados.length, restante: Number(restante) - aceitos.length };
+}

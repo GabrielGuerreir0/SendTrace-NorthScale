@@ -54,6 +54,8 @@ import rotasRastreio from './rotas/rastreio.js';
 import rotasRecoverly from './rotas/recoverly.js';
 import rotasTrack17 from './rotas/track17.js';
 import rotasSpplRegras from './rotas/spplRegras.js';
+import { registrarPendentes as registrarNo17Track } from './track17/jobRegistro.js';
+import { rodar as rodarMotorSppl } from './sppl/motor.js';
 import rotasPostmark from './rotas/postmark.js';
 import rotasFormularios from './rotas/formularios.js';
 import rotasDescadastro from './rotas/descadastro.js';
@@ -426,6 +428,26 @@ const intervaloAlertas = setInterval(() => {
  * e-mail novo; isto cobre o que depende do relógio ("pedido parado", "sem resposta há 24 h") e a
  * janela de 30 dias que anda. Roda em ~2 s. Erro vira só log.
  */
+/*
+ * SPPL — registro dos pedidos abertos no 17TRACK (migração 091), a cada 5 min. Nasce DESLIGADO (`sppl_17track_ativo = 'false'` em config_disparos)
+ * e sem a chave SEVENTEEN_TRACK_API_KEY não faz nada. Respeita a reserva de cota. Erro vira só log, nunca derruba a API.
+ */
+const REGISTRO_17TRACK_INTERVALO_MS = 5 * 60 * 1000;
+const rodarRegistro17Track = () => registrarNo17Track({ log: (m) => app.log.info(m) })
+  .then((r) => { if (r.rodou && r.candidatos) app.log.info(r, 'registro no 17TRACK'); })
+  .catch((err) => app.log.error(err, 'falha no registro no 17TRACK'));
+setTimeout(rodarRegistro17Track, 60_000);
+const intervaloRegistro17Track = setInterval(rodarRegistro17Track, REGISTRO_17TRACK_INTERVALO_MS);
+
+/*
+ * SPPL — motor de etapas e prazos (migração 091), a cada 10 min. Nasce DESLIGADO (`sppl_motor_ativo = 'false'`). Abre ocorrências que venceram,
+ * respeita o teto `sppl_motor_max_novas_por_rodada` e fecha as de pedido entregue/cancelado/reembolsado. Erro vira só log.
+ */
+const MOTOR_SPPL_INTERVALO_MS = 10 * 60 * 1000;
+const rodarMotor = () => rodarMotorSppl({ log: (m) => app.log.info(m) }).catch((err) => app.log.error(err, 'falha no motor do SPPL'));
+setTimeout(rodarMotor, 90_000);
+const intervaloMotorSppl = setInterval(rodarMotor, MOTOR_SPPL_INTERVALO_MS);
+
 const RISCO_INTERVALO_MS = 10 * 60 * 1000;
 const recalcularRisco = () => pool.query('SELECT email_ia.recalcular_risco()')
   .catch((err) => app.log.error(err, 'falha no recálculo de risco dos tickets'));
@@ -464,6 +486,8 @@ for (const sinal of ['SIGINT', 'SIGTERM']) {
     clearInterval(intervaloAlertas);
     clearInterval(intervaloRisco);
     clearInterval(intervaloFechamento);
+    clearInterval(intervaloRegistro17Track);
+    clearInterval(intervaloMotorSppl);
     desligarFilaDeRespostas();
     await app.close();
     await pool.end();
