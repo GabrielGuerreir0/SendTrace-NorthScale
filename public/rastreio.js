@@ -73,6 +73,9 @@ const DIC = {
   },
   atualizarAgora: { en: 'Refresh now', pt: 'Atualizar agora' },
   subabaTodos: { en: 'All', pt: 'Todos' },
+  abaFulfillments: { en: 'Fulfillments', pt: 'Fulfillments' },
+  abaSppl: { en: 'SPPL', pt: 'SPPL' },
+  filtroFulfillment: { en: 'Filter by fulfillment', pt: 'Filtrar por fulfillment' },
 
   // KPIs
   kpiTotal: { en: 'Total orders', pt: 'Total de pedidos' },
@@ -1015,6 +1018,27 @@ for (const nome of Object.keys(SUBABAS_PROVEDOR)) {
     $(`rst-subaba-btn-${chave}`)?.setAttribute('aria-selected', String(chave === inicial));
   }
   aplicarVisibilidadeProvedor();
+}
+
+/**
+ * Abas internas do Rastreio de Pedidos: "Fulfillments" (pedidos, KPIs, saúde do rastreio, lista — com o filtro por fulfillment acima)
+ * e "SPPL" (Saúde do SPPL, Relatório de logística, Alertas de logística, Regras). Lembra a última aba por navegador.
+ */
+const ABAS_RASTREIO = ['fulfillments', 'sppl'];
+function mudarAbaRastreio(nome) {
+  if (!ABAS_RASTREIO.includes(nome)) nome = 'fulfillments';
+  for (const chave of ABAS_RASTREIO) {
+    $(`rst-aba-btn-${chave}`)?.setAttribute('aria-selected', String(chave === nome));
+    const painel = $(`rst-painel-${chave}`);
+    if (painel) painel.hidden = chave !== nome;
+  }
+  try { localStorage.setItem('rstAbaPrincipal', nome); } catch { /* sem armazenamento: só não lembra */ }
+}
+for (const chave of ABAS_RASTREIO) $(`rst-aba-btn-${chave}`)?.addEventListener('click', () => mudarAbaRastreio(chave));
+{
+  let salva = 'fulfillments';
+  try { salva = localStorage.getItem('rstAbaPrincipal') || salva; } catch { /* idem */ }
+  mudarAbaRastreio(salva);
 }
 
 /**

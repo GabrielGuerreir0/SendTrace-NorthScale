@@ -2163,6 +2163,16 @@
         </button>
       </div>
     </header>
+    <div class="subabas" role="tablist" aria-label="Rastreio">
+      <button class="subaba-btn" id="rst-aba-btn-fulfillments" type="button" role="tab" aria-selected="true" data-t="abaFulfillments">Fulfillments</button>
+      <button class="subaba-btn" id="rst-aba-btn-sppl" type="button" role="tab" aria-selected="false" data-t="abaSppl">SPPL</button>
+    </div>
+  </section>
+
+  <!-- ═══════════════════  Aba Fulfillments  ═══════════════════ -->
+  <div id="rst-painel-fulfillments" role="tabpanel">
+  <section class="cartao rst-filtro-ful">
+    <p class="cartao-sub" data-t="filtroFulfillment">Fulfillment</p>
     <div class="subabas" role="tablist" aria-label="Provedor de rastreio">
       <button class="subaba-btn" id="rst-subaba-btn-todos" type="button" role="tab" aria-selected="true" data-t="subabaTodos">All</button>
       <button class="subaba-btn" id="rst-subaba-btn-redrock" type="button" role="tab" aria-selected="false">Red Rock</button>
@@ -2172,131 +2182,6 @@
 
   <section class="kpis kpis--suporte" id="rst-kpis"></section>
   <section class="kpis kpis--suporte" id="rst-kpis-status"></section>
-
-  <!-- ═══════════════════  SPPL: saúde  ═══════════════════ -->
-  <section class="cartao sppl-bloco" id="saude-cartao">
-    <header class="cartao-cabeca">
-      <div>
-        <h2 data-t="saTitulo">SPPL health</h2>
-        <p class="cartao-sub" data-t="saSub">Is the tracking pipeline working? Shows anything that needs attention: 17TRACK webhook, Red Rock status refresh and 17TRACK quota.</p>
-      </div>
-    </header>
-    <div id="saude-problemas" role="status"></div>
-    <dl id="saude-metricas" class="sppl-metricas"></dl>
-  </section>
-
-  <!-- ═══════════════════  SPPL: relatório de logística  ═══════════════════ -->
-  <section class="cartao sppl-bloco" id="relatorio-cartao">
-    <details id="relatorio-detalhes">
-      <summary class="cartao-cabeca"><div>
-        <h2 data-t="reTitulo">Logistics report</h2>
-        <p class="cartao-sub" data-t="reSub">Alerts opened and closed, backlog, who holds what, charges to fulfillment/carriers. Pick the period and copy the summary to share.</p>
-      </div></summary>
-      <div class="sppl-acoes">
-        <label class="campo"><span data-t="reDias">Period</span>
-          <select id="relatorio-dias"><option value="7" data-t="reUltimos7">Last 7 days</option><option value="14" data-t="reUltimos14">Last 14 days</option><option value="30" data-t="reUltimos30">Last 30 days</option></select></label>
-        <button class="btn" type="button" id="relatorio-copiar" data-t="reCopiar">Copy summary</button>
-        <span class="cartao-sub" id="relatorio-aviso" role="status"></span>
-      </div>
-      <div id="relatorio-corpo"></div>
-    </details>
-  </section>
-
-  <!-- ═══════════════════  SPPL: não encontrados na Red Rock  ═══════════════════ -->
-  <section class="cartao sppl-bloco" id="naoenc-cartao">
-    <details id="naoenc-detalhes">
-      <summary class="cartao-cabeca"><div>
-        <h2 data-t="neTitulo">Not found at Red Rock</h2>
-        <p class="cartao-sub" data-t="neSub">Orders Red Rock does not know (404). Kept apart from the alerts: the action is to send examples to the fulfillment center, not to chase a carrier. No customer data here.</p>
-      </div></summary>
-      <div class="tabela-envolve"><table class="tabela tabela--empilha" id="naoenc-resumo"><thead><tr>
-        <th scope="col" data-t="colPlataforma">Platform</th><th scope="col" data-t="neAte7">Up to 7 days</th><th scope="col" data-t="ne7a30">7 to 30 days</th><th scope="col" data-t="neMais30">Over 30 days</th><th scope="col" data-t="neTotal">Total</th>
-      </tr></thead><tbody id="naoenc-resumo-corpo"></tbody></table></div>
-      <div class="sppl-filtros" style="margin-top:14px;">
-        <label class="campo campo--cresce"><span data-t="alBuscar">Search</span><input id="naoenc-busca" type="search" maxlength="80" data-t-placeholder="neBuscaPh" placeholder="Order or product"></label>
-        <button class="btn" type="button" id="naoenc-limpar" data-t="neLimpar">Clear filters</button>
-        <button class="btn" type="button" id="naoenc-exportar" data-t="neExportar">Export CSV</button>
-      </div>
-      <p class="cartao-sub sppl-aviso" id="naoenc-aviso" role="status"></p>
-      <div class="tabela-envolve"><table class="tabela tabela--empilha"><thead><tr>
-        <th scope="col" data-t="colPedido">Order</th><th scope="col" data-t="neIdConsulta">Lookup id</th><th scope="col" data-t="colProduto">Product</th>
-        <th scope="col" data-t="colPlataforma">Platform</th><th scope="col" data-t="neDias">Days since purchase</th>
-      </tr></thead><tbody id="naoenc-corpo"><tr><td colspan="5" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody></table></div>
-      <div class="paginacao" id="naoenc-paginacao"></div>
-    </details>
-  </section>
-
-  <!-- ═══════════════════  SPPL: alertas de logística (ocorrências)  ═══════════════════ -->
-  <section class="cartao sppl-bloco" id="alertas-cartao">
-    <header class="cartao-cabeca">
-      <div>
-        <h2 data-t="alTitulo">Logistics alerts</h2>
-        <p class="cartao-sub" data-t="alSub">Orders that need action: no tracking code, label without pickup, stalled in transit and serious carrier exceptions. Work each one, register the charge to the fulfillment center or carrier, and close it with the result.</p>
-      </div>
-    </header>
-    <div id="alertas-kpis" class="sppl-kpis" role="group" aria-label="Filtros rápidos"></div>
-    <div class="sppl-filtros">
-      <label class="campo"><span data-t="alColSituacao">Status</span>
-        <select id="alertas-f-situacao"><option value="abertas" data-t="alSitAbertas">Open</option><option value="" data-t="alSitTodas">All</option><option value="aberta" data-t="alSitAberta">New</option><option value="em_cobranca" data-t="alSitCobranca">Being chased</option><option value="aguardando_cliente" data-t="alSitCliente">Waiting for customer</option><option value="resolvida" data-t="alSitResolvida">Resolved</option><option value="cancelada" data-t="alSitCancelada">Cancelled</option></select></label>
-      <label class="campo"><span data-t="alColPrio">Priority</span>
-        <select id="alertas-f-prio"><option value="" data-t="alPrioTodas">All priorities</option><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select></label>
-      <label class="campo campo--cresce"><span data-t="alBuscar">Search</span><input id="alertas-f-busca" type="search" maxlength="80" data-t-placeholder="alBuscarPh" placeholder="Order, tracking code or owner"></label>
-    </div>
-    <p class="cartao-sub sppl-aviso" id="alertas-aviso" role="status"></p>
-    <div class="tabela-envolve">
-      <table class="tabela tabela--empilha tabela--larga" id="alertas-tabela">
-        <thead><tr>
-          <th scope="col" data-t="alColPrio">Priority</th><th scope="col" data-t="alColCaso">Case</th><th scope="col" data-t="colPedido">Order</th>
-          <th scope="col" data-t="colProduto">Product</th><th scope="col" data-t="alColResp">Owner</th><th scope="col" data-t="alColSituacao">Status</th>
-          <th scope="col" data-t="alColPrazo">Due</th><th scope="col" data-t="alColDiasPedido">Order age (days)</th><th scope="col" data-t="alColDias">Alert open (days)</th>
-        </tr></thead>
-        <tbody id="alertas-corpo"><tr><td colspan="9" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody>
-      </table>
-    </div>
-    <div class="paginacao" id="alertas-paginacao"></div>
-  </section>
-
-  <dialog class="janela sppl-modal" id="alertas-modal" aria-labelledby="alertas-m-titulo">
-    <header class="janela-cabeca">
-      <div>
-        <h2 id="alertas-m-titulo"></h2>
-        <p class="cartao-sub" id="alertas-m-sub"></p>
-      </div>
-      <button class="btn btn-icone" type="button" id="alertas-m-x" title="Fechar"><span aria-hidden="true">✕</span><span class="sr" data-t="alFechar">Close</span></button>
-    </header>
-    <div class="janela-corpo">
-      <p class="sppl-destaque" id="alertas-m-acao" hidden></p>
-      <form id="alertas-form" method="dialog">
-        <div class="sppl-form-grid">
-          <label class="campo"><span data-t="alColSituacao">Status</span>
-            <select id="alertas-m-situacao"><option value="aberta" data-t="alSitAberta">New</option><option value="em_cobranca" data-t="alSitCobranca">Being chased</option><option value="aguardando_cliente" data-t="alSitCliente">Waiting for customer</option><option value="resolvida" data-t="alSitResolvida">Resolved</option><option value="cancelada" data-t="alSitCancelada">Cancelled</option></select></label>
-          <label class="campo"><span data-t="alColResp">Owner</span><input id="alertas-m-resp" maxlength="200"></label>
-          <label class="campo full"><span data-t="alProxAcao">Next action</span><textarea id="alertas-m-prox" rows="2" maxlength="1000"></textarea></label>
-          <label class="campo"><span data-t="alProxAte">Next action by</span><input id="alertas-m-ate" type="datetime-local"></label>
-          <label class="campo full"><span data-t="alResultado">Result (required to close)</span><textarea id="alertas-m-resultado" rows="3" maxlength="2000"></textarea></label>
-        </div>
-        <p class="login-erro" id="alertas-m-erro" role="alert" hidden></p>
-        <div class="sppl-acoes" style="margin:14px 0 0;">
-          <button class="btn btn-forte" type="submit" id="alertas-m-salvar" data-t="spplSalvar">Save</button>
-          <button class="btn" type="button" id="alertas-m-pedido" data-t="alAbrirPedido">Open order sheet</button>
-          <button class="btn" type="button" id="alertas-m-fechar" data-t="alFechar">Close</button>
-        </div>
-      </form>
-      <h3 class="sppl-secao-titulo" data-t="alCobrancas">Charges to fulfillment / carrier</h3>
-      <div id="alertas-m-cobrancas"></div>
-      <fieldset id="alertas-m-cobform" class="sppl-nova-cobranca">
-        <legend data-t="alNovaCobranca">Register a charge</legend>
-        <div class="sppl-form-grid">
-          <label class="campo"><span data-t="alDestinoRot">Charge to</span>
-            <select id="alertas-c-destino"><option value="fulfillment" data-t="alDestFulfillment">Fulfillment center</option><option value="transportadora" data-t="alDestTransp">Carrier</option><option value="parceiro_logistico" data-t="alDestParceiro">Logistics partner</option><option value="plataforma_de_venda" data-t="alDestPlataforma">Sales platform</option><option value="cliente" data-t="alDestCliente">Customer</option></select></label>
-          <label class="campo"><span data-t="alCanalRot">Channel</span><input id="alertas-c-canal" maxlength="80" data-t-placeholder="alCanalPh" placeholder="Channel (e-mail, portal, phone)"></label>
-          <label class="campo full"><span data-t="alMsgRot">What was asked</span><textarea id="alertas-c-msg" rows="2" maxlength="2000" data-t-placeholder="alMsgPh" placeholder="What was asked"></textarea></label>
-          <label class="campo"><span data-t="alPrazoResp">Days to answer (business days)</span><input id="alertas-c-dias" type="number" min="0" max="30" value="1"></label>
-        </div>
-        <div class="sppl-acoes" style="margin:0;"><button class="btn btn-forte" type="button" id="alertas-c-registrar" data-t="alRegistrar">Register charge</button></div>
-      </fieldset>
-    </div>
-  </dialog>
 
   <!-- ═══════════════════  Saúde do rastreio (cruzamentos)  ═══════════════════ -->
   <section class="cartao">
@@ -2531,6 +2416,135 @@
     <div class="paginacao" id="rst-tabela-paginacao"></div>
   </section>
 
+  </div>
+
+  <!-- ═══════════════════  Aba SPPL (saúde, relatório, alertas, regras)  ═══════════════════ -->
+  <div id="rst-painel-sppl" role="tabpanel" hidden>
+  <!-- ═══════════════════  SPPL: saúde  ═══════════════════ -->
+  <section class="cartao sppl-bloco" id="saude-cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2 data-t="saTitulo">SPPL health</h2>
+        <p class="cartao-sub" data-t="saSub">Is the tracking pipeline working? Shows anything that needs attention: 17TRACK webhook, Red Rock status refresh and 17TRACK quota.</p>
+      </div>
+    </header>
+    <div id="saude-problemas" role="status"></div>
+    <dl id="saude-metricas" class="sppl-metricas"></dl>
+  </section>
+
+  <!-- ═══════════════════  SPPL: relatório de logística  ═══════════════════ -->
+  <section class="cartao sppl-bloco" id="relatorio-cartao">
+    <details id="relatorio-detalhes">
+      <summary class="cartao-cabeca"><div>
+        <h2 data-t="reTitulo">Logistics report</h2>
+        <p class="cartao-sub" data-t="reSub">Alerts opened and closed, backlog, who holds what, charges to fulfillment/carriers. Pick the period and copy the summary to share.</p>
+      </div></summary>
+      <div class="sppl-acoes">
+        <label class="campo"><span data-t="reDias">Period</span>
+          <select id="relatorio-dias"><option value="7" data-t="reUltimos7">Last 7 days</option><option value="14" data-t="reUltimos14">Last 14 days</option><option value="30" data-t="reUltimos30">Last 30 days</option></select></label>
+        <button class="btn" type="button" id="relatorio-copiar" data-t="reCopiar">Copy summary</button>
+        <span class="cartao-sub" id="relatorio-aviso" role="status"></span>
+      </div>
+      <div id="relatorio-corpo"></div>
+    </details>
+  </section>
+
+  <!-- ═══════════════════  SPPL: alertas de logística (ocorrências)  ═══════════════════ -->
+  <section class="cartao sppl-bloco" id="alertas-cartao">
+    <header class="cartao-cabeca">
+      <div>
+        <h2 data-t="alTitulo">Logistics alerts</h2>
+        <p class="cartao-sub" data-t="alSub">Orders that need action: no tracking code, label without pickup, stalled in transit and serious carrier exceptions. Work each one, register the charge to the fulfillment center or carrier, and close it with the result.</p>
+      </div>
+    </header>
+    <div id="alertas-kpis" class="sppl-kpis" role="group" aria-label="Filtros rápidos"></div>
+    <div class="sppl-filtros">
+      <label class="campo"><span data-t="alColSituacao">Status</span>
+        <select id="alertas-f-situacao"><option value="abertas" data-t="alSitAbertas">Open</option><option value="" data-t="alSitTodas">All</option><option value="aberta" data-t="alSitAberta">New</option><option value="em_cobranca" data-t="alSitCobranca">Being chased</option><option value="aguardando_cliente" data-t="alSitCliente">Waiting for customer</option><option value="resolvida" data-t="alSitResolvida">Resolved</option><option value="cancelada" data-t="alSitCancelada">Cancelled</option></select></label>
+      <label class="campo"><span data-t="alColPrio">Priority</span>
+        <select id="alertas-f-prio"><option value="" data-t="alPrioTodas">All priorities</option><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select></label>
+      <label class="campo campo--cresce"><span data-t="alBuscar">Search</span><input id="alertas-f-busca" type="search" maxlength="80" data-t-placeholder="alBuscarPh" placeholder="Order, tracking code or owner"></label>
+    </div>
+    <p class="cartao-sub sppl-aviso" id="alertas-aviso" role="status"></p>
+    <div class="tabela-envolve">
+      <table class="tabela tabela--empilha tabela--larga" id="alertas-tabela">
+        <thead><tr>
+          <th scope="col" data-t="alColPrio">Priority</th><th scope="col" data-t="alColCaso">Case</th><th scope="col" data-t="colPedido">Order</th>
+          <th scope="col" data-t="colProduto">Product</th><th scope="col" data-t="alColResp">Owner</th><th scope="col" data-t="alColSituacao">Status</th>
+          <th scope="col" data-t="alColPrazo">Due</th><th scope="col" data-t="alColDiasPedido">Order age (days)</th><th scope="col" data-t="alColDias">Alert open (days)</th>
+        </tr></thead>
+        <tbody id="alertas-corpo"><tr><td colspan="9" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="paginacao" id="alertas-paginacao"></div>
+  </section>
+
+  <dialog class="janela sppl-modal" id="alertas-modal" aria-labelledby="alertas-m-titulo">
+    <header class="janela-cabeca">
+      <div>
+        <h2 id="alertas-m-titulo"></h2>
+        <p class="cartao-sub" id="alertas-m-sub"></p>
+      </div>
+      <button class="btn btn-icone" type="button" id="alertas-m-x" title="Fechar"><span aria-hidden="true">✕</span><span class="sr" data-t="alFechar">Close</span></button>
+    </header>
+    <div class="janela-corpo">
+      <p class="sppl-destaque" id="alertas-m-acao" hidden></p>
+      <form id="alertas-form" method="dialog">
+        <div class="sppl-form-grid">
+          <label class="campo"><span data-t="alColSituacao">Status</span>
+            <select id="alertas-m-situacao"><option value="aberta" data-t="alSitAberta">New</option><option value="em_cobranca" data-t="alSitCobranca">Being chased</option><option value="aguardando_cliente" data-t="alSitCliente">Waiting for customer</option><option value="resolvida" data-t="alSitResolvida">Resolved</option><option value="cancelada" data-t="alSitCancelada">Cancelled</option></select></label>
+          <label class="campo"><span data-t="alColResp">Owner</span><input id="alertas-m-resp" maxlength="200"></label>
+          <label class="campo full"><span data-t="alProxAcao">Next action</span><textarea id="alertas-m-prox" rows="2" maxlength="1000"></textarea></label>
+          <label class="campo"><span data-t="alProxAte">Next action by</span><input id="alertas-m-ate" type="datetime-local"></label>
+          <label class="campo full"><span data-t="alResultado">Result (required to close)</span><textarea id="alertas-m-resultado" rows="3" maxlength="2000"></textarea></label>
+        </div>
+        <p class="login-erro" id="alertas-m-erro" role="alert" hidden></p>
+        <div class="sppl-acoes" style="margin:14px 0 0;">
+          <button class="btn btn-forte" type="submit" id="alertas-m-salvar" data-t="spplSalvar">Save</button>
+          <button class="btn" type="button" id="alertas-m-pedido" data-t="alAbrirPedido">Open order sheet</button>
+          <button class="btn" type="button" id="alertas-m-fechar" data-t="alFechar">Close</button>
+        </div>
+      </form>
+      <h3 class="sppl-secao-titulo" data-t="alCobrancas">Charges to fulfillment / carrier</h3>
+      <div id="alertas-m-cobrancas"></div>
+      <fieldset id="alertas-m-cobform" class="sppl-nova-cobranca">
+        <legend data-t="alNovaCobranca">Register a charge</legend>
+        <div class="sppl-form-grid">
+          <label class="campo"><span data-t="alDestinoRot">Charge to</span>
+            <select id="alertas-c-destino"><option value="fulfillment" data-t="alDestFulfillment">Fulfillment center</option><option value="transportadora" data-t="alDestTransp">Carrier</option><option value="parceiro_logistico" data-t="alDestParceiro">Logistics partner</option><option value="plataforma_de_venda" data-t="alDestPlataforma">Sales platform</option><option value="cliente" data-t="alDestCliente">Customer</option></select></label>
+          <label class="campo"><span data-t="alCanalRot">Channel</span><input id="alertas-c-canal" maxlength="80" data-t-placeholder="alCanalPh" placeholder="Channel (e-mail, portal, phone)"></label>
+          <label class="campo full"><span data-t="alMsgRot">What was asked</span><textarea id="alertas-c-msg" rows="2" maxlength="2000" data-t-placeholder="alMsgPh" placeholder="What was asked"></textarea></label>
+          <label class="campo"><span data-t="alPrazoResp">Days to answer (business days)</span><input id="alertas-c-dias" type="number" min="0" max="30" value="1"></label>
+        </div>
+        <div class="sppl-acoes" style="margin:0;"><button class="btn btn-forte" type="button" id="alertas-c-registrar" data-t="alRegistrar">Register charge</button></div>
+      </fieldset>
+    </div>
+  </dialog>
+
+  <!-- ═══════════════════  SPPL: não encontrados na Red Rock  ═══════════════════ -->
+  <section class="cartao sppl-bloco" id="naoenc-cartao">
+    <details id="naoenc-detalhes">
+      <summary class="cartao-cabeca"><div>
+        <h2 data-t="neTitulo">Not found at Red Rock</h2>
+        <p class="cartao-sub" data-t="neSub">Orders Red Rock does not know (404). Kept apart from the alerts: the action is to send examples to the fulfillment center, not to chase a carrier. No customer data here.</p>
+      </div></summary>
+      <div class="tabela-envolve"><table class="tabela tabela--empilha" id="naoenc-resumo"><thead><tr>
+        <th scope="col" data-t="colPlataforma">Platform</th><th scope="col" data-t="neAte7">Up to 7 days</th><th scope="col" data-t="ne7a30">7 to 30 days</th><th scope="col" data-t="neMais30">Over 30 days</th><th scope="col" data-t="neTotal">Total</th>
+      </tr></thead><tbody id="naoenc-resumo-corpo"></tbody></table></div>
+      <div class="sppl-filtros" style="margin-top:14px;">
+        <label class="campo campo--cresce"><span data-t="alBuscar">Search</span><input id="naoenc-busca" type="search" maxlength="80" data-t-placeholder="neBuscaPh" placeholder="Order or product"></label>
+        <button class="btn" type="button" id="naoenc-limpar" data-t="neLimpar">Clear filters</button>
+        <button class="btn" type="button" id="naoenc-exportar" data-t="neExportar">Export CSV</button>
+      </div>
+      <p class="cartao-sub sppl-aviso" id="naoenc-aviso" role="status"></p>
+      <div class="tabela-envolve"><table class="tabela tabela--empilha"><thead><tr>
+        <th scope="col" data-t="colPedido">Order</th><th scope="col" data-t="neIdConsulta">Lookup id</th><th scope="col" data-t="colProduto">Product</th>
+        <th scope="col" data-t="colPlataforma">Platform</th><th scope="col" data-t="neDias">Days since purchase</th>
+      </tr></thead><tbody id="naoenc-corpo"><tr><td colspan="5" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody></table></div>
+      <div class="paginacao" id="naoenc-paginacao"></div>
+    </details>
+  </section>
+
   <!-- ═══════════════════  SPPL: regras (status do 17TRACK e prazos)  ═══════════════════ -->
   <section class="cartao sppl-bloco" id="sppl-cartao">
     <details id="sppl-detalhes">
@@ -2600,6 +2614,8 @@
       </form>
     </details>
   </section>
+  </div>
+
 
 </main>
 
