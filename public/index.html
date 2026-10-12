@@ -2173,6 +2173,73 @@
   <section class="kpis kpis--suporte" id="rst-kpis"></section>
   <section class="kpis kpis--suporte" id="rst-kpis-status"></section>
 
+  <!-- ═══════════════════  SPPL: alertas de logística (ocorrências)  ═══════════════════ -->
+  <section class="cartao" id="alertas-cartao">
+    <style>#alertas-cartao [hidden], #alertas-modal [hidden] { display: none !important; }
+      #alertas-kpis { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+      #alertas-kpis button { border: 1px solid var(--borda, #ccc); background: transparent; border-radius: 10px; padding: 8px 14px; cursor: pointer; color: inherit; text-align: left; }
+      #alertas-kpis button[aria-pressed="true"] { border-color: currentColor; font-weight: 700; }
+      #alertas-kpis b { display: block; font-size: 1.4rem; }
+      #alertas-modal { max-width: 720px; width: 94vw; } #alertas-modal form { display: grid; gap: 10px; }
+      #alertas-modal .alertas-cob { border-top: 1px solid var(--borda, #ccc); padding: 8px 0; }</style>
+    <header class="cartao-cabeca">
+      <div>
+        <h2 data-t="alTitulo">Logistics alerts</h2>
+        <p class="cartao-sub" data-t="alSub">Orders that need action: no tracking code, label without pickup, stalled in transit and serious carrier exceptions. Work each one, register the charge to the fulfillment center or carrier, and close it with the result.</p>
+      </div>
+    </header>
+    <div id="alertas-kpis" role="group" aria-label="Filtros rápidos"></div>
+    <div class="filtros-linha" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+      <label class="campo"><span class="sr" data-t="alColSituacao">Status</span>
+        <select id="alertas-f-situacao"><option value="abertas" data-t="alSitAbertas">Open</option><option value="" data-t="alSitTodas">All</option><option value="aberta" data-t="alSitAberta">New</option><option value="em_cobranca" data-t="alSitCobranca">Being chased</option><option value="aguardando_cliente" data-t="alSitCliente">Waiting for customer</option><option value="resolvida" data-t="alSitResolvida">Resolved</option><option value="cancelada" data-t="alSitCancelada">Cancelled</option></select></label>
+      <label class="campo"><span class="sr" data-t="alColPrio">Priority</span>
+        <select id="alertas-f-prio"><option value="" data-t="alPrioTodas">All priorities</option><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select></label>
+      <label class="campo"><span class="sr" data-t="alBuscar">Search</span><input id="alertas-f-busca" type="search" maxlength="80" data-t-placeholder="alBuscarPh" placeholder="Order, tracking code or owner"></label>
+    </div>
+    <p class="cartao-sub" id="alertas-aviso" role="status"></p>
+    <div class="tabela-envolve">
+      <table class="tabela" id="alertas-tabela">
+        <thead><tr>
+          <th scope="col" data-t="alColPrio">Priority</th><th scope="col" data-t="alColCaso">Case</th><th scope="col" data-t="colPedido">Order</th>
+          <th scope="col" data-t="colProduto">Product</th><th scope="col" data-t="alColResp">Owner</th><th scope="col" data-t="alColSituacao">Status</th>
+          <th scope="col" data-t="alColPrazo">Due</th><th scope="col" data-t="alColDias">Days open</th>
+        </tr></thead>
+        <tbody id="alertas-corpo"><tr><td colspan="8" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="paginacao" id="alertas-paginacao"></div>
+  </section>
+
+  <dialog id="alertas-modal" class="janela">
+    <form id="alertas-form" method="dialog">
+      <h3 id="alertas-m-titulo"></h3>
+      <p class="cartao-sub" id="alertas-m-sub"></p>
+      <p class="cartao-sub" id="alertas-m-acao"></p>
+      <label class="campo"><span data-t="alColSituacao">Status</span>
+        <select id="alertas-m-situacao"><option value="aberta" data-t="alSitAberta">New</option><option value="em_cobranca" data-t="alSitCobranca">Being chased</option><option value="aguardando_cliente" data-t="alSitCliente">Waiting for customer</option><option value="resolvida" data-t="alSitResolvida">Resolved</option><option value="cancelada" data-t="alSitCancelada">Cancelled</option></select></label>
+      <label class="campo"><span data-t="alColResp">Owner</span><input id="alertas-m-resp" maxlength="200"></label>
+      <label class="campo"><span data-t="alProxAcao">Next action</span><textarea id="alertas-m-prox" rows="2" maxlength="1000"></textarea></label>
+      <label class="campo"><span data-t="alProxAte">Next action by</span><input id="alertas-m-ate" type="datetime-local"></label>
+      <label class="campo"><span data-t="alResultado">Result (required to close)</span><textarea id="alertas-m-resultado" rows="3" maxlength="2000"></textarea></label>
+      <p class="login-erro" id="alertas-m-erro" role="alert" hidden></p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn btn-forte" type="submit" id="alertas-m-salvar" data-t="spplSalvar">Save</button>
+        <button class="btn" type="button" id="alertas-m-pedido" data-t="alAbrirPedido">Open order sheet</button>
+        <button class="btn" type="button" id="alertas-m-fechar" data-t="alFechar">Close</button>
+      </div>
+      <h4 data-t="alCobrancas">Charges to fulfillment / carrier</h4>
+      <div id="alertas-m-cobrancas"></div>
+      <fieldset id="alertas-m-cobform" style="border:1px solid var(--borda,#ccc); border-radius:10px; padding:10px; display:grid; gap:8px;">
+        <legend data-t="alNovaCobranca">Register a charge</legend>
+        <select id="alertas-c-destino"><option value="fulfillment" data-t="alDestFulfillment">Fulfillment center</option><option value="transportadora" data-t="alDestTransp">Carrier</option><option value="parceiro_logistico" data-t="alDestParceiro">Logistics partner</option><option value="plataforma_de_venda" data-t="alDestPlataforma">Sales platform</option><option value="cliente" data-t="alDestCliente">Customer</option></select>
+        <input id="alertas-c-canal" maxlength="80" data-t-placeholder="alCanalPh" placeholder="Channel (e-mail, portal, phone)">
+        <textarea id="alertas-c-msg" rows="2" maxlength="2000" data-t-placeholder="alMsgPh" placeholder="What was asked"></textarea>
+        <label class="campo"><span data-t="alPrazoResp">Days to answer (business days)</span><input id="alertas-c-dias" type="number" min="0" max="30" value="1"></label>
+        <button class="btn" type="button" id="alertas-c-registrar" data-t="alRegistrar">Register charge</button>
+      </fieldset>
+    </form>
+  </dialog>
+
   <!-- ═══════════════════  Saúde do rastreio (cruzamentos)  ═══════════════════ -->
   <section class="cartao">
     <header class="cartao-cabeca">

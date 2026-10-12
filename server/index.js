@@ -2056,13 +2056,30 @@ async function atender(req, res, url, sessao) {
   if (url.pathname.startsWith('/api/rastreio/sppl/')) {
     const resto = url.pathname.slice('/api/rastreio/sppl/'.length).replace(/\/$/, '');
     const escrita = req.method !== 'GET';
-    if (escrita && !usuario.admin) return json(res, 403, { erro: 'Só administradores alteram as regras do SPPL.' });
+    // Ocorrências e cobranças são o trabalho do dia a dia do time (qualquer conta com a página Rastreio); regras e feriados só administrador.
+    const operacional = /^(ocorrencias|cobrancas)(\/|$)/.test(resto);
+    if (escrita && !operacional && !usuario.admin) return json(res, 403, { erro: 'Só administradores alteram as regras do SPPL.' });
     const rotaRegra = /^regras\/(\d+)$/.exec(resto);
     const rotaFeriado = /^feriados\/(\d{4}-\d{2}-\d{2})$/.exec(resto);
     try {
       if (resto === 'regras' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/regras'));
       if (resto === 'regras' && req.method === 'POST') return json(res, 200, await criarApi('/api/rastreio/sppl/regras', await lerJson(req, 16 * 1024)));
       if (rotaRegra && req.method === 'PATCH') return json(res, 200, await remendarApi(`/api/rastreio/sppl/regras/${rotaRegra[1]}`, await lerJson(req, 16 * 1024)));
+      // ── ocorrências (alertas de logística) e cobranças ──
+      const rotaOc = /^ocorrencias\/(\d+)$/.exec(resto);
+      const rotaOcCob = /^ocorrencias\/(\d+)\/cobrancas$/.exec(resto);
+      const rotaCob = /^cobrancas\/(\d+)$/.exec(resto);
+      if (resto === 'ocorrencias' && req.method === 'GET') {
+        const q = url.searchParams;
+        return json(res, 200, await obterApi('/api/rastreio/sppl/ocorrencias', {
+          situacao: q.get('situacao'), prioridade: q.get('prioridade'), categoria: q.get('categoria'), vencidas: q.get('vencidas'), busca: q.get('busca'), page: q.get('page'), page_size: q.get('page_size'),
+        }));
+      }
+      if (resto === 'ocorrencias/resumo' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/ocorrencias/resumo'));
+      if (rotaOc && req.method === 'GET') return json(res, 200, await obterApi(`/api/rastreio/sppl/ocorrencias/${rotaOc[1]}`));
+      if (rotaOc && req.method === 'PATCH') return json(res, 200, await remendarApi(`/api/rastreio/sppl/ocorrencias/${rotaOc[1]}`, await lerJson(req, 16 * 1024)));
+      if (rotaOcCob && req.method === 'POST') return json(res, 200, await criarApi(`/api/rastreio/sppl/ocorrencias/${rotaOcCob[1]}/cobrancas`, await lerJson(req, 16 * 1024)));
+      if (rotaCob && req.method === 'PATCH') return json(res, 200, await remendarApi(`/api/rastreio/sppl/cobrancas/${rotaCob[1]}`, await lerJson(req, 16 * 1024)));
       if (resto === 'feriados' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/feriados'));
       if (resto === 'feriados' && req.method === 'POST') return json(res, 200, await criarApi('/api/rastreio/sppl/feriados', await lerJson(req)));
       if (rotaFeriado && req.method === 'DELETE') return json(res, 200, await apagarApi(`/api/rastreio/sppl/feriados/${rotaFeriado[1]}`));

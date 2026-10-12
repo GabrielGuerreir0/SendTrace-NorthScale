@@ -31,6 +31,7 @@ import { n, dataHora, dia, duracaoH } from './format.js';
 import { desenharLinha } from './charts.js';
 import { criarTradutor, idiomaAtual, montarSeletorIdioma } from './i18n.js';
 import './rastreioSppl.js';   // SPPL: regras e feriados (seção recolhível no fim da aba)
+import './rastreioAlertas.js';   // SPPL: alertas de logística (ocorrências) e cobranças
 
 /** dia (col. `date` do Postgres, "AAAA-MM-DD" sem hora/fuso) → "DD/MM" sem
  * passar por `new Date()`: um `date` puro seria lido como meia-noite UTC e o
@@ -1088,3 +1089,6 @@ $('aba-btn-rastreio').addEventListener('click', () => tentarSincronizarSelects()
 // escondidas), sem polling: dado de fulfillment não muda a cada segundos.
 tentarSincronizarSelects();
 carregarTudo();
+
+// SPPL: a janela de alertas pede para abrir a ficha do pedido (módulo separado, sem import circular)
+document.addEventListener('rastreio:abrir-pedido', (ev) => { if (ev.detail?.transacao_id) abrirDetalhePedido({ transacao_id: ev.detail.transacao_id }); });
