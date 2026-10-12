@@ -3113,3 +3113,9 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .rst-filtro-ful { padding: 14px 18px; }
 .rst-filtro-ful .cartao-sub { margin: 0; }
 .rst-filtro-ful .subabas { margin-top: 8px; }
+
+/* Rastreio de Pedidos — as abas internas (Fulfillments / SPPL) repetem o grid e o espaço do .conteudo entre os cartões
+   (sem isto os cartões ficavam colados: o gap do .conteudo só vale para filhos diretos). */
+#rst-painel-fulfillments, #rst-painel-sppl { display: grid; gap: clamp(14px, 1.6vw, 20px); min-width: 0; }
+#rst-painel-fulfillments[hidden], #rst-painel-sppl[hidden] { display: none; }
+#rst-painel-fulfillments > *, #rst-painel-sppl > * { min-width: 0; }
