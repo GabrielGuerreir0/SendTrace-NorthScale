@@ -283,9 +283,11 @@ const pct = (v) => {
 function aplicarTraducoesEstaticas() {
   const raiz = [$('aba-rastreio'), $('rst-detalhe-modal')].filter(Boolean);
   for (const container of raiz) {
-    container.querySelectorAll('[data-t]').forEach((el) => { el.textContent = t(el.dataset.t); });
-    container.querySelectorAll('[data-t-placeholder]').forEach((el) => { el.placeholder = t(el.dataset.tPlaceholder); });
-    container.querySelectorAll('[data-t-title]').forEach((el) => { el.title = t(el.dataset.tTitle); });
+    // Só as chaves DESTE dicionário: seções de outros módulos (SPPL: rastreioSppl.js, rastreioAlertas.js) traduzem as próprias; `t()` devolve o nome da
+    // chave quando ela não existe, então sem este filtro o título da seção virava "spplTitulo".
+    container.querySelectorAll('[data-t]').forEach((el) => { if (DIC[el.dataset.t]) el.textContent = t(el.dataset.t); });
+    container.querySelectorAll('[data-t-placeholder]').forEach((el) => { if (DIC[el.dataset.tPlaceholder]) el.placeholder = t(el.dataset.tPlaceholder); });
+    container.querySelectorAll('[data-t-title]').forEach((el) => { if (DIC[el.dataset.tTitle]) el.title = t(el.dataset.tTitle); });
   }
 }
 
