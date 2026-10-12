@@ -37,16 +37,12 @@ function mascarar(texto) {
 
 const iso = (d) => (d ? new Date(d).toISOString() : null);
 
-/** A spec promete "sem endereço": tira CEP (5 dígitos ou 5+4) do texto livre da transportadora. Cidade/estado dos centros seguem (decisão de 12/10). */
-const semCep = (txt) => (txt == null ? null : String(txt).replace(/\b\d{5}(?:-\d{4})?\b/g, '').replace(/\s{2,}/g, ' ').replace(/[\s,]+$/g, '').trim() || null);
-const LIMITE_EVENTOS_POR_PEDIDO = 30;
-
 function etapa(nome, data) {
   return { etapa: nome, concluida: Boolean(data), data: iso(data) };
 }
 
 /** Um pedido no formato da resposta. Reembolso/chargeback saem sem rastreio e sem etapas. */
-function montarPedido(r, historicos = new Map()) {
+function montarPedido(r) {
   const base = { order_id: r.transacao_id, produto: r.produto, comprado_em: iso(r.criado_em) };
 
   const reembolsoEm = r.reembolsado_em ?? r.chargeback_em;
@@ -80,11 +76,8 @@ function montarPedido(r, historicos = new Map()) {
     id_rastreio: r.tracking_number ?? null,
     transportadora: r.carrier_code ?? null,
     link_rastreio: r.tracking_url ?? null,
-    status_transportadora: semCep(r.tracking_status),
+    status_transportadora: r.tracking_status ?? null,
     etapas,
-    // 17TRACK (SPPL): histórico completo da transportadora. Sem dado, `fonte_17track_disponivel: false` e o resto segue com os dados da fulfillment.
-    fonte_17track_disponivel: (historicos.get(r.tracking_number) ?? []).length > 0,
-    historico_transportadora: (historicos.get(r.tracking_number) ?? []).slice(0, LIMITE_EVENTOS_POR_PEDIDO),
   };
 }
 
@@ -127,7 +120,7 @@ export default async function rotasRecoverly(app) {
       description: 'Auth por `X-Api-Key` (token exclusivo da Recoverly). Informe `email` OU `order_id`. '
         + 'Devolve todos os pedidos do cliente agrupados em front, upsell, downsell e outros, cada um com '
         + 'status, etapas e código de rastreio. Reembolso/chargeback saem como `reembolsado`, sem rastreio. '
-        + 'Pedido sem rastreio na Red Rock sai como `indisponivel`. Cada pedido enviado traz `historico_transportadora` (17TRACK: status, texto, cidade e estado, sem CEP) e `fonte_17track_disponivel`. Não devolve endereço, telefone nem valores.',
+        + 'Pedido sem rastreio na Red Rock sai como `indisponivel`. Não devolve endereço, telefone nem valores.',
       querystring: {
         type: 'object',
         properties: {
@@ -158,22 +151,9 @@ export default async function rotasRecoverly(app) {
     const { rows } = await query(PEDIDOS_DO_EMAIL, [emailAlvo]);
     if (!rows.length) return resposta.code(404).send(NAO_ENCONTRADO);
 
-    // Histórico do 17TRACK de todos os pedidos da lista (uma consulta só). Reembolso/chargeback nunca mostram rastreio.
-    const numeros = [...new Set(rows.filter((r) => r.tracking_number && !(r.reembolsado_em ?? r.chargeback_em)).map((r) => r.tracking_number))];
-    const historicos = new Map();
-    if (numeros.length) {
-      const ev = await query(
-        `SELECT numero, ocorreu_em, status, descricao, cidade, estado FROM rastreio_17t_eventos
-          WHERE numero = ANY($1::text[]) ORDER BY ocorreu_em DESC NULLS LAST, id DESC`, [numeros]);
-      for (const e of ev.rows) {
-        if (!historicos.has(e.numero)) historicos.set(e.numero, []);
-        historicos.get(e.numero).push({ data: iso(e.ocorreu_em), status: e.status, descricao: e.descricao, cidade: e.cidade, estado: e.estado });
-      }
-    }
-
     const pedidos = { front: [], upsell: [], downsell: [], outros: [] };
     for (const r of rows) {
-      const pedido = montarPedido(r, historicos);
+      const pedido = montarPedido(r);
       if (orderId && r.transacao_id === orderId) pedido.consultado = true;
       pedidos[r.grupo].push(pedido);
     }
