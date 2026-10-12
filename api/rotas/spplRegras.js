@@ -5,6 +5,7 @@
  */
 import { query } from '../../server/db.js';
 import { ErroHttp } from '../comum.js';
+import { simular, configMotor } from '../sppl/motor.js';
 
 const PRIORIDADES = ['P0', 'P1', 'P2', 'P3'];
 const ORIGENS = ['status_17t', 'tempo', 'sem_dado'];
@@ -89,6 +90,16 @@ export default async function rotasSpplRegras(app) {
         c.contata_cliente ?? null, c.prioridade ?? null, c.ordem ?? null, c.observacao ?? null, req.usuario?.email ?? null],
     );
     return rows[0];
+  });
+
+  // Simulação do motor: só conta, nunca escreve. Serve para ver o tamanho do 1º dia ANTES de ligar `sppl_motor_ativo`.
+  app.get('/api/rastreio/sppl/motor', {
+    onRequest: [app.exigirAdmin],
+    schema: { tags: ['Rastreio'], summary: 'SPPL — estado do motor e simulação (quantas ocorrências abriria agora)', security: [{ bearerAuth: [] }] },
+  }, async () => {
+    const cfg = await configMotor();
+    const simulacao = await simular();
+    return { ativo: cfg.ativo, max_novas_por_rodada: cfg.maxNovas, total: simulacao.reduce((a, s) => a + s.abriria, 0), simulacao: simulacao.filter((s) => s.abriria > 0) };
   });
 
   app.get('/api/rastreio/sppl/feriados', {

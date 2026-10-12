@@ -2520,6 +2520,13 @@
           <button class="btn" type="button" id="sppl-f-cancelar" data-t="spplCancelar">Cancel</button>
         </div>
       </form>
+      <div id="sppl-motor" hidden>
+        <h3 data-t="spplMotorTit">Engine simulation</h3>
+        <p class="cartao-sub" data-t="spplMotorSub">Shows how many alerts the engine would open right now, without opening any. Turn the engine on only after you have seen this number.</p>
+        <button class="btn" type="button" id="sppl-motor-btn" data-t="spplMotorBtn">Simulate now</button>
+        <p class="cartao-sub" id="sppl-motor-estado" role="status"></p>
+        <ul id="sppl-motor-saida" class="cartao-sub"></ul>
+      </div>
       <h3 data-t="spplFeriados">Holidays (non-business days)</h3>
       <p class="cartao-sub" data-t="spplFeriadosSub">Saturdays and Sundays are already skipped. Add US holidays here so deadlines skip them too.</p>
       <ul id="sppl-feriados" class="cartao-sub"></ul>

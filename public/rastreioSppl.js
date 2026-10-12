@@ -21,6 +21,9 @@ const DIC = {
   spplImediato: { en: 'immediate', pt: 'imediato' }, spplTempoCompra: { en: 'after purchase', pt: 'após a compra' }, spplTempoEtiqueta: { en: 'after label created', pt: 'após a etiqueta' },
   spplTempoMov: { en: 'without movement', pt: 'sem movimentação' }, spplSemDado: { en: '17TRACK has no data', pt: '17TRACK sem dado' }, spplUteis: { en: 'business days', pt: 'dias úteis' }, spplCorridos: { en: 'calendar days', pt: 'dias corridos' },
   spplEditando: { en: 'Editing rule', pt: 'Editando regra' }, spplSalvo: { en: 'Saved.', pt: 'Salvo.' }, spplErro: { en: 'Could not save: ', pt: 'Não foi possível salvar: ' }, spplSemFeriados: { en: 'No holidays registered.', pt: 'Nenhum feriado cadastrado.' },
+  spplMotorTit: { en: 'Engine simulation', pt: 'Simulação do motor' }, spplMotorSub: { en: 'Shows how many alerts the engine would open right now, without opening any. Turn the engine on only after you have seen this number.', pt: 'Mostra quantos alertas o motor abriria agora, sem abrir nenhum. Só ligue o motor depois de ver este número.' },
+  spplMotorBtn: { en: 'Simulate now', pt: 'Simular agora' }, spplMotorLigado: { en: 'Engine is ON (max {max} new alerts per round).', pt: 'Motor LIGADO (no máximo {max} alertas novos por rodada).' }, spplMotorDesligado: { en: 'Engine is OFF. Nothing is opened automatically.', pt: 'Motor DESLIGADO. Nada é aberto automaticamente.' },
+  spplMotorTotal: { en: 'It would open {total} alerts now:', pt: 'Abriria {total} alertas agora:' }, spplMotorNada: { en: 'It would open no alert now.', pt: 'Não abriria nenhum alerta agora.' },
   sim: { en: 'yes', pt: 'sim' }, nao: { en: 'no', pt: 'não' },
 };
 const t = criarTradutor(DIC);
@@ -72,6 +75,7 @@ async function carregar() {
   if (reg.ok) { regras = reg.dados.regras ?? []; desenharRegras(); } else $('sppl-aviso').textContent = reg.dados?.erro ?? `HTTP ${reg.status}`;
   if (fer.ok) desenharFeriados(fer.dados.feriados ?? []);
   $('sppl-feriado-form').hidden = !ehAdmin();
+  $('sppl-motor').hidden = !ehAdmin();
 }
 
 function desenharFeriados(lista) {
@@ -88,11 +92,21 @@ function desenharFeriados(lista) {
   }));
 }
 
+async function simularMotor() {
+  const r = await api('/api/rastreio/sppl/motor');
+  const est = $('sppl-motor-estado'); const ul = $('sppl-motor-saida');
+  if (!r.ok) { est.textContent = t('spplErro') + (r.dados?.erro ?? r.status); ul.replaceChildren(); return; }
+  const d = r.dados;
+  est.textContent = `${d.ativo ? t('spplMotorLigado', { max: d.max_novas_por_rodada }) : t('spplMotorDesligado')} ${d.total ? t('spplMotorTotal', { total: d.total }) : t('spplMotorNada')}`;
+  ul.replaceChildren(...(d.simulacao ?? []).map((s) => el('li', `${s.titulo}: ${s.abriria}`)));
+}
+
 function ligar() {
   const det = $('sppl-detalhes');
   if (!det) return;
   let carregou = false;
   det.addEventListener('toggle', () => { if (det.open && !carregou) { carregou = true; carregar(); } });
+  $('sppl-motor-btn').addEventListener('click', simularMotor);
   $('sppl-f-cancelar').addEventListener('click', () => { $('sppl-form').hidden = true; editando = null; });
   $('sppl-form').addEventListener('submit', async (e) => {
     e.preventDefault();

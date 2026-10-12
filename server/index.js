@@ -2080,6 +2080,7 @@ async function atender(req, res, url, sessao) {
       if (rotaOc && req.method === 'PATCH') return json(res, 200, await remendarApi(`/api/rastreio/sppl/ocorrencias/${rotaOc[1]}`, await lerJson(req, 16 * 1024)));
       if (rotaOcCob && req.method === 'POST') return json(res, 200, await criarApi(`/api/rastreio/sppl/ocorrencias/${rotaOcCob[1]}/cobrancas`, await lerJson(req, 16 * 1024)));
       if (rotaCob && req.method === 'PATCH') return json(res, 200, await remendarApi(`/api/rastreio/sppl/cobrancas/${rotaCob[1]}`, await lerJson(req, 16 * 1024)));
+      if (resto === 'motor' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/motor'));
       if (resto === 'feriados' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/feriados'));
       if (resto === 'feriados' && req.method === 'POST') return json(res, 200, await criarApi('/api/rastreio/sppl/feriados', await lerJson(req)));
       if (rotaFeriado && req.method === 'DELETE') return json(res, 200, await apagarApi(`/api/rastreio/sppl/feriados/${rotaFeriado[1]}`));
