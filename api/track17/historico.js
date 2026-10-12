@@ -52,3 +52,16 @@ export async function ocorrenciasDoPedido(transacaoId) {
        FROM sppl_ocorrencias WHERE transacao_id = $1 ORDER BY aberta_em DESC LIMIT 50`, [transacaoId]);
   return rows;
 }
+
+/**
+ * Tempo parado de um pedido (dias sem movimento). Fonte preferida: o último evento da transportadora no 17TRACK; sem ele, a última mudança de status
+ * na fulfillment. Pedido entregue ou cancelado não está "parado" (devolve null). Função pura, sem banco.
+ */
+export function tempoParado({ status_interno: status, atualizado_em: atualizadoEm }, registro, agora = new Date()) {
+  if (['delivered', 'cancelled'].includes(status) || registro?.ultimo_status === 'Delivered') return null;
+  const usaTrack = registro?.situacao_registro === 'aceito' && registro?.ultimo_evento_em;
+  const desde = usaTrack ? registro.ultimo_evento_em : atualizadoEm;
+  if (!desde) return null;
+  const dias = Math.max(0, Math.floor((agora.getTime() - new Date(desde).getTime()) / 86_400_000));
+  return { dias, desde: new Date(desde).toISOString(), fonte: usaTrack ? '17track' : 'fulfillment' };
+}

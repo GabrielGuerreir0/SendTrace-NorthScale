@@ -32,6 +32,7 @@ import { desenharLinha } from './charts.js';
 import { criarTradutor, idiomaAtual, montarSeletorIdioma } from './i18n.js';
 import './rastreioSppl.js';   // SPPL: regras e feriados (seção recolhível no fim da aba)
 import './rastreioAlertas.js';   // SPPL: alertas de logística (ocorrências) e cobranças
+import './rastreioLogistica.js';   // SPPL: saúde, relatório e não encontrados da Red Rock
 
 /** dia (col. `date` do Postgres, "AAAA-MM-DD" sem hora/fuso) → "DD/MM" sem
  * passar por `new Date()`: um `date` puro seria lido como meia-noite UTC e o
@@ -255,6 +256,9 @@ const DIC = {
   fichaLinhaTempo: { en: 'Timeline', pt: 'Linha do tempo' },
   linhaTempoVazia: { en: 'No status change recorded yet.', pt: 'Nenhuma mudança de status registrada ainda.' },
   primeiroRegistro: { en: 'First record — {status}', pt: 'Primeiro registro — {status}' },
+  fichaTempoParado: { en: 'Time stopped', pt: 'Tempo parado' },
+  tempoParadoValor: { en: '{dias} day(s) without movement (since {desde}, source: {fonte})', pt: '{dias} dia(s) sem movimento (desde {desde}, fonte: {fonte})' },
+  tempoParadoFonte17: { en: '17TRACK', pt: '17TRACK' }, tempoParadoFonteFul: { en: 'fulfillment', pt: 'fulfillment' }, tempoParadoNenhum: { en: 'Not stopped (delivered or cancelled)', pt: 'Não está parado (entregue ou cancelado)' },
   fichaHistorico17: { en: 'Carrier history (17TRACK)', pt: 'Histórico da transportadora (17TRACK)' },
   historico17Vazio: { en: '17TRACK has not returned any information for this order. The data above comes from the fulfillment center.', pt: 'O 17TRACK não retornou informação para este pedido. Os dados acima vêm da fulfillment.' },
   historico17SemCodigo: { en: 'No tracking code yet, so there is nothing to look up at 17TRACK.', pt: 'Ainda sem código de rastreio, então não há o que consultar no 17TRACK.' },
@@ -546,6 +550,7 @@ async function abrirDetalhePedido(linha) {
       { rotulo: t('fichaEntregueEm'), valor: d.delivered_at ? dataHora(d.delivered_at) : '—' },
       { rotulo: t('fichaUltimaConsulta'), valor: d.ultima_consulta_em ? dataHora(d.ultima_consulta_em) : '—' },
       { rotulo: t('fichaRelacionados'), valor: renderRelacionados(d.relacionados), largo: true },
+      { rotulo: t('fichaTempoParado'), valor: d.tempo_parado ? t('tempoParadoValor', { dias: d.tempo_parado.dias, desde: dataHora(d.tempo_parado.desde), fonte: d.tempo_parado.fonte === '17track' ? t('tempoParadoFonte17') : t('tempoParadoFonteFul') }) : t('tempoParadoNenhum') },
       { rotulo: t('fichaHistorico17'), valor: renderHistorico17(d), largo: true },
       { rotulo: t('fichaOcorrenciasSppl'), valor: renderOcorrenciasSppl(d.ocorrencias_sppl), largo: true },
       { rotulo: t('fichaLinhaTempo'), valor: renderLinhaTempo(d.eventos), largo: true },

@@ -15,9 +15,12 @@ import { query, pool } from '../../server/db.js';
 const num = (v, p) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : p; };
 
 export async function configMotor() {
-  const { rows } = await query(`SELECT chave, valor FROM config_disparos WHERE chave LIKE 'sppl_motor_%'`);
+  const { rows } = await query(`SELECT chave, valor FROM config_disparos WHERE chave LIKE 'sppl_motor_%' OR chave IN ('sppl_sorteio_ativo', 'sppl_cards_ativo')`);
   const c = Object.fromEntries(rows.map((r) => [r.chave, r.valor]));
-  return { ativo: c.sppl_motor_ativo === 'true', maxNovas: Math.min(num(c.sppl_motor_max_novas_por_rodada, 200), 5000) };
+  return {
+    ativo: c.sppl_motor_ativo === 'true', maxNovas: Math.min(num(c.sppl_motor_max_novas_por_rodada, 200), 5000),
+    sorteio: c.sppl_sorteio_ativo === 'true', cards: c.sppl_cards_ativo === 'true',
+  };
 }
 
 /** Pedido que não deve gerar ocorrência: reembolso, chargeback, cancelado. */
@@ -134,14 +137,49 @@ export async function fechar() {
   return rowCount;
 }
 
+/**
+ * Dá dono às ocorrências abertas que ainda têm o responsável GENÉRICO da regra (ninguém mexeu) e nenhum board. Sorteio ponderado
+ * (email_ia.sppl_escolher_board, migração 092). Sem board elegível, deixa como está. Uma por vez: o peso depende de quantas o agente já tem.
+ */
+export async function atribuir({ limite = 500 } = {}) {
+  const { rows } = await query(
+    `SELECT o.id FROM sppl_ocorrencias o JOIN sppl_regras g ON g.id = o.regra_id
+      WHERE o.board_id IS NULL AND o.situacao NOT IN ('resolvida','cancelada') AND o.responsavel IS NOT DISTINCT FROM g.responsavel
+      ORDER BY o.prioridade, o.aberta_em LIMIT $1`, [limite]);
+  let n = 0;
+  for (const { id } of rows) {
+    const b = (await query('SELECT email_ia.sppl_escolher_board() AS board_id')).rows[0].board_id;
+    if (!b) break;   // ninguém elegível: não adianta tentar as outras
+    const r = await query(
+      `UPDATE sppl_ocorrencias o SET board_id = $2, atualizado_em = now(),
+              responsavel = coalesce((SELECT nome FROM email_ia.suporte_escalado_boards WHERE id = $2), o.responsavel)
+        WHERE o.id = $1 AND o.board_id IS NULL`, [id, b]);
+    n += r.rowCount;
+  }
+  return n;
+}
+
+/** Abre o card do cliente no Suporte Escalado para ocorrência que exige contato (regra com contata_cliente) e ainda sem card. */
+export async function abrirCards({ limite = 100 } = {}) {
+  const { rows } = await query(
+    `SELECT o.id FROM sppl_ocorrencias o JOIN sppl_regras g ON g.id = o.regra_id
+      WHERE g.contata_cliente AND o.caso_id IS NULL AND o.board_id IS NOT NULL AND o.situacao NOT IN ('resolvida','cancelada')
+      ORDER BY o.prioridade, o.aberta_em LIMIT $1`, [limite]);
+  let n = 0;
+  for (const { id } of rows) { const r = await query('SELECT public.sppl_abrir_card($1) AS caso', [id]); if (r.rows[0].caso) n++; }
+  return n;
+}
+
 /** Uma rodada completa (usada pelo agendador). */
 export async function rodar({ forcar = false, log = () => {} } = {}) {
   const cfg = await configMotor();
   if (!cfg.ativo && !forcar) return { rodou: false, motivo: 'desligado' };
   const fechadas = await fechar();
   const abertas = await abrir({ maxNovas: cfg.maxNovas });
+  const atribuidas = cfg.sorteio ? await atribuir().catch((e) => { log(`SPPL: sorteio falhou: ${e.message}`); return 0; }) : 0;
+  const cards = cfg.cards ? await abrirCards().catch((e) => { log(`SPPL: card falhou: ${e.message}`); return 0; }) : 0;
   const total = Object.values(abertas).reduce((a, b) => a + b, 0);
-  if (total || fechadas) log(`SPPL: ${total} ocorrências abertas, ${fechadas} fechadas`);
-  return { rodou: true, abertas, fechadas };
+  if (total || fechadas || atribuidas || cards) log(`SPPL: ${total} ocorrências abertas, ${fechadas} fechadas, ${atribuidas} com responsável sorteado, ${cards} cards`);
+  return { rodou: true, abertas, fechadas, atribuidas, cards };
 }
 void pool;

@@ -18,7 +18,7 @@ import { ErroHttp } from '../comum.js';
 import { enviarAlertas, emailConfigurado } from '../email.js';
 
 /** Fonte de verdade dos tipos válidos — usada na validação da rota E no checador. */
-const TIPOS = ['foto_defeito', 'email_urgente', 'caso_escalado', 'chargeback', 'reembolso'];
+const TIPOS = ['foto_defeito', 'email_urgente', 'caso_escalado', 'chargeback', 'reembolso', 'sppl_vencida', 'sppl_saude'];
 
 /**
  * Alertas por e-mail DESATIVADOS por padrão (18/09/2026). Motivo: ao configurar o SMTP do painel no
@@ -106,6 +106,26 @@ const CONSULTAS = {
     ) m ON true
     ORDER BY d.quando
     LIMIT 100`,
+
+  // SPPL (logística): ocorrência que passou do prazo, avisada UMA vez por prazo (se o prazo mudar e vencer de novo, avisa de novo).
+  // ANTES de religar os alertas por e-mail com este tipo ativo: marque as já vencidas como enviadas (mesma pré-carga da migração 028).
+  sppl_vencida: `
+    SELECT (o.id::text || ':' || to_char(o.prazo_ate, 'YYYYMMDDHH24MI')) AS chave,
+           ('Alerta de logística vencido — ' || o.categoria) AS titulo,
+           (o.transacao_id || ' · ' || coalesce(o.responsavel, 'sem responsável')) AS subtitulo
+    FROM sppl_ocorrencias o
+    WHERE o.situacao NOT IN ('resolvida', 'cancelada') AND o.prazo_ate IS NOT NULL AND o.prazo_ate < now()
+      AND NOT EXISTS (SELECT 1 FROM painel_alertas_enviados x WHERE x.tipo = 'sppl_vencida' AND x.chave = o.id::text || ':' || to_char(o.prazo_ate, 'YYYYMMDDHH24MI'))
+    ORDER BY o.prazo_ate
+    LIMIT 100`,
+
+  // SPPL (saúde): problema de gravidade ALTA (webhook do 17TRACK parado, reconsulta da Red Rock parada, cota na reserva), no máximo um aviso por dia.
+  sppl_saude: `
+    SELECT (p.codigo || ':' || current_date::text) AS chave, p.titulo AS titulo, p.detalhe AS subtitulo
+    FROM sppl_saude_problemas() p
+    WHERE p.gravidade = 'alta'
+      AND NOT EXISTS (SELECT 1 FROM painel_alertas_enviados x WHERE x.tipo = 'sppl_saude' AND x.chave = p.codigo || ':' || current_date::text)
+    LIMIT 20`,
 
   reembolso: `
     SELECT d.chave, d.titulo, d.subtitulo, m.motivo_devolucao, m.resumo

@@ -209,6 +209,35 @@ public.rastreio_eventos (histórico de transição de status de UM rastreio_pedi
   pedido novo de verdade quanto pedido antigo sendo consultado pela primeira vez — não é sinônimo de
   "não é ao vivo".
 
+public.rastreio_17t_registros (17TRACK — fonte única de rastreio de transportadora desde 12/10/2026; 1 linha por CÓDIGO de rastreio
+  registrado, não por pedido — junte com rastreio_pedidos por numero = rastreio_pedidos.tracking_number):
+  numero, situacao_registro (aceito | recusado | sem_dado | pendente — 'recusado' = o 17TRACK não aceitou o código, ex.: USPS enquanto não há pacote
+  pago, e motivo_recusa diz por quê; 'sem_dado' = aceitou/consultou mas ainda sem informação; NENHUM dos dois significa "pedido com problema",
+  só "o 17TRACK não enxerga esse código" — nesse caso vale o que a fulfillment (rastreio_pedidos) diz), ultimo_status e ultimo_substatus (ORIGINAIS
+  do 17TRACK: NotFound, InfoReceived = etiqueta criada SEM coleta, InTransit, OutForDelivery, AvailableForPickup, DeliveryFailure, Delivered,
+  Exception, Expired), ultimo_evento_em (data do evento mais recente da transportadora), atualizado_em, ultima_consulta_em.
+public.rastreio_17t_eventos (histórico COMPLETO da transportadora, 1 linha por evento; use este para "o que aconteceu com o pacote?"):
+  numero, ocorreu_em, status, substatus, descricao (texto da transportadora, em inglês), cidade, estado, pais (só local, nunca endereço/CEP),
+  provedor_17t (nome da transportadora que reportou). Ordene por ocorreu_em DESC. Entrega confirmada = status 'Delivered'.
+  "Quantos dias o pacote está parado?" = now() - rastreio_17t_registros.ultimo_evento_em (se ultimo_status não for Delivered).
+  ATENÇÃO: "enviado" em rastreio_pedidos.status_interno NÃO prova coleta — um pedido 'shipped' pode estar só com InfoReceived no 17TRACK.
+public.sppl_ocorrencias (SPPL — alertas de logística abertos pelo sistema; 1 linha por pedido+categoria):
+  transacao_id, numero (código de rastreio), categoria (sem_codigo_rastreio = pedido pendente sem código após 3 dias úteis | etiqueta_sem_coleta
+  = etiqueta criada e 2 dias úteis sem coleta | sem_movimento_5d / _10d / _15d = parado em trânsito há 5/10/15 dias corridos (15d é crítico) |
+  excecao_grave, falha_entrega, alfandega, retirada = status da transportadora que exige ação | entregue_contestado), etapa, prioridade
+  (P0 crítica … P3), situacao (aberta | em_cobranca | aguardando_cliente | resolvida | cancelada; "aberta" = situacao NOT IN ('resolvida','cancelada')),
+  responsavel (nome do agente), board_id, caso_id (card no Suporte Escalado, se o cliente precisou ser contatado), proxima_acao, aberta_em,
+  prazo_ate (prazo de resolução; vencida = prazo_ate < now() com a ocorrência aberta), resolvida_em, resultado (conclusão e solução aplicada).
+public.sppl_cobrancas (cobranças à fulfillment/transportadora registradas pelo time — o que JÁ FOI COBRADO de quem e se respondeu):
+  ocorrencia_id (-> sppl_ocorrencias.id), destino (fulfillment | transportadora | parceiro_logistico | plataforma_de_venda | cliente), canal,
+  mensagem, cobrado_em, cobrado_por, prazo_resposta_ate, respondida_em (NULL = ainda sem resposta; vencida se prazo_resposta_ate < now()), resposta.
+  "Já cobramos a fulfillment desse pedido?" = existe linha aqui para uma ocorrência desse transacao_id. NUNCA diga a um cliente que algo foi
+  "resolvido" ou dê uma data de entrega com base nestas tabelas: elas descrevem o trabalho interno, não uma promessa.
+public.sppl_regras (a matriz editável de prazos e ações do SPPL): origem, categoria, status_17t, substatus_17t, dias, dias_uteis, acao, responsavel,
+  prioridade, imediato (não espera os prazos de 5/10/15 dias), contata_cliente, ativa.
+  Quadro por pedido (atalho): rastreio_pedidos + rastreio_17t_registros (via tracking_number) + sppl_ocorrencias (via transacao_id).
+  Pedidos "não encontrados" (status_interno = 'nao_encontrado', ~2.900 em 12/10) a Red Rock não conhece: ficam FORA dos alertas do SPPL.
+
 public.chat_atendimentos (atendimentos do chat de IA do site):
   id, email, transacao_id, motivo, resumo, desfecho, resolvido, reembolso_pedido,
   reembolso_evitado, risco_chargeback, csat, duracao_s, etapa_regua, iniciado_em, criado_em,

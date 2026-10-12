@@ -12,6 +12,7 @@
 import { query } from '../../server/db.js';
 import * as clientePadrao from './cliente.js';
 import { gravarRegistro } from './persistir.js';
+import { registrarCota } from './reconciliar.js';
 
 const num = (v, padrao) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : padrao; };
 
@@ -41,7 +42,8 @@ export async function registrarPendentes({ cliente = clientePadrao, forcar = fal
   if (!cliente.chaveConfigurada()) return { rodou: false, motivo: 'sem chave' };
   const cfg = await config();
   if (!cfg.ativo && !forcar) return { rodou: false, motivo: 'desligado' };
-  const { quota_remain: restante } = await cliente.cota();
+  const cota = (await registrarCota(cliente)) ?? (await cliente.cota());
+  const restante = cota.quota_remain;
   const disponivel = Math.min(cfg.lote, Math.max(0, Number(restante) - cfg.reserva));
   if (disponivel <= 0) return { rodou: false, motivo: 'cota na reserva', restante };
   const numeros = await candidatos(disponivel);

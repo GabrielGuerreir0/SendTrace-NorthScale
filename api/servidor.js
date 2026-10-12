@@ -55,8 +55,11 @@ import rotasRecoverly from './rotas/recoverly.js';
 import rotasTrack17 from './rotas/track17.js';
 import rotasSpplRegras from './rotas/spplRegras.js';
 import rotasSpplOcorrencias from './rotas/spplOcorrencias.js';
+import rotasSpplNaoEncontrados from './rotas/spplNaoEncontrados.js';
+import rotasSpplRelatorio from './rotas/spplRelatorio.js';
 import { registrarPendentes as registrarNo17Track } from './track17/jobRegistro.js';
 import { rodar as rodarMotorSppl } from './sppl/motor.js';
+import { reconciliar as reconciliar17Track } from './track17/reconciliar.js';
 import rotasPostmark from './rotas/postmark.js';
 import rotasFormularios from './rotas/formularios.js';
 import rotasDescadastro from './rotas/descadastro.js';
@@ -385,6 +388,8 @@ await app.register(rotasRecoverly);
 await app.register(rotasTrack17);
 await app.register(rotasSpplRegras);
 await app.register(rotasSpplOcorrencias);
+await app.register(rotasSpplNaoEncontrados);
+await app.register(rotasSpplRelatorio);
 await app.register(rotasPostmark);
 await app.register(rotasFormularios);
 await app.register(rotasDescadastro);
@@ -450,6 +455,15 @@ const rodarMotor = () => rodarMotorSppl({ log: (m) => app.log.info(m) }).catch((
 setTimeout(rodarMotor, 90_000);
 const intervaloMotorSppl = setInterval(rodarMotor, MOTOR_SPPL_INTERVALO_MS);
 
+/*
+ * SPPL — reconciliação do 17TRACK (migração 093), de hora em hora: reconsulta (sem gastar cota) os códigos sem atualização há 24 h. Liga/desliga em
+ * `sppl_17track_reconciliar_ativo`; sem a chave do 17TRACK não faz nada. Erro vira só log.
+ */
+const RECONCILIACAO_17TRACK_INTERVALO_MS = 60 * 60 * 1000;
+const rodarReconciliacao17Track = () => reconciliar17Track({ log: (m) => app.log.info(m) }).catch((err) => app.log.error(err, 'falha na reconciliação do 17TRACK'));
+setTimeout(rodarReconciliacao17Track, 120_000);
+const intervaloReconciliacao17Track = setInterval(rodarReconciliacao17Track, RECONCILIACAO_17TRACK_INTERVALO_MS);
+
 const RISCO_INTERVALO_MS = 10 * 60 * 1000;
 const recalcularRisco = () => pool.query('SELECT email_ia.recalcular_risco()')
   .catch((err) => app.log.error(err, 'falha no recálculo de risco dos tickets'));
@@ -490,6 +504,7 @@ for (const sinal of ['SIGINT', 'SIGTERM']) {
     clearInterval(intervaloFechamento);
     clearInterval(intervaloRegistro17Track);
     clearInterval(intervaloMotorSppl);
+    clearInterval(intervaloReconciliacao17Track);
     desligarFilaDeRespostas();
     await app.close();
     await pool.end();

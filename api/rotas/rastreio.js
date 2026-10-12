@@ -15,7 +15,7 @@
  * PII (endereço/e-mail/telefone) e é rate-limited por IP.
  */
 import { query } from '../../server/db.js';
-import { historicoInterno, historicoPublico, ocorrenciasDoPedido } from '../track17/historico.js';
+import { historicoInterno, historicoPublico, ocorrenciasDoPedido, tempoParado } from '../track17/historico.js';
 import { DO_PRODUTO, DA_PLATAFORMA } from '../sql.js';
 import { fatiar, montarOrdem, ErroHttp } from '../comum.js';
 import { paginado, paginacaoParams } from '../esquemas.js';
@@ -369,7 +369,7 @@ export default async function rotasRastreio(app) {
     // email/compra_criado_em não fazem parte do schema RastreioDetalhe — o
     // serializador do Fastify (fast-json-stringify) já os descarta sozinho
     // por não estarem declarados, não precisa apagar do objeto na mão.
-    return {
+    const detalhe = {
       ...rows[0],
       eventos: eventos.rows,
       relacionados: await buscarRelacionados(req.params.transacao_id, rows[0].email, rows[0].compra_criado_em),
@@ -383,6 +383,8 @@ export default async function rotasRastreio(app) {
       ...(await historicoInterno(req.params.transacao_id)),
       ocorrencias_sppl: await ocorrenciasDoPedido(req.params.transacao_id),
     };
+    detalhe.tempo_parado = tempoParado(rows[0], detalhe.registro_17track);
+    return detalhe;
   });
 
   app.get('/api/metricas/rastreio/', {

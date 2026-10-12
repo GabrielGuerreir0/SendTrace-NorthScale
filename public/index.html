@@ -2173,6 +2173,65 @@
   <section class="kpis kpis--suporte" id="rst-kpis"></section>
   <section class="kpis kpis--suporte" id="rst-kpis-status"></section>
 
+  <!-- ═══════════════════  SPPL: saúde  ═══════════════════ -->
+  <section class="cartao" id="saude-cartao">
+    <style>#saude-cartao [hidden], #relatorio-cartao [hidden], #naoenc-cartao [hidden] { display: none !important; }
+      #saude-cartao .saude-problema { border-left: 4px solid #c0392b; padding: 4px 10px; margin: 6px 0; } #saude-cartao .saude-problema[data-g="media"] { border-color: #d89b00; }
+      #saude-cartao .saude-ok { border-left: 4px solid #2e9e5b; padding: 4px 10px; margin: 6px 0; }
+      #saude-cartao dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 14px; margin: 8px 0 0; } #saude-cartao dt { opacity: .7; }
+      #relatorio-cartao table, #naoenc-cartao table { width: 100%; } #relatorio-cartao h3 { margin: 14px 0 4px; }
+      #naoenc-resumo td, #naoenc-resumo th { cursor: default; } #naoenc-resumo td[data-f] { cursor: pointer; text-decoration: underline dotted; }</style>
+    <header class="cartao-cabeca">
+      <div>
+        <h2 data-t="saTitulo">SPPL health</h2>
+        <p class="cartao-sub" data-t="saSub">Is the tracking pipeline working? Shows anything that needs attention: 17TRACK webhook, Red Rock status refresh and 17TRACK quota.</p>
+      </div>
+    </header>
+    <div id="saude-problemas" role="status"></div>
+    <dl id="saude-metricas"></dl>
+  </section>
+
+  <!-- ═══════════════════  SPPL: relatório de logística  ═══════════════════ -->
+  <section class="cartao" id="relatorio-cartao">
+    <details id="relatorio-detalhes">
+      <summary class="cartao-cabeca" style="cursor:pointer;"><div>
+        <h2 data-t="reTitulo">Logistics report</h2>
+        <p class="cartao-sub" data-t="reSub">Alerts opened and closed, backlog, who holds what, charges to fulfillment/carriers. Pick the period and copy the summary to share.</p>
+      </div></summary>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:10px 0;">
+        <label class="campo"><span class="sr" data-t="reDias">Period</span>
+          <select id="relatorio-dias"><option value="7" data-t="reUltimos7">Last 7 days</option><option value="14" data-t="reUltimos14">Last 14 days</option><option value="30" data-t="reUltimos30">Last 30 days</option></select></label>
+        <button class="btn" type="button" id="relatorio-copiar" data-t="reCopiar">Copy summary</button>
+        <span class="cartao-sub" id="relatorio-aviso" role="status"></span>
+      </div>
+      <div id="relatorio-corpo"></div>
+    </details>
+  </section>
+
+  <!-- ═══════════════════  SPPL: não encontrados na Red Rock  ═══════════════════ -->
+  <section class="cartao" id="naoenc-cartao">
+    <details id="naoenc-detalhes">
+      <summary class="cartao-cabeca" style="cursor:pointer;"><div>
+        <h2 data-t="neTitulo">Not found at Red Rock</h2>
+        <p class="cartao-sub" data-t="neSub">Orders Red Rock does not know (404). Kept apart from the alerts: the action is to send examples to the fulfillment center, not to chase a carrier. No customer data here.</p>
+      </div></summary>
+      <div class="tabela-envolve"><table class="tabela" id="naoenc-resumo"><thead><tr>
+        <th scope="col" data-t="colPlataforma">Platform</th><th scope="col" data-t="neAte7">Up to 7 days</th><th scope="col" data-t="ne7a30">7 to 30 days</th><th scope="col" data-t="neMais30">Over 30 days</th><th scope="col" data-t="neTotal">Total</th>
+      </tr></thead><tbody id="naoenc-resumo-corpo"></tbody></table></div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin:10px 0; align-items:center;">
+        <label class="campo"><span class="sr" data-t="alBuscar">Search</span><input id="naoenc-busca" type="search" maxlength="80" data-t-placeholder="neBuscaPh" placeholder="Order or product"></label>
+        <button class="btn" type="button" id="naoenc-limpar" data-t="neLimpar">Clear filters</button>
+        <button class="btn" type="button" id="naoenc-exportar" data-t="neExportar">Export CSV</button>
+        <span class="cartao-sub" id="naoenc-aviso" role="status"></span>
+      </div>
+      <div class="tabela-envolve"><table class="tabela"><thead><tr>
+        <th scope="col" data-t="colPedido">Order</th><th scope="col" data-t="neIdConsulta">Lookup id</th><th scope="col" data-t="colProduto">Product</th>
+        <th scope="col" data-t="colPlataforma">Platform</th><th scope="col" data-t="neDias">Days since purchase</th>
+      </tr></thead><tbody id="naoenc-corpo"><tr><td colspan="5" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody></table></div>
+      <div class="paginacao" id="naoenc-paginacao"></div>
+    </details>
+  </section>
+
   <!-- ═══════════════════  SPPL: alertas de logística (ocorrências)  ═══════════════════ -->
   <section class="cartao" id="alertas-cartao">
     <style>#alertas-cartao [hidden], #alertas-modal [hidden] { display: none !important; }

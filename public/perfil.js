@@ -29,6 +29,14 @@ const ROTULO_ALERTA = {
     titulo: 'Reembolso consumado',
     descricao: 'Confirmado pela plataforma de pagamento.',
   },
+  sppl_vencida: {
+    titulo: 'Alerta de logística vencido',
+    descricao: 'Um alerta do SPPL passou do prazo (pedido sem código, sem coleta, parado em trânsito…).',
+  },
+  sppl_saude: {
+    titulo: 'Problema no rastreio (SPPL)',
+    descricao: 'O 17TRACK parou de avisar, a reconsulta da Red Rock parou ou a cota do 17TRACK está na reserva. No máximo um aviso por dia.',
+  },
 };
 
 const janela = $('janela-perfil');

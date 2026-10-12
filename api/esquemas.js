@@ -432,6 +432,7 @@ export const RastreioDetalhe = {
         },
         marcos,
         checkpoints_transportadora: checkpointsTransportadora,
+        tempo_parado: { type: ['object', 'null'], properties: { dias: { type: 'integer' }, desde: { type: 'string', format: 'date-time' }, fonte: { type: 'string' } }, description: 'Dias sem movimento (17TRACK quando há, senão a fulfillment). Null se entregue/cancelado.' },
         historico_17track: historico17(false),
         registro_17track: {
           type: ['object', 'null'],

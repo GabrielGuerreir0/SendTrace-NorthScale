@@ -2080,6 +2080,12 @@ async function atender(req, res, url, sessao) {
       if (rotaOc && req.method === 'PATCH') return json(res, 200, await remendarApi(`/api/rastreio/sppl/ocorrencias/${rotaOc[1]}`, await lerJson(req, 16 * 1024)));
       if (rotaOcCob && req.method === 'POST') return json(res, 200, await criarApi(`/api/rastreio/sppl/ocorrencias/${rotaOcCob[1]}/cobrancas`, await lerJson(req, 16 * 1024)));
       if (rotaCob && req.method === 'PATCH') return json(res, 200, await remendarApi(`/api/rastreio/sppl/cobrancas/${rotaCob[1]}`, await lerJson(req, 16 * 1024)));
+      if (resto === 'nao-encontrados' && req.method === 'GET') {
+        const q = url.searchParams;
+        return json(res, 200, await obterApi('/api/rastreio/sppl/nao-encontrados', { faixa: q.get('faixa'), plataforma: q.get('plataforma'), busca: q.get('busca'), page: q.get('page'), page_size: q.get('page_size'), todos: q.get('todos') }));
+      }
+      if (resto === 'saude' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/saude'));
+      if (resto === 'relatorio' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/relatorio', { dias: url.searchParams.get('dias') }));
       if (resto === 'motor' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/motor'));
       if (resto === 'feriados' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/feriados'));
       if (resto === 'feriados' && req.method === 'POST') return json(res, 200, await criarApi('/api/rastreio/sppl/feriados', await lerJson(req)));
