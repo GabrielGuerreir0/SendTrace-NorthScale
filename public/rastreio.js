@@ -254,6 +254,13 @@ const DIC = {
   fichaLinhaTempo: { en: 'Timeline', pt: 'Linha do tempo' },
   linhaTempoVazia: { en: 'No status change recorded yet.', pt: 'Nenhuma mudança de status registrada ainda.' },
   primeiroRegistro: { en: 'First record — {status}', pt: 'Primeiro registro — {status}' },
+  fichaHistorico17: { en: 'Carrier history (17TRACK)', pt: 'Histórico da transportadora (17TRACK)' },
+  historico17Vazio: { en: '17TRACK has not returned any information for this order. The data above comes from the fulfillment center.', pt: 'O 17TRACK não retornou informação para este pedido. Os dados acima vêm da fulfillment.' },
+  historico17SemCodigo: { en: 'No tracking code yet, so there is nothing to look up at 17TRACK.', pt: 'Ainda sem código de rastreio, então não há o que consultar no 17TRACK.' },
+  historico17Motivo: { en: 'Reason: {motivo}', pt: 'Motivo: {motivo}' },
+  fichaOcorrenciasSppl: { en: 'SPPL occurrences', pt: 'Ocorrências do SPPL' },
+  ocorrenciasVazio: { en: 'No SPPL occurrence for this order.', pt: 'Nenhuma ocorrência do SPPL para este pedido.' },
+  ocorrenciaPrazo: { en: 'due {data}', pt: 'prazo {data}' },
 
   // relacionados (front + upsell/downsell da mesma compra, cada um podendo ter caído num provedor diferente)
   fichaRelacionados: { en: 'Related orders (same customer)', pt: 'Pedidos relacionados (mesmo cliente)' },
@@ -446,6 +453,56 @@ function renderRelacionados(relacionados) {
   return ul;
 }
 
+/** Histórico do 17TRACK (SPPL). Sem dado do 17TRACK a ficha continua com os dados da fulfillment e diz isso claramente. */
+function renderHistorico17(d) {
+  const ul = document.createElement('ul');
+  ul.className = 'rastreio-linha-tempo';
+  const eventos = d.historico_17track ?? [];
+  if (!eventos.length) {
+    const li = document.createElement('li');
+    li.className = 'rastreio-linha-tempo-vazia';
+    const r = d.registro_17track;
+    li.textContent = !d.tracking_number ? t('historico17SemCodigo')
+      : `${t('historico17Vazio')}${r?.motivo_recusa ? ` ${t('historico17Motivo', { motivo: r.motivo_recusa })}` : ''}`;
+    ul.append(li);
+    return ul;
+  }
+  for (const ev of eventos) {
+    const li = document.createElement('li');
+    const strong = document.createElement('strong');
+    strong.textContent = [ev.status, ev.substatus && ev.substatus !== ev.status ? ev.substatus : null].filter(Boolean).join(' · ');
+    const local = [ev.cidade, ev.estado, ev.pais].filter(Boolean).join(', ');
+    const span = document.createElement('span');
+    span.textContent = [ev.ocorreu_em ? dataHora(ev.ocorreu_em) : null, ev.descricao, local || null].filter(Boolean).join(' · ');
+    li.append(strong, span);
+    ul.append(li);
+  }
+  return ul;
+}
+
+/** Ocorrências do SPPL deste pedido (abertas e encerradas). */
+function renderOcorrenciasSppl(lista) {
+  const ul = document.createElement('ul');
+  ul.className = 'rastreio-relacionados';
+  if (!lista?.length) {
+    const li = document.createElement('li');
+    li.className = 'rastreio-relacionados-vazio';
+    li.textContent = t('ocorrenciasVazio');
+    ul.append(li);
+    return ul;
+  }
+  for (const o of lista) {
+    const li = document.createElement('li');
+    const strong = document.createElement('strong');
+    strong.textContent = `${o.prioridade} · ${o.categoria} · ${o.situacao}`;
+    const span = document.createElement('span');
+    span.textContent = [o.responsavel, o.proxima_acao, o.prazo_ate ? t('ocorrenciaPrazo', { data: dataHora(o.prazo_ate) }) : null, o.resultado].filter(Boolean).join(' · ');
+    li.append(strong, document.createTextNode(' '), span);
+    ul.append(li);
+  }
+  return ul;
+}
+
 async function abrirDetalhePedido(linha) {
   const { ok, dados: d } = await api(`/api/rastreio/${encodeURIComponent(linha.transacao_id)}`);
   if (!ok) { window.alert(t('erroCarregarFicha')); return; }
@@ -486,6 +543,8 @@ async function abrirDetalhePedido(linha) {
       { rotulo: t('fichaEntregueEm'), valor: d.delivered_at ? dataHora(d.delivered_at) : '—' },
       { rotulo: t('fichaUltimaConsulta'), valor: d.ultima_consulta_em ? dataHora(d.ultima_consulta_em) : '—' },
       { rotulo: t('fichaRelacionados'), valor: renderRelacionados(d.relacionados), largo: true },
+      { rotulo: t('fichaHistorico17'), valor: renderHistorico17(d), largo: true },
+      { rotulo: t('fichaOcorrenciasSppl'), valor: renderOcorrenciasSppl(d.ocorrencias_sppl), largo: true },
       { rotulo: t('fichaLinhaTempo'), valor: renderLinhaTempo(d.eventos), largo: true },
     ],
   });

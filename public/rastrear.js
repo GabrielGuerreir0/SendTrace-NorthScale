@@ -36,6 +36,8 @@ const DIC = {
   botaoRastrear: { en: 'Track order', pt: 'Rastrear pedido' },
   botaoBuscando: { en: 'Searching…', pt: 'Buscando…' },
   botaoTransportadora: { en: 'Track with carrier', pt: 'Rastrear na transportadora' },
+  historicoTit: { en: 'Carrier updates', pt: 'Atualizações da transportadora' },
+  historicoAviso: { en: 'The carrier has not sent detailed updates yet. The information above comes from our shipping partner.', pt: 'A transportadora ainda não enviou atualizações detalhadas. As informações acima vêm do nosso parceiro de envio.' },
   semInfo: {
     en: "We don't have tracking information for this order yet. If you purchased recently, please try again in a few hours.",
     pt: 'Ainda não temos informação de rastreio para este pedido. Se você comprou recentemente, tente de novo em algumas horas.',
@@ -140,6 +142,31 @@ function renderizarEtapas(statusAtual, eventos) {
   }
 }
 
+/** Atualizações da transportadora (17TRACK). Texto sempre por textContent: o que a transportadora escreve nunca vira HTML. Sem dado, avisa e mantém o resto da tela. */
+function renderizarHistorico(dados) {
+  const lista = $('r-historico-lista');
+  lista.replaceChildren();
+  const eventos = (dados.historico_17track ?? []).slice(0, 30);
+  const temCodigo = Boolean(dados.tracking_number) && dados.status_interno !== 'cancelled';
+  $('r-historico').hidden = !temCodigo;
+  if (!temCodigo) return;
+  $('r-historico-tit').textContent = t('historicoTit');
+  $('r-historico-tit').hidden = !eventos.length;
+  $('r-historico-aviso').textContent = t('historicoAviso');
+  $('r-historico-aviso').hidden = eventos.length > 0;
+  for (const ev of eventos) {
+    const li = document.createElement('li');
+    li.className = 'rastreio-etapa is-concluida';
+    const ponto = document.createElement('span'); ponto.className = 'rastreio-etapa-ponto'; ponto.setAttribute('aria-hidden', 'true');
+    const corpo = document.createElement('div'); corpo.className = 'rastreio-etapa-corpo';
+    const forte = document.createElement('strong'); forte.textContent = ev.descricao || ev.status || '';
+    const data = document.createElement('span'); data.className = 'rastreio-etapa-data';
+    const local = [ev.cidade, ev.estado].filter(Boolean).join(', ');
+    data.textContent = [ev.em ? dataHora(ev.em) : null, local || null].filter(Boolean).join(' · ');
+    corpo.append(forte, data); li.append(ponto, corpo); lista.append(li);
+  }
+}
+
 /* Guarda a última resposta encontrada pra re-renderizar tudo (etapas, datas,
  * rótulos) se a pessoa trocar de idioma com um resultado já na tela — sem
  * isto, só os textos estáticos do formulário trocariam. */
@@ -174,11 +201,13 @@ function renderizarResultado(dados) {
   }
 
   renderizarEtapas(dados.status_interno, dados.eventos);
+  renderizarHistorico(dados);
 }
 
 function renderizarNaoEncontrado() {
   $('form-buscar').hidden = true;
   $('r-resultado').hidden = false;
+  $('r-historico').hidden = true;
   $('r-status-rotulo').textContent = t('statusIndisponivel');
   $('r-produto').hidden = true;
   $('r-transportadora').hidden = true;

@@ -395,6 +395,18 @@ const checkpointsTransportadora = {
     + "pedidos, não preenche). Sem data por evento — é texto livre da transportadora, não "
     + 'um provedor de tracking granular (isso é a Parcels API v4, ver PLANO.md seção 13).',
 };
+const evento17 = (publico) => ({
+  type: 'object',
+  properties: {
+    ...(publico ? { em: { type: ['string', 'null'], format: 'date-time' } } : { ocorreu_em: { type: ['string', 'null'], format: 'date-time' }, substatus: { type: ['string', 'null'] }, provedor_17t: { type: ['string', 'null'] } }),
+    status: { type: ['string', 'null'] }, descricao: { type: ['string', 'null'] },
+    cidade: { type: ['string', 'null'] }, estado: { type: ['string', 'null'] }, pais: { type: ['string', 'null'] },
+  },
+});
+const historico17 = (publico) => ({
+  type: 'array', items: evento17(publico),
+  description: 'Histórico do 17TRACK (SPPL). Status e texto originais da transportadora; local só cidade/estado/país. Vazio quando o 17TRACK não retornou nada — a tela então usa os dados da fulfillment.',
+});
 const parado = {
   parado: { type: 'boolean', description: 'Sem NENHUMA mudança de status há mais que o limite (3 dias em pending, 7 em shipped).' },
   dias_sem_mudanca: { type: ['integer', 'null'] },
@@ -420,6 +432,26 @@ export const RastreioDetalhe = {
         },
         marcos,
         checkpoints_transportadora: checkpointsTransportadora,
+        historico_17track: historico17(false),
+        registro_17track: {
+          type: ['object', 'null'],
+          properties: {
+            numero: { type: 'string' }, situacao_registro: { type: 'string' }, motivo_recusa: { type: ['string', 'null'] },
+            ultimo_status: { type: ['string', 'null'] }, ultimo_substatus: { type: ['string', 'null'] },
+            ultimo_evento_em: { type: ['string', 'null'], format: 'date-time' }, atualizado_em: { type: ['string', 'null'], format: 'date-time' },
+          },
+        },
+        ocorrencias_sppl: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'integer' }, categoria: { type: 'string' }, etapa: { type: ['integer', 'null'] }, prioridade: { type: 'string' }, situacao: { type: 'string' },
+              responsavel: { type: ['string', 'null'] }, proxima_acao: { type: ['string', 'null'] }, aberta_em: { type: ['string', 'null'], format: 'date-time' },
+              prazo_ate: { type: ['string', 'null'], format: 'date-time' }, resolvida_em: { type: ['string', 'null'], format: 'date-time' }, resultado: { type: ['string', 'null'] },
+            },
+          },
+        },
         ...parado,
       },
     },
@@ -650,6 +682,11 @@ export const RastreioPublico = {
     },
     marcos,
     checkpoints_transportadora: checkpointsTransportadora,
+    historico_17track: historico17(true),
+    fonte_17track: {
+      type: 'object',
+      properties: { disponivel: { type: 'boolean' }, ultimo_status: { type: ['string', 'null'] }, atualizado_em: { type: ['string', 'null'], format: 'date-time' } },
+    },
     ...parado,
   },
   required: ['encontrado'],

@@ -15,6 +15,7 @@
  * PII (endereço/e-mail/telefone) e é rate-limited por IP.
  */
 import { query } from '../../server/db.js';
+import { historicoInterno, historicoPublico, ocorrenciasDoPedido } from '../track17/historico.js';
 import { DO_PRODUTO, DA_PLATAFORMA } from '../sql.js';
 import { fatiar, montarOrdem, ErroHttp } from '../comum.js';
 import { paginado, paginacaoParams } from '../esquemas.js';
@@ -379,6 +380,8 @@ export default async function rotasRastreio(app) {
       },
       checkpoints_transportadora: checkpointsTransportadora(rows[0].tracking),
       ...montarParado(rows[0].status_interno, rows[0].atualizado_em),
+      ...(await historicoInterno(req.params.transacao_id)),
+      ocorrencias_sppl: await ocorrenciasDoPedido(req.params.transacao_id),
     };
   });
 
@@ -782,6 +785,7 @@ export default async function rotasRastreio(app) {
       marcos: { criado_em: r.order_created_at, enviado_em: r.shipped_at, entregue_em: r.delivered_at },
       checkpoints_transportadora: checkpointsTransportadora(r.tracking),
       ...montarParado(r.status_interno, r.atualizado_em),
+      ...(await historicoPublico(req.params.transacao_id)),
     };
   });
 }
