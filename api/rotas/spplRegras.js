@@ -92,6 +92,30 @@ export default async function rotasSpplRegras(app) {
     return rows[0];
   });
 
+  // Quem recebe os alertas no sorteio (migração 094): independente de o agente estar ativo no roteador do Suporte Escalado.
+  app.get('/api/rastreio/sppl/agentes', {
+    onRequest: [app.exigirSessao],
+    schema: { tags: ['Rastreio'], summary: 'SPPL — agentes e se entram no sorteio dos alertas', security: [{ bearerAuth: [] }] },
+  }, async () => {
+    const { rows } = await query(
+      `SELECT b.id, b.nome, b.recebe_sppl, u.ativo AS usuario_ativo,
+              (SELECT count(*)::int FROM sppl_ocorrencias o WHERE o.board_id = b.id AND o.situacao NOT IN ('resolvida','cancelada')) AS abertas
+         FROM email_ia.suporte_escalado_boards b JOIN painel_usuarios u ON u.id = b.usuario_id
+        ORDER BY (b.recebe_sppl AND u.ativo) DESC, b.nome`);
+    return { agentes: rows };
+  });
+
+  app.patch('/api/rastreio/sppl/agentes/:id', {
+    onRequest: [app.exigirAdmin],
+    schema: { tags: ['Rastreio'], summary: 'SPPL — liga/desliga o agente no sorteio dos alertas (não mexe no roteador do Suporte Escalado)', security: [{ bearerAuth: [] }],
+      params: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  }, async (req) => {
+    if (typeof req.body?.recebe_sppl !== 'boolean') throw new ErroHttp(400, 'Informe recebe_sppl (verdadeiro ou falso).');
+    const { rows } = await query(`UPDATE email_ia.suporte_escalado_boards SET recebe_sppl = $2 WHERE id = $1 RETURNING id, nome, recebe_sppl`, [req.params.id, req.body.recebe_sppl]);
+    if (!rows[0]) throw new ErroHttp(404, 'Agente não encontrado.');
+    return rows[0];
+  });
+
   // Simulação do motor: só conta, nunca escreve. Serve para ver o tamanho do 1º dia ANTES de ligar `sppl_motor_ativo`.
   app.get('/api/rastreio/sppl/motor', {
     onRequest: [app.exigirAdmin],

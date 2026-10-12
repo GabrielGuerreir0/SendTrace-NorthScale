@@ -2086,6 +2086,9 @@ async function atender(req, res, url, sessao) {
       }
       if (resto === 'saude' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/saude'));
       if (resto === 'relatorio' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/relatorio', { dias: url.searchParams.get('dias') }));
+      const rotaAgente = /^agentes\/(\d+)$/.exec(resto);
+      if (resto === 'agentes' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/agentes'));
+      if (rotaAgente && req.method === 'PATCH') return json(res, 200, await remendarApi(`/api/rastreio/sppl/agentes/${rotaAgente[1]}`, await lerJson(req)));
       if (resto === 'motor' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/motor'));
       if (resto === 'feriados' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/feriados'));
       if (resto === 'feriados' && req.method === 'POST') return json(res, 200, await criarApi('/api/rastreio/sppl/feriados', await lerJson(req)));

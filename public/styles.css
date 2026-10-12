@@ -3069,6 +3069,13 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .sppl-linha-feriado { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
 .sppl-linha-feriado .campo { flex: 1 1 180px; }
 
+.sppl-agentes { list-style: none; margin: 8px 0 14px; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px 12px; }
+.sppl-agente { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border: 1px solid var(--borda); border-radius: 10px; background: var(--superficie-2); }
+.sppl-agente label { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--tinta); cursor: pointer; min-width: 0; }
+.sppl-agente input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--st-em-dia); }
+.sppl-agente input:disabled + span { color: var(--tinta-fraca); }
+.sppl-agente small { margin: 0; white-space: nowrap; }
+
 /* janela de trabalho do alerta */
 .sppl-modal[open] { width: min(780px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); display: flex; flex-direction: column; }
 .sppl-modal .janela-corpo { overflow-y: auto; display: grid; gap: 16px; }

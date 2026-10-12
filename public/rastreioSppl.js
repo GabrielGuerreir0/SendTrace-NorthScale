@@ -26,12 +26,15 @@ const DIC = {
   spplMotorBtn: { en: 'Simulate now', pt: 'Simular agora' }, spplMotorLigado: { en: 'Engine is ON (max {max} new alerts per round).', pt: 'Motor LIGADO (no máximo {max} alertas novos por rodada).' }, spplMotorDesligado: { en: 'Engine is OFF. Nothing is opened automatically.', pt: 'Motor DESLIGADO. Nada é aberto automaticamente.' },
   spplMotorTotal: { en: 'It would open {total} alerts now:', pt: 'Abriria {total} alertas agora:' }, spplMotorNada: { en: 'It would open no alert now.', pt: 'Não abriria nenhum alerta agora.' },
   spplFerData: { en: 'Date', pt: 'Data' }, spplFerNome: { en: 'Name', pt: 'Nome' },
+  spplAgentesTit: { en: 'Who receives the alerts', pt: 'Quem recebe os alertas' }, spplAgentesSub: { en: 'Each new alert is drawn among these people, favoring who has fewer open alerts. This does not change who receives Escalated Support tickets.', pt: 'Cada alerta novo é sorteado entre estas pessoas, favorecendo quem tem menos alertas abertos. Isso não muda quem recebe os tickets do Suporte Escalado.' },
+  spplAgenteAbertos: { en: '{n} open', pt: '{n} abertos' }, spplAgenteInativo: { en: 'user inactive', pt: 'usuário inativo' }, spplAgenteErro: { en: 'Could not change: ', pt: 'Não foi possível alterar: ' },
   sim: { en: 'yes', pt: 'sim' }, nao: { en: 'no', pt: 'não' },
 };
 const t = criarTradutor(DIC);
 const el = (tag, texto, classe) => { const e = document.createElement(tag); if (texto !== undefined) e.textContent = texto; if (classe) e.className = classe; return e; };
 
 let regras = [];
+let agentes = [];
 let motorAtivo = null;   // vem do resumo dos alertas (leitura liberada); null = ainda não sabemos
 function desenharAviso() {
   const e = $('sppl-estado-motor');
@@ -82,6 +85,7 @@ function abrirForm(r) {
 }
 
 async function carregar() {
+  carregarAgentes();
   const [reg, fer, res] = await Promise.all([api('/api/rastreio/sppl/regras'), api('/api/rastreio/sppl/feriados'), api('/api/rastreio/sppl/ocorrencias/resumo')]);
   if (res.ok) { motorAtivo = Boolean(res.dados.motor_ativo); desenharAviso(); }
   if (reg.ok) { regras = reg.dados.regras ?? []; desenharRegras(); } else $('sppl-aviso').textContent = reg.dados?.erro ?? `HTTP ${reg.status}`;
@@ -103,6 +107,23 @@ function desenharFeriados(lista) {
     return li;
   }));
 }
+
+function desenharAgentes() {
+  const ul = $('sppl-agentes'); if (!ul) return;
+  ul.replaceChildren(...agentes.map((a) => {
+    const li = el('li', undefined, 'sppl-agente'); const rotulo = el('label');
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = Boolean(a.recebe_sppl); cb.disabled = !ehAdmin() || !a.usuario_ativo; cb.id = `sppl-ag-${a.id}`;
+    cb.addEventListener('change', async () => {
+      const r = await api(`/api/rastreio/sppl/agentes/${a.id}`, { metodo: 'PATCH', corpo: { recebe_sppl: cb.checked } });
+      if (!r.ok) { cb.checked = !cb.checked; $('sppl-aviso').textContent = t('spplAgenteErro') + (r.dados?.erro ?? r.status); return; }
+      $('sppl-aviso').textContent = t('spplSalvo'); carregarAgentes();
+    });
+    rotulo.append(cb, el('span', a.nome));
+    li.append(rotulo, el('small', a.usuario_ativo ? t('spplAgenteAbertos', { n: a.abertas }) : t('spplAgenteInativo'), 'cartao-sub'));
+    return li;
+  }));
+}
+async function carregarAgentes() { const r = await api('/api/rastreio/sppl/agentes'); if (r.ok && Array.isArray(r.dados?.agentes)) { agentes = r.dados.agentes; desenharAgentes(); } }
 
 async function simularMotor() {
   const r = await api('/api/rastreio/sppl/motor');
@@ -139,7 +160,7 @@ function ligar() {
     $('sppl-fer-data').value = ''; $('sppl-fer-desc').value = ''; carregar();
   });
   // idioma: reaplica os textos estáticos quando o seletor do Rastreio troca
-  document.addEventListener('click', (ev) => { if (ev.target.closest?.('#rst-idioma-seletor')) setTimeout(() => { aplicarEstaticos(); desenharRegras(); desenharAviso(); }, 0); });
+  document.addEventListener('click', (ev) => { if (ev.target.closest?.('#rst-idioma-seletor')) setTimeout(() => { aplicarEstaticos(); desenharRegras(); desenharAviso(); desenharAgentes(); }, 0); });
   aplicarEstaticos();
 }
 
