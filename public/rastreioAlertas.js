@@ -12,7 +12,7 @@ const DIC = {
   alTitulo: { en: 'Logistics alerts', pt: 'Alertas de logística' },
   alSub: { en: 'Orders that need action: no tracking code, label without pickup, stalled in transit and serious carrier exceptions. Work each one, register the charge to the fulfillment center or carrier, and close it with the result.', pt: 'Pedidos que pedem ação: sem código de rastreio, etiqueta sem coleta, parados em trânsito e exceções graves da transportadora. Trabalhe cada um, registre a cobrança à fulfillment ou à transportadora e encerre com o resultado.' },
   alColSituacao: { en: 'Status', pt: 'Situação' }, alColPrio: { en: 'Priority', pt: 'Prioridade' }, alColCaso: { en: 'Case', pt: 'Caso' }, alColResp: { en: 'Owner', pt: 'Responsável' },
-  alColPrazo: { en: 'Due', pt: 'Prazo' }, alColDias: { en: 'Days open', pt: 'Dias aberta' }, colPedido: { en: 'Order', pt: 'Pedido' }, colProduto: { en: 'Product', pt: 'Produto' },
+  alColPrazo: { en: 'Due', pt: 'Prazo' }, alColDias: { en: 'Alert open (days)', pt: 'Alerta aberto (dias)' }, alColDiasPedido: { en: 'Order age (days)', pt: 'Pedido há (dias)' }, colPedido: { en: 'Order', pt: 'Pedido' }, colProduto: { en: 'Product', pt: 'Produto' },
   alSitAbertas: { en: 'Open', pt: 'Abertas' }, alSitTodas: { en: 'All', pt: 'Todas' }, alSitAberta: { en: 'New', pt: 'Nova' }, alSitCobranca: { en: 'Being chased', pt: 'Em cobrança' },
   alSitCliente: { en: 'Waiting for customer', pt: 'Aguardando cliente' }, alSitResolvida: { en: 'Resolved', pt: 'Resolvida' }, alSitCancelada: { en: 'Cancelled', pt: 'Cancelada' },
   alPrioTodas: { en: 'All priorities', pt: 'Todas as prioridades' }, alBuscar: { en: 'Search', pt: 'Buscar' }, alBuscarPh: { en: 'Order, tracking code or owner', pt: 'Pedido, código de rastreio ou responsável' },
@@ -93,13 +93,13 @@ async function carregarLista() {
   else corpo.replaceChildren(...lista.map(linha));
   montarPaginacao($('alertas-paginacao'), { pagina: estado.pagina, totalPaginas: Math.max(1, Math.ceil((r.dados.total ?? 0) / POR_PAGINA)), total: r.dados.total ?? 0, rotuloItem: t('alPag') }, (p) => { estado.pagina = p; carregarLista(); });
 }
-function vazio(msg) { const tr = document.createElement('tr'); const td = el('td', msg, 'vazio-suave'); td.colSpan = 8; tr.append(td); return tr; }
+function vazio(msg) { const tr = document.createElement('tr'); const td = el('td', msg, 'vazio-suave'); td.colSpan = 9; tr.append(td); return tr; }
 function linha(o) {
   const tr = document.createElement('tr'); tr.classList.add('sup-linha-clique');
   if (o.vencida) tr.style.fontWeight = '600';
   const prazo = o.prazo_ate ? `${dataHora(o.prazo_ate)}${o.vencida ? ` · ${t('alVencida')}` : ''}` : t('alSemPrazo');
   tr.append(el('td', o.prioridade), el('td', categoria(o.categoria)), el('td', o.transacao_id), el('td', o.produto ?? '—'), el('td', o.responsavel ?? '—'),
-    el('td', t(SITUACAO[o.situacao] ?? 'alSitAberta')), el('td', prazo), el('td', o.dias_aberta ?? '—'));
+    el('td', t(SITUACAO[o.situacao] ?? 'alSitAberta')), el('td', prazo), el('td', o.dias_pedido ?? '—'), el('td', o.dias_aberta ?? '—'));
   tr.addEventListener('click', () => abrirModal(o.id));
   return tr;
 }

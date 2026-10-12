@@ -2202,9 +2202,9 @@
         <thead><tr>
           <th scope="col" data-t="alColPrio">Priority</th><th scope="col" data-t="alColCaso">Case</th><th scope="col" data-t="colPedido">Order</th>
           <th scope="col" data-t="colProduto">Product</th><th scope="col" data-t="alColResp">Owner</th><th scope="col" data-t="alColSituacao">Status</th>
-          <th scope="col" data-t="alColPrazo">Due</th><th scope="col" data-t="alColDias">Days open</th>
+          <th scope="col" data-t="alColPrazo">Due</th><th scope="col" data-t="alColDiasPedido">Order age (days)</th><th scope="col" data-t="alColDias">Alert open (days)</th>
         </tr></thead>
-        <tbody id="alertas-corpo"><tr><td colspan="8" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody>
+        <tbody id="alertas-corpo"><tr><td colspan="9" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody>
       </table>
     </div>
     <div class="paginacao" id="alertas-paginacao"></div>
@@ -2483,7 +2483,7 @@
           <p class="cartao-sub" data-t="spplSub">What to do for each 17TRACK status and for orders that stop moving, who owns it and how long it takes. Only admins edit.</p>
         </div>
       </summary>
-      <p class="cartao-sub" data-t="spplPreparacao">Being prepared: these rules are not yet applied automatically to orders. You can already review and adjust the deadlines.</p>
+      <p class="cartao-sub" id="sppl-estado-motor" role="status"></p>
       <p class="cartao-sub" id="sppl-aviso" role="status"></p>
       <div class="tabela-envolve">
         <table class="tabela" id="sppl-tabela">

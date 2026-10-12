@@ -23,7 +23,8 @@ const BASE = `FROM sppl_ocorrencias o
 const COLUNAS = `o.id, o.transacao_id, o.numero, o.categoria, o.etapa, o.prioridade, o.situacao, o.responsavel, o.board_id, o.caso_id, o.proxima_acao, o.proxima_acao_ate,
   o.aberta_em, o.prazo_ate, o.resolvida_em, o.resultado, d.produto, d.plataforma, r.provedor, r.carrier_code, r.tracking_number, r.status_interno,
   (o.situacao NOT IN ('resolvida','cancelada') AND o.prazo_ate IS NOT NULL AND o.prazo_ate < now()) AS vencida,
-  floor(extract(epoch FROM (coalesce(o.resolvida_em, now()) - o.aberta_em)) / 86400)::int AS dias_aberta`;
+  floor(extract(epoch FROM (coalesce(o.resolvida_em, now()) - o.aberta_em)) / 86400)::int AS dias_aberta,
+  floor(extract(epoch FROM (now() - coalesce(r.order_created_at, d.criado_em))) / 86400)::int AS dias_pedido`;
 
 function filtros(q) {
   const where = []; const valores = [];
@@ -68,7 +69,8 @@ export default async function rotasSpplOcorrencias(app) {
          FROM sppl_ocorrencias`);
     const porCategoria = (await query(
       `SELECT categoria, count(*)::int AS n FROM sppl_ocorrencias WHERE situacao NOT IN ('resolvida','cancelada') GROUP BY 1 ORDER BY 2 DESC`)).rows;
-    return { ...rows[0], por_categoria: porCategoria };
+    const motor = (await query(`SELECT valor FROM config_disparos WHERE chave = 'sppl_motor_ativo'`)).rows[0];
+    return { ...rows[0], motor_ativo: motor?.valor === 'true', por_categoria: porCategoria };
   });
 
   app.get('/api/rastreio/sppl/ocorrencias/:id', {

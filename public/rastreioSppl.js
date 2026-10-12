@@ -10,6 +10,7 @@ const DIC = {
   carregando: { en: 'loading…', pt: 'carregando…' },
   spplTitulo: { en: 'SPPL rules', pt: 'Regras do SPPL' },
   spplSub: { en: 'What to do for each 17TRACK status and for orders that stop moving, who owns it and how long it takes. Only admins edit.', pt: 'O que fazer em cada status do 17TRACK e em pedido parado, quem é o responsável e quanto tempo leva. Só administrador edita.' },
+  spplMotorAtivoAviso: { en: 'The engine is ON: these rules decide which alerts open automatically. A changed deadline applies to the next alerts.', pt: 'O motor está LIGADO: estas regras decidem quais alertas abrem automaticamente. Um prazo alterado vale para os próximos alertas.' },
   spplPreparacao: { en: 'Being prepared: these rules are not yet applied automatically to orders. You can already review and adjust the deadlines.', pt: 'Em preparação: estas regras ainda não são aplicadas automaticamente aos pedidos. Você já pode revisar e ajustar os prazos.' },
   spplColQuando: { en: 'When', pt: 'Quando' }, spplColTitulo: { en: 'Case', pt: 'Caso' }, spplColAcao: { en: 'Action', pt: 'Ação' },
   spplColResp: { en: 'Owner', pt: 'Responsável' }, spplColPrazo: { en: 'Days', pt: 'Dias' }, spplColPrio: { en: 'Priority', pt: 'Prioridade' }, spplColAtiva: { en: 'On', pt: 'Ligada' },
@@ -30,6 +31,11 @@ const t = criarTradutor(DIC);
 const el = (tag, texto, classe) => { const e = document.createElement(tag); if (texto !== undefined) e.textContent = texto; if (classe) e.className = classe; return e; };
 
 let regras = [];
+let motorAtivo = null;   // vem do resumo dos alertas (leitura liberada); null = ainda não sabemos
+function desenharAviso() {
+  const e = $('sppl-estado-motor');
+  if (e && motorAtivo !== null) e.textContent = motorAtivo ? t('spplMotorAtivoAviso') : t('spplPreparacao');
+}
 let editando = null;
 const ehAdmin = () => Boolean(usuarioAtual()?.admin);
 
@@ -71,7 +77,8 @@ function abrirForm(r) {
 }
 
 async function carregar() {
-  const [reg, fer] = await Promise.all([api('/api/rastreio/sppl/regras'), api('/api/rastreio/sppl/feriados')]);
+  const [reg, fer, res] = await Promise.all([api('/api/rastreio/sppl/regras'), api('/api/rastreio/sppl/feriados'), api('/api/rastreio/sppl/ocorrencias/resumo')]);
+  if (res.ok) { motorAtivo = Boolean(res.dados.motor_ativo); desenharAviso(); }
   if (reg.ok) { regras = reg.dados.regras ?? []; desenharRegras(); } else $('sppl-aviso').textContent = reg.dados?.erro ?? `HTTP ${reg.status}`;
   if (fer.ok) desenharFeriados(fer.dados.feriados ?? []);
   $('sppl-feriado-form').hidden = !ehAdmin();
@@ -127,7 +134,7 @@ function ligar() {
     $('sppl-fer-data').value = ''; $('sppl-fer-desc').value = ''; carregar();
   });
   // idioma: reaplica os textos estáticos quando o seletor do Rastreio troca
-  document.addEventListener('click', (ev) => { if (ev.target.closest?.('#rst-idioma-seletor')) setTimeout(() => { aplicarEstaticos(); desenharRegras(); }, 0); });
+  document.addEventListener('click', (ev) => { if (ev.target.closest?.('#rst-idioma-seletor')) setTimeout(() => { aplicarEstaticos(); desenharRegras(); desenharAviso(); }, 0); });
   aplicarEstaticos();
 }
 
