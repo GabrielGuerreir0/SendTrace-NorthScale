@@ -143,12 +143,13 @@ export async function fechar() {
  */
 export async function atribuir({ limite = 500 } = {}) {
   const { rows } = await query(
-    `SELECT o.id FROM sppl_ocorrencias o JOIN sppl_regras g ON g.id = o.regra_id
+    `SELECT o.id, o.transacao_id FROM sppl_ocorrencias o JOIN sppl_regras g ON g.id = o.regra_id
       WHERE o.board_id IS NULL AND o.situacao NOT IN ('resolvida','cancelada') AND o.responsavel IS NOT DISTINCT FROM g.responsavel
       ORDER BY o.prioridade, o.aberta_em LIMIT $1`, [limite]);
   let n = 0;
-  for (const { id } of rows) {
-    const b = (await query('SELECT email_ia.sppl_escolher_board() AS board_id')).rows[0].board_id;
+  for (const { id, transacao_id } of rows) {
+    // dono do lead de e-mail (se o cliente já tem card no Suporte Escalado); sem card, sorteio ponderado (migração 095)
+    const b = (await query('SELECT email_ia.sppl_escolher_board_para($1) AS board_id', [transacao_id])).rows[0].board_id;
     if (!b) break;   // ninguém elegível: não adianta tentar as outras
     const r = await query(
       // $2::bigint nos DOIS usos: em produção suporte_escalado_boards.id é bigint e sppl_ocorrencias.board_id é integer — sem o cast o Postgres
