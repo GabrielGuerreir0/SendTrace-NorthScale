@@ -98,7 +98,7 @@ export default async function rotasSuporteEscaladoFila(app) {
     // Cache de 10 s (a lista) e de 60 s (a média do SLA, que quase não muda): vários agentes e a recarga automática dividem a mesma consulta.
     const chave = `fila:${todos ? 'todos' : boardId}`;
     const chaveCasos = `${chave}:${q}:${JSON.stringify(Object.keys(FILTROS_SQL).map((k) => req.query[k] ?? ''))}`;
-    const [casosRes, resumoRes, hojeRes, slaRes, falhasRes, rankingRes, slaEquipeRes] = await Promise.all([
+    const [casosRes, resumoRes, hojeRes, slaRes, falhasRes, rankingRes, slaEquipeRes, statusRes] = await Promise.all([
       memo(`${chaveCasos}:casos`, 10_000, () => query(
         `SELECT s.id, s.remetente_email, s.nome, e.assunto, s.status, s.tag_motivo, s.prioridade_nivel, s.prioridade, s.board_id,
                 b.nome AS agente, s.email_id, s.iniciado_em, s.finalizado_em, s.alerta_ameaca, s.criado_em, s.ultimo_email_cliente_em, s.primeira_resposta_agente_em, s.ultima_resposta_agente_em,
@@ -162,6 +162,15 @@ export default async function rotasSuporteEscaladoFila(app) {
           GROUP BY b.id, b.ativo
          HAVING b.ativo OR count(r.id) > 0`,   // entra quem respondeu no período, esteja ativo ou não; inativo sem resposta não conta como concorrente
       )),
+      // Quantidade por status do ticket (abas Aberto/Pendente/Resolvido/Fechado, 4º momento): do board inteiro, fixa, para a contagem aparecer sem clicar na aba.
+      memo(`${chave}:status`, 10_000, () => query(
+        `SELECT coalesce(fi.status_ticket, 'Aberto') AS status_ticket, count(*)::int AS n
+           FROM email_ia.suporte_escalado s
+           LEFT JOIN email_ia.suporte_escalado_ficha fi ON fi.suporte_escalado_id = s.id
+          WHERE ${escopo}
+          GROUP BY 1`,
+        valores,
+      )),
       // SLA médio de cada agente (para dizer se o agente está acima ou abaixo da média do time), também sem nomes.
       todos ? { rows: [] } : memo(`slaequipe:${periodo.chave}`, 60_000, () => query(
         `SELECT r.board_id, r.primeira, avg(r.minutos) AS media_min, count(r.minutos)::int AS medidas
@@ -203,6 +212,7 @@ export default async function rotasSuporteEscaladoFila(app) {
       truncado,
       consulta,
       resumo: {
+        contagem_status: Object.fromEntries(['Aberto', 'Pendente', 'Resolvido', 'Fechado'].map((st) => [st, statusRes.rows.find((r) => r.status_ticket === st)?.n ?? 0])),
         pendentes_primeira: resumoRes.rows[0]?.primeira ?? 0,
         pendentes_segunda: resumoRes.rows[0]?.segunda ?? 0,
         respondidos_hoje: hojeRes.rows[0]?.emails ?? 0,          // e-mails respondidos no período (nome antigo, mantido)

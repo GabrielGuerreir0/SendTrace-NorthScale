@@ -562,7 +562,8 @@ function renderFila() {
   // A lista carregada é a da aba ativa; as contagens das outras abas só valem quando elas são calculáveis sem nova consulta.
   const rotuloAba = (f) => {
     if (f.chave === 'internas') return `${f.rotulo} (${n(pendenciasInternas.length)})`;
-    if (statusDaAba(f.chave)) return filaAba === f.chave ? `${f.rotulo} (${n(casosAba(f.chave).length)})` : f.rotulo;
+    // Aba de status: a contagem vem do servidor (board inteiro) e aparece sem clicar; a aba ativa com busca/filtro mostra o que a lista tem.
+    if (statusDaAba(f.chave)) return `${f.rotulo} (${n(filaAba === f.chave && emConsulta() ? casosAba(f.chave).length : (resumo.contagem_status?.[f.status] ?? 0))})`;
     if (!emConsulta() && resumo[f.chave === 'primeiro' ? 'pendentes_primeira' : 'pendentes_segunda'] !== undefined) return `${f.rotulo} (${n(resumo[f.chave === 'primeiro' ? 'pendentes_primeira' : 'pendentes_segunda'])})`;
     return naAbaDeStatus ? f.rotulo : `${f.rotulo} (${n(casosAba(f.chave).length)})`;
   };
