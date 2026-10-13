@@ -58,7 +58,7 @@ const PUBLICOS = new Set([
   // URL pública é /rastreio (mais natural pro lead) — o arquivo continua
   // chamando rastrear.html/.js por dentro, só pra não colidir de nome com
   // o rastreio.js da aba INTERNA do painel (arquivo diferente, mesma pasta).
-  '/rastreio', '/rastrear.html', '/rastrear.js',
+  '/rastreio', '/rastrear.html', '/rastrear.js', '/i18n.js', // i18n.js: o rastrear.js importa — sem isso o /rastreio quebra para quem não está logado
   '/styles.css', '/src/logo_northscale.png',
   // Fontes de marca (Clash Display e Roboto Mono): a tela de login também usa o styles.css.
   '/fonts/ClashDisplay-500.woff2', '/fonts/ClashDisplay-600.woff2', '/fonts/ClashDisplay-700.woff2',
