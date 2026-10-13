@@ -6,9 +6,11 @@
 import { $, api, montarPaginacao } from './emailComum.js';
 import { dataHora } from './format.js';
 import { criarTradutor } from './i18n.js';
+import { abrirLinhaTempo17 } from './linhaTempo17.js';
 
 const DIC = {
   carregando: { en: 'loading…', pt: 'carregando…' },
+  lt17Botao: { en: 'View 17TRACK timeline', pt: 'Ver linha do tempo do 17TRACK' },
   alTitulo: { en: 'Logistics alerts', pt: 'Alertas de logística' },
   alSub: { en: 'Orders that need action: no tracking code, label without pickup, stalled in transit and serious carrier exceptions. Work each one, register the charge to the fulfillment center or carrier, and close it with the result.', pt: 'Pedidos que pedem ação: sem código de rastreio, etiqueta sem coleta, parados em trânsito e exceções graves da transportadora. Trabalhe cada um, registre a cobrança à fulfillment ou à transportadora e encerre com o resultado.' },
   alColSituacao: { en: 'Status', pt: 'Situação' }, alColPrio: { en: 'Priority', pt: 'Prioridade' }, alColCaso: { en: 'Case', pt: 'Caso' },
@@ -123,6 +125,7 @@ async function abrirModal(id) {
   $('alertas-m-ate').value = paraInput(o.proxima_acao_ate); $('alertas-m-resultado').value = o.resultado ?? '';
   $('alertas-m-erro').hidden = true; $('alertas-m-cobform').hidden = ['resolvida', 'cancelada'].includes(o.situacao);
   desenharCobrancas(o.cobrancas ?? []);
+  const b17 = $('alertas-m-linha17'); b17.hidden = !o.tracking_number; b17.onclick = () => abrirLinhaTempo17({ transacaoId: o.transacao_id, subtitulo: [o.transacao_id, o.produto, o.carrier_code, o.tracking_number].filter(Boolean).join(' · ') });
   aplicarEstaticos(); $('alertas-modal').showModal();
 }
 

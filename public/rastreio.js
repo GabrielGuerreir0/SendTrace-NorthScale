@@ -33,6 +33,7 @@ import { criarTradutor, idiomaAtual, montarSeletorIdioma } from './i18n.js';
 import './rastreioSppl.js';   // SPPL: regras e feriados (seção recolhível no fim da aba)
 import './rastreioAlertas.js';   // SPPL: alertas de logística (ocorrências) e cobranças
 import './rastreioLogistica.js';   // SPPL: saúde, relatório e não encontrados da Red Rock
+import { abrirLinhaTempo17 } from './linhaTempo17.js';
 
 /** dia (col. `date` do Postgres, "AAAA-MM-DD" sem hora/fuso) → "DD/MM" sem
  * passar por `new Date()`: um `date` puro seria lido como meia-noite UTC e o
@@ -265,6 +266,7 @@ const DIC = {
   fichaHistorico17: { en: 'Carrier history (17TRACK)', pt: 'Histórico da transportadora (17TRACK)' },
   historico17Vazio: { en: '17TRACK has not returned any information for this order. The data above comes from the fulfillment center.', pt: 'O 17TRACK não retornou informação para este pedido. Os dados acima vêm da fulfillment.' },
   historico17SemCodigo: { en: 'No tracking code yet, so there is nothing to look up at 17TRACK.', pt: 'Ainda sem código de rastreio, então não há o que consultar no 17TRACK.' },
+  lt17VerCompleta: { en: 'View the full timeline ({n} events)', pt: 'Ver a linha do tempo completa ({n} eventos)' },
   historico17Motivo: { en: 'Reason: {motivo}', pt: 'Motivo: {motivo}' },
   fichaOcorrenciasSppl: { en: 'SPPL occurrences', pt: 'Ocorrências do SPPL' },
   ocorrenciasVazio: { en: 'No SPPL occurrence for this order.', pt: 'Nenhuma ocorrência do SPPL para este pedido.' },
@@ -465,6 +467,19 @@ function renderRelacionados(relacionados) {
 
 /** Histórico do 17TRACK (SPPL). Sem dado do 17TRACK a ficha continua com os dados da fulfillment e diz isso claramente. */
 function renderHistorico17(d) {
+  const caixa = document.createElement('div');
+  const lista = renderHistorico17Lista(d);
+  if ((d.historico_17track ?? []).length) {
+    const botao = document.createElement('button');
+    botao.type = 'button'; botao.className = 'btn btn-forte lt17-resumo-botao'; botao.textContent = t('lt17VerCompleta', { n: String((d.historico_17track ?? []).length) });
+    botao.addEventListener('click', () => abrirLinhaTempo17({ transacaoId: d.transacao_id, subtitulo: [d.transacao_id, d.produto, d.carrier_code, d.tracking_number].filter(Boolean).join(' · ') }));
+    caixa.append(botao);
+  }
+  caixa.append(lista);
+  return caixa;
+}
+
+function renderHistorico17Lista(d) {
   const ul = document.createElement('ul');
   ul.className = 'rastreio-linha-tempo';
   const eventos = d.historico_17track ?? [];
@@ -506,7 +521,7 @@ function renderOcorrenciasSppl(lista) {
     const strong = document.createElement('strong');
     strong.textContent = `${o.prioridade} · ${o.categoria} · ${o.situacao}`;
     const span = document.createElement('span');
-    span.textContent = [o.responsavel, o.proxima_acao, o.prazo_ate ? t('ocorrenciaPrazo', { data: dataHora(o.prazo_ate) }) : null, o.resultado].filter(Boolean).join(' · ');
+    span.textContent = [o.proxima_acao, o.prazo_ate ? t('ocorrenciaPrazo', { data: dataHora(o.prazo_ate) }) : null, o.resultado].filter(Boolean).join(' · ');
     li.append(strong, document.createTextNode(' '), span);
     ul.append(li);
   }

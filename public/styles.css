@@ -3159,3 +3159,35 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .bib-remover { display: flex; align-items: center; gap: 6px; font-size: 13px; }
 @media (max-width: 640px) { .bib-acoes { width: 100%; } }
 .bib-acoes a.btn { text-decoration: none; }
+
+/* ═══ Linha do tempo do 17TRACK (public/linhaTempo17.js) ═══ */
+.janela--lt17[open] { width: min(760px, calc(100vw - 24px)); }
+.lt17-corpo { --lt-verde: var(--st-finalizado); --lt-azul: #4260e6; --lt-ambar: var(--st-atrasado); --lt-vermelho: var(--st-travado); --lt-cinza: var(--st-cancelado); --lt-ciano: var(--st-em-dia); }
+.lt17-tom--verde { --c: var(--lt-verde); } .lt17-tom--azul { --c: var(--lt-azul); } .lt17-tom--ambar { --c: var(--lt-ambar); } .lt17-tom--vermelho { --c: var(--lt-vermelho); } .lt17-tom--cinza { --c: var(--lt-cinza); } .lt17-tom--ciano { --c: var(--lt-ciano); }
+.lt17-topo { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 18px; padding: 14px 16px; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--plano); }
+.lt17-pilula { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 999px; font-weight: 700; font-size: 15px; color: #fff; background: var(--c, var(--lt-cinza)); white-space: nowrap; }
+.lt17-icone { font-size: 1.1em; line-height: 1; }
+.lt17-meta { display: grid; gap: 2px; min-width: 0; flex: 1 1 260px; strong { font-size: 15px; } span { font-size: 12.5px; color: var(--tinta-fraca); overflow-wrap: anywhere; } }
+.lt17-etapas { list-style: none; margin: 16px 2px 6px; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); }
+.lt17-etapa { position: relative; display: grid; justify-items: center; gap: 6px; text-align: center; font-size: 12px; color: var(--tinta-fraca);
+  &::before { content: ''; position: absolute; top: 13px; left: -50%; width: 100%; height: 3px; background: var(--borda); z-index: 0; }
+  &:first-child::before { display: none; } &.lt17-etapa--ok::before { background: var(--lt-verde); } }
+.lt17-etapa__bolinha { position: relative; z-index: 1; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--borda); background: var(--superficie); font-size: 12px; font-weight: 700; }
+.lt17-etapa--ok .lt17-etapa__bolinha { background: var(--lt-verde); border-color: var(--lt-verde); color: #fff; }
+.lt17-etapa--atual .lt17-etapa__bolinha { box-shadow: 0 0 0 5px color-mix(in srgb, var(--lt-verde) 25%, transparent); }
+.lt17-etapa--atual .lt17-etapa__rotulo { color: var(--tinta); font-weight: 700; }
+.lt17-aviso { margin: 12px 0 0; padding: 10px 14px; border-radius: 12px; font-size: 13px; font-weight: 600; background: color-mix(in srgb, var(--lt-vermelho) 12%, transparent); border: 1px solid color-mix(in srgb, var(--lt-vermelho) 40%, transparent); }
+.lt17-barra { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 6px; justify-content: flex-end; }
+.lt17-linha { list-style: none; margin: 8px 0 0; padding: 0 0 0 26px; position: relative; display: grid; gap: 10px;
+  &::before { content: ''; position: absolute; left: 11px; top: 6px; bottom: 6px; width: 2px; background: var(--borda); } }
+.lt17-dia { margin: 14px 0 0 -26px; padding: 4px 12px; width: fit-content; border-radius: 999px; background: var(--superficie-2); color: var(--tinta); font-size: 12px; font-weight: 700; }
+.lt17-lacuna { margin-left: -6px; padding: 6px 12px; width: fit-content; border-radius: 10px; font-size: 12px; font-weight: 600; background: color-mix(in srgb, var(--lt-ambar) 18%, transparent); border: 1px dashed var(--lt-ambar); }
+.lt17-evento { position: relative; }
+.lt17-ponto { position: absolute; left: -26px; top: 8px; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--c, var(--lt-cinza)); color: #fff; font-size: 12px; font-weight: 700; box-shadow: 0 0 0 4px var(--superficie); }
+.lt17-cartao { padding: 10px 14px; border: 1px solid var(--borda); border-left: 4px solid var(--c, var(--lt-cinza)); border-radius: 12px; background: var(--superficie); }
+.lt17-cartao__cab { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; strong { font-size: 14px; } time { font-size: 12px; color: var(--tinta-fraca); font-variant-numeric: tabular-nums; white-space: nowrap; } }
+.lt17-desc { margin: 4px 0 0; font-size: 13.5px; overflow-wrap: anywhere; }
+.lt17-local { margin: 4px 0 0; font-size: 12px; color: var(--tinta-fraca); overflow-wrap: anywhere; }
+.lt17-fonte { margin: 14px 0 0; font-size: 12px; color: var(--tinta-fraca); text-align: center; }
+.lt17-resumo-botao { margin: 0 0 8px; }
+@media (max-width: 560px) { .lt17-etapa { font-size: 10.5px; } .lt17-cartao__cab { flex-direction: column; gap: 2px; } }
