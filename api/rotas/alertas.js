@@ -112,7 +112,7 @@ const CONSULTAS = {
   sppl_vencida: `
     SELECT (o.id::text || ':' || to_char(o.prazo_ate, 'YYYYMMDDHH24MI')) AS chave,
            ('Alerta de logística vencido — ' || o.categoria) AS titulo,
-           (o.transacao_id || ' · ' || coalesce(o.responsavel, 'sem responsável')) AS subtitulo
+           o.transacao_id AS subtitulo
     FROM sppl_ocorrencias o
     WHERE o.situacao NOT IN ('resolvida', 'cancelada') AND o.prazo_ate IS NOT NULL AND o.prazo_ate < now()
       AND NOT EXISTS (SELECT 1 FROM painel_alertas_enviados x WHERE x.tipo = 'sppl_vencida' AND x.chave = o.id::text || ':' || to_char(o.prazo_ate, 'YYYYMMDDHH24MI'))

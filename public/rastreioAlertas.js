@@ -11,7 +11,7 @@ const DIC = {
   carregando: { en: 'loading…', pt: 'carregando…' },
   alTitulo: { en: 'Logistics alerts', pt: 'Alertas de logística' },
   alSub: { en: 'Orders that need action: no tracking code, label without pickup, stalled in transit and serious carrier exceptions. Work each one, register the charge to the fulfillment center or carrier, and close it with the result.', pt: 'Pedidos que pedem ação: sem código de rastreio, etiqueta sem coleta, parados em trânsito e exceções graves da transportadora. Trabalhe cada um, registre a cobrança à fulfillment ou à transportadora e encerre com o resultado.' },
-  alColSituacao: { en: 'Status', pt: 'Situação' }, alColPrio: { en: 'Priority', pt: 'Prioridade' }, alColCaso: { en: 'Case', pt: 'Caso' }, alColResp: { en: 'Owner', pt: 'Responsável' },
+  alColSituacao: { en: 'Status', pt: 'Situação' }, alColPrio: { en: 'Priority', pt: 'Prioridade' }, alColCaso: { en: 'Case', pt: 'Caso' },
   alColPrazo: { en: 'Due', pt: 'Prazo' }, alColDias: { en: 'Alert open (days)', pt: 'Alerta aberto (dias)' }, alColDiasPedido: { en: 'Order age (days)', pt: 'Pedido há (dias)' }, colPedido: { en: 'Order', pt: 'Pedido' }, colProduto: { en: 'Product', pt: 'Produto' },
   alSitAbertas: { en: 'Open', pt: 'Abertas' }, alSitTodas: { en: 'All', pt: 'Todas' }, alSitAberta: { en: 'New', pt: 'Nova' }, alSitCobranca: { en: 'Being chased', pt: 'Em cobrança' },
   alSitCliente: { en: 'Waiting for customer', pt: 'Aguardando cliente' }, alSitResolvida: { en: 'Resolved', pt: 'Resolvida' }, alSitCancelada: { en: 'Cancelled', pt: 'Cancelada' },
@@ -95,7 +95,7 @@ async function carregarLista() {
   else corpo.replaceChildren(...lista.map(linha));
   montarPaginacao($('alertas-paginacao'), { pagina: estado.pagina, totalPaginas: Math.max(1, Math.ceil((r.dados.total ?? 0) / POR_PAGINA)), total: r.dados.total ?? 0, rotuloItem: t('alPag') }, (p) => { estado.pagina = p; carregarLista(); });
 }
-function vazio(msg) { const tr = document.createElement('tr'); const td = el('td', msg, 'vazio-suave'); td.colSpan = 9; tr.append(td); return tr; }
+function vazio(msg) { const tr = document.createElement('tr'); const td = el('td', msg, 'vazio-suave'); td.colSpan = 8; tr.append(td); return tr; }
 const celAl = (rotulo, conteudo) => { const td = document.createElement('td'); td.dataset.label = rotulo; if (conteudo instanceof Node) td.append(conteudo); else td.textContent = conteudo ?? ''; return td; };
 function linha(o) {
   const tr = document.createElement('tr'); tr.classList.add('sup-linha-clique');
@@ -103,7 +103,7 @@ function linha(o) {
   const prio = el('span', o.prioridade, `sppl-selo sppl-selo--${String(o.prioridade).toLowerCase()}`);
   const sit = el('span', t(SITUACAO[o.situacao] ?? 'alSitAberta'), 'sppl-sit'); sit.dataset.s = o.situacao;
   const prazo = el('span', o.prazo_ate ? `${dataHora(o.prazo_ate)}${o.vencida ? ` · ${t('alVencida')}` : ''}` : t('alSemPrazo'), o.vencida ? 'sppl-prazo--vencido' : '');
-  tr.append(celAl(t('alColPrio'), prio), celAl(t('alColCaso'), categoria(o.categoria)), celAl(t('colPedido'), o.transacao_id), celAl(t('colProduto'), o.produto ?? '—'), celAl(t('alColResp'), o.responsavel ?? '—'),
+  tr.append(celAl(t('alColPrio'), prio), celAl(t('alColCaso'), categoria(o.categoria)), celAl(t('colPedido'), o.transacao_id), celAl(t('colProduto'), o.produto ?? '—'),
     celAl(t('alColSituacao'), sit), celAl(t('alColPrazo'), prazo), celAl(t('alColDiasPedido'), o.dias_pedido ?? '—'), celAl(t('alColDias'), o.dias_aberta ?? '—'));
   tr.addEventListener('click', () => abrirModal(o.id));
   return tr;
@@ -119,7 +119,7 @@ async function abrirModal(id) {
   $('alertas-m-titulo').textContent = `${o.prioridade} · ${categoria(o.categoria)}`;
   $('alertas-m-sub').textContent = [o.transacao_id, o.produto, o.carrier_code, o.tracking_number].filter(Boolean).join(' · ');
   $('alertas-m-acao').textContent = o.proxima_acao ? `${t('alProxAcao')}: ${o.proxima_acao}` : ''; $('alertas-m-acao').hidden = !o.proxima_acao;
-  $('alertas-m-situacao').value = o.situacao; $('alertas-m-resp').value = o.responsavel ?? ''; $('alertas-m-prox').value = o.proxima_acao ?? '';
+  $('alertas-m-situacao').value = o.situacao; $('alertas-m-prox').value = o.proxima_acao ?? '';
   $('alertas-m-ate').value = paraInput(o.proxima_acao_ate); $('alertas-m-resultado').value = o.resultado ?? '';
   $('alertas-m-erro').hidden = true; $('alertas-m-cobform').hidden = ['resolvida', 'cancelada'].includes(o.situacao);
   desenharCobrancas(o.cobrancas ?? []);
@@ -162,7 +162,7 @@ function ligar() {
   $('alertas-form').addEventListener('submit', async (ev) => {
     ev.preventDefault(); if (!atual) return;
     const ate = $('alertas-m-ate').value;
-    const corpo = { situacao: $('alertas-m-situacao').value, responsavel: $('alertas-m-resp').value, proxima_acao: $('alertas-m-prox').value, proxima_acao_ate: ate ? new Date(ate).toISOString() : null, resultado: $('alertas-m-resultado').value };
+    const corpo = { situacao: $('alertas-m-situacao').value, proxima_acao: $('alertas-m-prox').value, proxima_acao_ate: ate ? new Date(ate).toISOString() : null, resultado: $('alertas-m-resultado').value };
     const r = await api(`/api/rastreio/sppl/ocorrencias/${atual.id}`, { metodo: 'PATCH', corpo });
     if (!r.ok) { erroModal(r); return; }
     $('alertas-modal').close(); $('alertas-aviso').textContent = t('alSalvo'); carregarLista(); carregarResumo();
