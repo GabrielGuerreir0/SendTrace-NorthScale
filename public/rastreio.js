@@ -33,7 +33,7 @@ import { criarTradutor, idiomaAtual, montarSeletorIdioma } from './i18n.js';
 import './rastreioSppl.js';   // SPPL: regras e feriados (seção recolhível no fim da aba)
 import './rastreioAlertas.js';   // SPPL: alertas de logística (ocorrências) e cobranças
 import './rastreioLogistica.js';   // SPPL: saúde, relatório e não encontrados da Red Rock
-import { abrirLinhaTempo17 } from './linhaTempo17.js';
+import { abrirLinhaTempo17, montarResumo17 } from './linhaTempo17.js';
 
 /** dia (col. `date` do Postgres, "AAAA-MM-DD" sem hora/fuso) → "DD/MM" sem
  * passar por `new Date()`: um `date` puro seria lido como meia-noite UTC e o
@@ -467,16 +467,8 @@ function renderRelacionados(relacionados) {
 
 /** Histórico do 17TRACK (SPPL). Sem dado do 17TRACK a ficha continua com os dados da fulfillment e diz isso claramente. */
 function renderHistorico17(d) {
-  const caixa = document.createElement('div');
-  const lista = renderHistorico17Lista(d);
-  if ((d.historico_17track ?? []).length) {
-    const botao = document.createElement('button');
-    botao.type = 'button'; botao.className = 'btn btn-forte lt17-resumo-botao'; botao.textContent = t('lt17VerCompleta', { n: String((d.historico_17track ?? []).length) });
-    botao.addEventListener('click', () => abrirLinhaTempo17({ transacaoId: d.transacao_id, subtitulo: [d.transacao_id, d.produto, d.carrier_code, d.tracking_number].filter(Boolean).join(' · ') }));
-    caixa.append(botao);
-  }
-  caixa.append(lista);
-  return caixa;
+  if (!(d.historico_17track ?? []).some((e) => e.ocorreu_em)) return renderHistorico17Lista(d);   // sem dado: só a mensagem explicando
+  return montarResumo17(d, () => abrirLinhaTempo17({ transacaoId: d.transacao_id, subtitulo: [d.transacao_id, d.produto, d.carrier_code, d.tracking_number].filter(Boolean).join(' · ') }));
 }
 
 function renderHistorico17Lista(d) {

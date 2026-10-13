@@ -31,6 +31,7 @@ const DIC = {
   etapa0: { en: 'Label created', pt: 'Etiqueta criada' }, etapa1: { en: 'In transit', pt: 'Em trânsito' },
   etapa2: { en: 'Out for delivery', pt: 'Saiu para entrega' }, etapa3: { en: 'Delivered', pt: 'Entregue' },
   fonte: { en: 'Source: 17TRACK · updated {quando}', pt: 'Fonte: 17TRACK · atualizado {quando}' },
+  verCompleta: { en: 'View the full timeline ({n} events)', pt: 'Ver a linha do tempo completa ({n} eventos)' },
 };
 const t = criarTradutor(DIC);
 
@@ -85,16 +86,15 @@ function resumoTexto(d, eventos) {
   return linhas.join('\n');
 }
 
-function desenhar(corpo, d, eventos, ordemNovos) {
-  corpo.replaceChildren();
+/** Pílula do status atual + resumo + etapas + aviso de exceção. Usado na janela completa e no resumo compacto da ficha do pedido. */
+function blocoResumo(d, eventos) {
+  const frag = document.createDocumentFragment();
   const registro = d.registro_17track;
   const agora = Date.now();
   const ultimo = eventos[0];
-  // 1) resumo: status atual + etapas
   const topo = el('div', 'lt17-topo');
   const info = infoStatus(registro?.ultimo_status ?? statusEvento(ultimo));
-  const pilula = el('span', `lt17-pilula lt17-tom--${info.tom}`); pilula.append(el('span', info.icone, undefined), document.createTextNode(` ${info[idioma()]}`));
-  pilula.firstChild.className = 'lt17-icone'; pilula.firstChild.textContent = info.icone;
+  const pilula = el('span', `lt17-pilula lt17-tom--${info.tom}`); pilula.append(el('span', 'lt17-icone', info.icone), document.createTextNode(` ${info[idioma()]}`));
   const quando = ultimo ? Math.floor((agora - new Date(ultimo.ocorreu_em).getTime()) / DIA_MS) : null;
   const meta = el('div', 'lt17-meta');
   const sub = registro?.ultimo_substatus ? ` · ${rotuloSub(registro.ultimo_substatus)}` : '';
@@ -105,8 +105,7 @@ function desenhar(corpo, d, eventos, ordemNovos) {
   const prov = (() => { const c = {}; for (const e of eventos) if (e.provedor_17t) c[e.provedor_17t] = (c[e.provedor_17t] ?? 0) + 1; return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0]; })();
   meta.append(el('span', `${t('eventos', { n: eventos.length })} ${t('emDias', { n: span })}${prov ? ` · ${t('transportadora')}: ${prov}` : ''}${d.tracking_number ? ` · ${t('codigo')}: ${d.tracking_number}` : ''}`));
   topo.append(pilula, meta);
-  corpo.append(topo);
-
+  frag.append(topo);
   const atingida = Math.max(-1, ...eventos.map((e) => infoStatus(statusEvento(e)).etapa));
   const etapas = el('ol', 'lt17-etapas');
   for (let i = 0; i < 4; i += 1) {
@@ -114,10 +113,38 @@ function desenhar(corpo, d, eventos, ordemNovos) {
     li.append(el('span', 'lt17-etapa__bolinha', i <= atingida ? '✓' : String(i + 1)), el('span', 'lt17-etapa__rotulo', t(`etapa${i}`)));
     etapas.append(li);
   }
-  corpo.append(etapas);
+  frag.append(etapas);
   if (['Exception', 'DeliveryFailure'].includes(registro?.ultimo_status ?? statusEvento(ultimo))) {
-    const aviso = el('p', 'lt17-aviso', `⚠ ${t('alertaExc')}${registro?.ultimo_substatus ? ` ${rotuloSub(registro.ultimo_substatus)}.` : ''}`); aviso.setAttribute('role', 'alert'); corpo.append(aviso);
+    const aviso = el('p', 'lt17-aviso', `⚠ ${t('alertaExc')}${registro?.ultimo_substatus ? ` ${rotuloSub(registro.ultimo_substatus)}.` : ''}`); aviso.setAttribute('role', 'alert'); frag.append(aviso);
   }
+  return frag;
+}
+
+/** Resumo compacto para a ficha do pedido: status, etapas, os 3 últimos eventos e o botão da linha do tempo completa (a lista longa NÃO fica na ficha). */
+export function montarResumo17(d, aoAbrir) {
+  const eventos = (d.historico_17track ?? []).filter((e) => e.ocorreu_em);
+  const caixa = el('div', 'lt17-resumo');
+  caixa.append(blocoResumo(d, eventos));
+  const mini = el('ol', 'lt17-mini');
+  for (const e of eventos.slice(0, 3)) {
+    const si = infoStatus(statusEvento(e));
+    const li = el('li', `lt17-tom--${si.tom}`);
+    const local = [e.cidade, e.estado].filter(Boolean).join(', ');
+    li.append(el('span', 'lt17-mini__ponto', si.icone), el('time', undefined, dataHora(e.ocorreu_em)),
+      el('strong', undefined, `${rotuloStatus(statusEvento(e))}${detalheEvento(e) ? ` · ${detalheEvento(e)}` : ''}`),
+      el('span', 'lt17-mini__txt', [e.descricao, local].filter(Boolean).join(' · ')));
+    mini.append(li);
+  }
+  caixa.append(mini);
+  const botao = el('button', 'btn btn-forte', t('verCompleta', { n: String(eventos.length) })); botao.type = 'button'; botao.addEventListener('click', aoAbrir);
+  caixa.append(botao);
+  return caixa;
+}
+
+function desenhar(corpo, d, eventos, ordemNovos) {
+  corpo.replaceChildren();
+  const registro = d.registro_17track;
+  corpo.append(blocoResumo(d, eventos));
 
   // 2) controles
   const barra = el('div', 'lt17-barra');

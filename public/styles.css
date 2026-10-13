@@ -3191,3 +3191,15 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .lt17-fonte { margin: 14px 0 0; font-size: 12px; color: var(--tinta-fraca); text-align: center; }
 .lt17-resumo-botao { margin: 0 0 8px; }
 @media (max-width: 560px) { .lt17-etapa { font-size: 10.5px; } .lt17-cartao__cab { flex-direction: column; gap: 2px; } }
+
+/* Resumo compacto do 17TRACK dentro da ficha do pedido */
+.lt17-resumo { --lt-verde: var(--st-finalizado); --lt-azul: #4260e6; --lt-ambar: var(--st-atrasado); --lt-vermelho: var(--st-travado); --lt-cinza: var(--st-cancelado); --lt-ciano: var(--st-em-dia);
+  display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--superficie);
+  .lt17-topo { padding: 10px 12px; } .lt17-etapas { margin: 6px 2px 0; } .btn { justify-self: start; } }
+.lt17-mini { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px;
+  li { display: grid; grid-template-columns: 22px 106px minmax(0, 1fr); column-gap: 8px; row-gap: 1px; align-items: baseline; padding: 6px 10px; border-left: 3px solid var(--c, var(--lt-cinza)); border-radius: 8px; background: var(--plano); }
+  time { font-size: 12px; color: var(--tinta-fraca); font-variant-numeric: tabular-nums; } strong { font-size: 13px; }
+  .lt17-mini__ponto { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--c, var(--lt-cinza)); color: #fff; font-size: 11px; font-weight: 700; }
+  .lt17-mini__txt { grid-column: 2 / -1; font-size: 12px; color: var(--tinta-fraca); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
+@media (max-width: 560px) { .lt17-mini li { grid-template-columns: 22px minmax(0, 1fr); } .lt17-mini time { grid-column: 2; } .lt17-mini strong { grid-column: 2; } .lt17-mini__txt { grid-column: 2; white-space: normal; } }
+.mf-campo a, .mf-campo-valor { overflow-wrap: anywhere; word-break: break-word; }
