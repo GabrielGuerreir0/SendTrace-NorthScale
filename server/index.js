@@ -540,7 +540,7 @@ async function servirEstatico(req, res, urlPath) {
 
 /** Administrador, ou gestor do Suporte Escalado ou do Suporte Humano (papel por página, 072; é um papel só, vale nas duas). */
 // Filtros por lista suspensa da fila do Suporte Humano (3º momento, item 1): repassados à API, que aplica no servidor.
-const FILTROS_FILA = ['tag_motivo', 'motivo_contato', 'detalhamento_motivo', 'tipo_resolucao', 'status_ticket', 'motivo_reenvio', 'status_logistica', 'status_ajuda', 'responsavel_logistica_id', 'quantidade_reenvio', 'percentual_reembolso', 'ajuda_para_id'];
+const FILTROS_FILA = ['tag_motivo', 'motivo_contato', 'detalhamento_motivo', 'tipo_resolucao', 'status_ticket', 'motivo_reenvio', 'status_logistica', 'status_ajuda', 'responsavel_logistica_id', 'quantidade_reenvio', 'percentual_reembolso', 'ajuda_para_id', 'valor_compra_min', 'valor_compra_max', 'deducao_min', 'deducao_max', 'valor_reembolsar_min', 'valor_reembolsar_max'];
 const ehGestorEscalado = (u) => Boolean(u?.admin || (u?.acessos ?? []).some((a) => (a.pagina === 'suporteescalado' || a.pagina === 'suportehumano') && a.papel === 'gestor'));
 
 /**
@@ -1693,13 +1693,42 @@ async function atender(req, res, url, sessao) {
   if (rotaReenviar && req.method === 'POST') {
     try { return json(res, 200, await criarApi(`/api/suporte-escalado/${rotaReenviar[1]}/envios/${rotaReenviar[2]}/reenviar`, {})); } catch (err) { return erroFicha(err, 'Não consegui reenviar.'); }
   }
+  /* ── Biblioteca de materiais (13/10/2026): lista e arquivos para todos; cadastro, edição e exclusão só admin (a API recusa com 403). ── */
+  if (url.pathname === '/api/biblioteca') {
+    try {
+      if (req.method === 'GET') return json(res, 200, await obterApi('/api/biblioteca'));
+      if (req.method === 'POST') return json(res, 201, await criarApi('/api/biblioteca', await lerJson(req, 60 * 1024 * 1024)));
+    } catch (err) { return erroFicha(err, 'Não consegui concluir a ação na biblioteca.'); }
+  }
+  const rotaBiblioteca = /^\/api\/biblioteca\/(\d+)(\/arquivo)?$/.exec(url.pathname);
+  if (rotaBiblioteca) {
+    const [, bibId, arquivo] = rotaBiblioteca;
+    try {
+      if (arquivo && req.method === 'GET') {
+        const baixar = url.searchParams.get('baixar') ? '?baixar=1' : '';
+        const { buffer, mimeType } = await obterBinario(`/api/biblioteca/${bibId}/arquivo${baixar}`);
+        const nome = String(url.searchParams.get('nome') || 'arquivo').replace(/[^\w.\- ()\[\]]/g, '_').slice(0, 150);
+        res.writeHead(200, { 'Content-Type': mimeType, 'Content-Disposition': `${baixar ? 'attachment' : 'inline'}; filename="${nome}"`, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, max-age=300' });
+        res.end(buffer);
+        return ATENDIDO;
+      }
+      if (!arquivo && req.method === 'PUT') return json(res, 200, await substituirApi(`/api/biblioteca/${bibId}`, await lerJson(req, 60 * 1024 * 1024)));
+      if (!arquivo && req.method === 'DELETE') { await apagarApi(`/api/biblioteca/${bibId}`); return json(res, 200, { ok: true }); }
+    } catch (err) { return erroFicha(err, 'Não consegui concluir a ação na biblioteca.'); }
+  }
+
+  // Anexo da resposta (4º momento, item 2): o arquivo chega em base64 dentro do JSON, por isso o limite maior (10 MB de arquivo ≈ 13,4 MB).
+  const rotaAnexoEnvio = /^\/api\/suporte-escalado\/(\d+)\/anexos-envio$/.exec(url.pathname);
+  if (rotaAnexoEnvio && req.method === 'POST') {
+    try { return json(res, 201, await criarApi(`/api/suporte-escalado/${rotaAnexoEnvio[1]}/anexos-envio`, await lerJson(req, 16 * 1024 * 1024))); } catch (err) { return erroFicha(err, 'Não consegui subir o anexo.'); }
+  }
   const rotaTicketHumano = /^\/api\/suporte-escalado\/(\d+)\/(atividades|mesclar|responder|envios)$/.exec(url.pathname);
   if (rotaTicketHumano) {
     const [, casoId, parte] = rotaTicketHumano;
     try {
       if (parte === 'atividades' && req.method === 'GET') return json(res, 200, await obterApi(`/api/suporte-escalado/${casoId}/atividades`));
       if (parte === 'mesclar' && req.method === 'POST') return json(res, 200, await criarApi(`/api/suporte-escalado/${casoId}/mesclar`, await lerJson(req)));
-      if (parte === 'responder' && req.method === 'POST') return json(res, 202, await criarApi(`/api/suporte-escalado/${casoId}/responder`, await lerJson(req)));
+      if (parte === 'responder' && req.method === 'POST') return json(res, 202, await criarApi(`/api/suporte-escalado/${casoId}/responder`, await lerJson(req, 64 * 1024)));
       if (parte === 'envios' && req.method === 'GET') return json(res, 200, await obterApi(`/api/suporte-escalado/${casoId}/envios`));
     } catch (err) { return erroFicha(err, 'Não consegui concluir a ação.'); }
   }
@@ -1849,6 +1878,23 @@ async function atender(req, res, url, sessao) {
       if (err instanceof ErroApi && err.status === 403) {
         return json(res, 403, { erro: 'Este caso não é de um board seu.' });
       }
+      throw err;
+    }
+  }
+
+  // Anexos do cliente na caixa (PDF etc., 4º momento da Késsia): lista em JSON e arquivo em bytes crus (não passa por obterApi).
+  const rotaAnexosCaixa = /^\/api\/emails\/(\d+)\/anexos-caixa(?:\/([0-9.]{1,20}))?$/.exec(url.pathname);
+  if (rotaAnexosCaixa && req.method === 'GET') {
+    const [, emailId, parte] = rotaAnexosCaixa;
+    try {
+      if (!parte) return json(res, 200, await obterApi(`/api/emails/${emailId}/anexos-caixa`, {}, { timeoutMs: 25_000 }));
+      const { buffer, mimeType } = await obterBinario(`/api/emails/${emailId}/anexos-caixa/${parte}`);
+      const nome = String(url.searchParams.get('nome') || 'anexo').replace(/[^\w.\- ()]/g, '_').slice(0, 120);
+      res.writeHead(200, { 'Content-Type': mimeType, 'Content-Disposition': `inline; filename="${nome}"`, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, max-age=600' });
+      res.end(buffer);
+      return ATENDIDO;
+    } catch (err) {
+      if (err instanceof ErroApi && [404, 413, 502, 503].includes(err.status)) return json(res, err.status, { erro: detalharErroApi(err, 'Não consegui buscar o anexo na caixa.') });
       throw err;
     }
   }

@@ -20,6 +20,7 @@ import './emailGaleria.js';
 import './emailSuporteEscalado.js';
 import './suporteHumano.js';
 import './relatorioMetricas.js';
+import './biblioteca.js';
 import './visaoGeral.js';
 import './rastreio.js';
 import './postmark.js';

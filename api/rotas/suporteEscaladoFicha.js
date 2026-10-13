@@ -3,6 +3,7 @@
  *
  *   GET  /api/suporte-escalado/opcoes                    → listas suspensas (Propriedades/Logística) + equipe (quem pode receber ajuda)
  *   GET  /api/suporte-escalado/:id/ficha                 → Propriedades + Logística + pedidos de ajuda do caso
+ *   POST /api/suporte-escalado/:id/anexos-envio          → sobe um arquivo (PDF/imagem) para anexar à próxima resposta (4º momento, item 2)
  *   POST /api/suporte-escalado/:id/responder             → o agente responde o cliente pelo SendTrace (SMTP da Hostinger, como support@) — PDF de 07/10, item 2
  *   GET  /api/suporte-escalado/buscar?q=                 → procura outro ticket por e-mail, nome ou nº (para mesclar)
  *   POST /api/suporte-escalado/:id/mesclar               → junta este ticket a outro (ticket-mãe = o mais antigo; migração 086)
@@ -33,11 +34,11 @@ export const OPCOES = {
     'Logística - pedido incompleto', 'Logística - pedido quebrado', 'Logística - divergência no produto', 'Cliente não retornou',
   ],
   tipo_resolucao: [
-    'Verificando - Ag. Cliente', 'Reversão total do reembolso', 'Reembolso parcial', 'Reembolsado pela plataforma', 'Não revertido', 'Não respondido - Autorizado pelo líder',
+    'Verificando - Ag. Cliente', 'Reversão total do reembolso', 'Reembolso parcial', 'Reembolsado pela plataforma', 'Não revertido', 'Não envolve reembolso', 'Não respondido - Autorizado pelo líder',
     'Virou chargeback', 'Cliente não retornou', 'Link para compra enviado',
   ],
-  // Aparece ao lado quando o tipo de resolução é "Reembolso parcial" (15% a 90%, de 5 em 5).
-  percentual_reembolso: Array.from({ length: 16 }, (_, i) => 15 + i * 5),
+  // Aparece ao lado quando o tipo de resolução é "Reembolso parcial" (5% a 90%, de 5 em 5; 5% e 10% entraram no 4º momento da Késsia).
+  percentual_reembolso: Array.from({ length: 18 }, (_, i) => 5 + i * 5),
   status_ticket: ['Aberto', 'Pendente', 'Resolvido', 'Fechado'],
   motivo_reenvio: ['Itens quebrados', 'Pedido incompleto', 'Pedido não entregue', 'Cortesia'],
   status_logistica: ['Solicitar', 'Solicitado', 'Responder cliente', 'Resolvido'],
@@ -175,6 +176,11 @@ export default async function rotasSuporteEscaladoFicha(app) {
 
   const nomeDe = (req) => req.usuario.nome || req.usuario.email || null;
 
+  // Anexos nas respostas (4º momento, item 2): PDF e imagem, até 10 MB por resposta (somando os arquivos) e no máximo 5 arquivos.
+  const TIPOS_ANEXO = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+  const MAX_BYTES_ANEXOS = 10 * 1024 * 1024;
+  const MAX_ARQUIVOS = 5;
+
   /* ═══════════════════════  GET /api/suporte-escalado/opcoes  ═════════════════ */
   app.get('/api/suporte-escalado/opcoes', {
     onRequest: [app.exigirSessao],
@@ -240,6 +246,36 @@ export default async function rotasSuporteEscaladoFicha(app) {
      (como support@, na mesma conversa do e-mail do cliente), a cópia em Enviados e o registro em `respostas_agente` — que move o card e fecha o SLA —
      acontecem em segundo plano, em poucos segundos (api/respostasFila.js). Se falhar 3 vezes, a ficha mostra o aviso com "Tentar de novo".
      Dono do board, admin ou gestor. Sem login de SMTP no servidor, responde 503 e nada é gravado. */
+  app.post('/api/suporte-escalado/:id/anexos-envio', {
+    onRequest: [app.exigirSessao],
+    bodyLimit: 16 * 1024 * 1024,   // o arquivo vai em base64 dentro do JSON (10 MB de arquivo ≈ 13,4 MB de texto)
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Sobe um arquivo (PDF ou imagem) para anexar à próxima resposta ao cliente',
+      security: [{ bearerAuth: [] }],
+      params: idCaso,
+      body: {
+        type: 'object', required: ['nome', 'mime_type', 'base64'], additionalProperties: false,
+        properties: { nome: { type: 'string', minLength: 1, maxLength: 200 }, mime_type: { type: 'string', maxLength: 100 }, base64: { type: 'string', minLength: 4 } },
+      },
+    },
+  }, async (req, resposta) => {
+    await exigirEscrita(req, req.params.id);
+    const mime = req.body.mime_type.toLowerCase();
+    if (!TIPOS_ANEXO.has(mime)) throw new ErroHttp(400, 'Só PDF e imagem (PNG, JPG, GIF ou WebP) podem ser anexados.');
+    const conteudo = Buffer.from(req.body.base64, 'base64');
+    if (!conteudo.length) throw new ErroHttp(400, 'Arquivo vazio.');
+    if (conteudo.length > MAX_BYTES_ANEXOS) throw new ErroHttp(413, 'O arquivo passa de 10 MB.');
+    const nome = req.body.nome.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim().slice(0, 150) || 'arquivo';
+    // Faxina: arquivo solto (nunca enviado) com mais de 1 dia é descartado.
+    await query(`DELETE FROM email_ia.respostas_anexos WHERE fila_id IS NULL AND criado_em < now() - interval '1 day'`);
+    const { rows: [novo] } = await query(
+      `INSERT INTO email_ia.respostas_anexos (caso_id, nome, mime_type, tamanho_bytes, conteudo, criado_por) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, nome, mime_type, tamanho_bytes`,
+      [req.params.id, nome, mime, conteudo.length, conteudo, nomeDe(req)],
+    );
+    return resposta.code(201).send(novo);
+  });
+
   app.post('/api/suporte-escalado/:id/responder', {
     onRequest: [app.exigirSessao],
     schema: {
@@ -250,16 +286,18 @@ export default async function rotasSuporteEscaladoFicha(app) {
       body: {
         type: 'object', required: ['texto'], additionalProperties: false,
         properties: {
-          texto: { type: 'string', minLength: 1, maxLength: 8000 },
+          texto: { type: 'string', maxLength: 8000 },   // pode ficar vazio quando há anexo
           assunto: { type: 'string', maxLength: 300 },
           para_email: { type: 'string', maxLength: 320 },
+          anexos: { type: 'array', maxItems: MAX_ARQUIVOS, items: { type: 'integer' } },   // ids de /anexos-envio
         },
       },
     },
   }, async (req, resposta) => {
     if (!respostaConfigurada) throw new ErroHttp(503, 'O envio de respostas pelo SendTrace ainda não está configurado neste servidor (falta o login SMTP do suporte).');
     const texto = req.body.texto.trim();
-    if (!texto) throw new ErroHttp(400, 'Escreva a resposta.');
+    const idsAnexos = [...new Set(req.body.anexos ?? [])];
+    if (!texto && !idsAnexos.length) throw new ErroHttp(400, 'Escreva a resposta.');
     // Uma consulta só: o caso, o dono do board, os e-mails dos tickets-filhos e se a mesma resposta acabou de entrar (clique duplo).
     const { rows: [c] } = await query(
       `SELECT s.id, s.remetente_email, s.board_id, bd.usuario_id AS dono_id,
@@ -278,12 +316,21 @@ export default async function rotasSuporteEscaladoFicha(app) {
       [c.id, para, texto],
     );
     if (dup.length) throw new ErroHttp(409, 'Esta mesma resposta acabou de ser enviada.');
+    if (idsAnexos.length) {
+      const { rows: [somaAnexos] } = await query(
+        `SELECT count(*)::int AS n, coalesce(sum(tamanho_bytes), 0)::bigint AS bytes FROM email_ia.respostas_anexos WHERE id = ANY($1) AND caso_id = $2 AND fila_id IS NULL`,
+        [idsAnexos, c.id],
+      );
+      if (somaAnexos.n !== idsAnexos.length) throw new ErroHttp(400, 'Algum anexo não está mais disponível. Anexe de novo.');
+      if (Number(somaAnexos.bytes) > MAX_BYTES_ANEXOS) throw new ErroHttp(413, 'Os anexos passam de 10 MB no total.');
+    }
     const messageId = `<${randomUUID()}@${dominioDeEnvio()}>`;
     const { rows: [novo] } = await query(
       `INSERT INTO email_ia.respostas_fila (caso_id, board_id, para_email, assunto, texto, message_id, criado_por)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, criado_em`,
       [c.id, c.board_id, para, req.body.assunto?.trim() || null, texto, messageId, nomeDe(req)],
     );
+    if (idsAnexos.length) await query(`UPDATE email_ia.respostas_anexos SET fila_id = $1 WHERE id = ANY($2) AND caso_id = $3 AND fila_id IS NULL`, [novo.id, idsAnexos, c.id]);
     invalidar();
     acionarEnvio(req.log);
     return resposta.code(202).send({ id: novo.id, message_id: messageId, enviado_em: novo.criado_em });

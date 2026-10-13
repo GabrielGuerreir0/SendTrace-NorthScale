@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto';
 import nodemailer from 'nodemailer';
 import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 import { ImapFlow } from 'imapflow';
+import { mdParaHtml, mdParaTexto } from './formatoTexto.js';
 
 const env = process.env;
 const USUARIO = env.SUPORTE_SMTP_USUARIO || env.IMAP_USUARIO || env.SMTP_USUARIO;
@@ -53,13 +54,15 @@ async function copiarParaEnviados(raw) {
 }
 
 /** Envia a resposta. Devolve `{ messageId, enviadoEm, copiadoParaEnviados }`; lança se o SMTP recusar. */
-export async function enviarRespostaSuporte({ para, assunto, texto, inReplyTo, references, messageId: idDefinido }) {
+export async function enviarRespostaSuporte({ para, assunto, texto, inReplyTo, references, messageId: idDefinido, anexos = [] }) {
   if (!respostaConfigurada) throw Object.assign(new Error('Envio de resposta não configurado neste servidor.'), { naoConfigurado: true });
   const dominio = (DE.match(/@([^>\s]+)/)?.[1] ?? 'localhost').replace(/>$/, '');
   const messageId = idDefinido || `<${randomUUID()}@${dominio}>`;
   const enviadoEm = new Date();
   const opcoes = {
-    from: DE, to: para, subject: assunto, text: texto, messageId, date: enviadoEm,
+    // 4º momento, item 1: o texto do agente tem marcação leve (**negrito**, _itálico_, listas, [link](url)) → HTML + versão em texto puro.
+    from: DE, to: para, subject: assunto, text: mdParaTexto(texto), html: mdParaHtml(texto), messageId, date: enviadoEm,
+    ...(anexos.length ? { attachments: anexos.map((a) => ({ filename: a.nome, contentType: a.mime_type, content: a.conteudo })) } : {}),
     ...(inReplyTo ? { inReplyTo, references: references || inReplyTo } : {}),
   };
   const raw = await new MailComposer(opcoes).compile().build();

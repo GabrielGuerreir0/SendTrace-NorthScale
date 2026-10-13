@@ -184,6 +184,7 @@ export default async function rotasSuporteEscaladoRelatorios(app) {
          LEFT JOIN email_ia.suporte_escalado_boards b ON b.id = s.board_id
         WHERE s.ticket_mae_id IS NULL AND s.criado_em >= ${periodo.ini} AND s.criado_em < ${periodo.fim}
           AND (s.tag_motivo IN ('reembolso', 'chargeback') OR fi.motivo_contato IN ('Reembolso', 'Chargeback'))
+          AND coalesce(fi.tipo_resolucao, '') <> 'Não envolve reembolso'   -- 4º momento, item 4: não conta no painel (decisão do Lucas, 13/10)
         GROUP BY 1, 2, 3`,
     ));
     const pct = (v, t) => (t ? Math.round((v / t) * 1000) / 10 : 0);

@@ -25,6 +25,10 @@ const FILTROS_SQL = {
   status_logistica: { col: 'fi.status_logistica' }, status_ajuda: { col: 'fi.status_ajuda' },
   responsavel_logistica_id: { col: 'fi.responsavel_board_id', num: true }, quantidade_reenvio: { col: 'fi.quantidade_reenvio', num: true },
   percentual_reembolso: { col: 'fi.percentual_reembolso', num: true },
+  // 4º momento, item 7: faixas (de/até, em US$) dos campos do reembolso parcial.
+  valor_compra_min: { col: 'fi.valor_compra_usd', op: '>=', num: true }, valor_compra_max: { col: 'fi.valor_compra_usd', op: '<=', num: true },
+  deducao_min: { col: 'fi.deducao_frascos_usd', op: '>=', num: true }, deducao_max: { col: 'fi.deducao_frascos_usd', op: '<=', num: true },
+  valor_reembolsar_min: { col: 'fi.valor_a_reembolsar_usd', op: '>=', num: true }, valor_reembolsar_max: { col: 'fi.valor_a_reembolsar_usd', op: '<=', num: true },
   ajuda_para_id: { sql: (ph) => `EXISTS (SELECT 1 FROM email_ia.suporte_escalado_ajuda a WHERE a.suporte_escalado_id = s.id AND a.para_board_id = ${ph})`, num: true },
 };
 const ABERTO_SQL = `(s.status IN ${ABERTOS} AND ${ENCERRADO_NA_FICHA})`;
@@ -83,7 +87,7 @@ export default async function rotasSuporteEscaladoFila(app) {
       if (def.num && !/^\d{1,9}(\.\d+)?$/.test(v)) throw new ErroHttp(400, `Filtro inválido: ${chave}.`);
       valoresCasos.push(def.num ? Number(v) : v);
       const ph = `$${valoresCasos.length}`;
-      condicoes.push(def.sql ? def.sql(ph) : `${def.col} = ${ph}`);
+      condicoes.push(def.sql ? def.sql(ph) : `${def.col} ${def.op ?? '='} ${ph}`);
       filtrando = true;
     }
     // Sem busca nem filtro: só o que está em aberto (as filas de resposta). Com busca ou filtro: todos, inclusive resolvidos/fechados.

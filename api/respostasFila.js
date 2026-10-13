@@ -31,8 +31,9 @@ async function enviarUma(r, log) {
       [r.para_email],
     );
     const base = (r.assunto || ultimo?.assunto || 'Your support request').replace(/^\s*(re|res)\s*:\s*/i, '');
+    const { rows: anexos } = await query(`SELECT nome, mime_type, conteudo FROM email_ia.respostas_anexos WHERE fila_id = $1 ORDER BY id`, [r.id]);
     const envio = await enviarRespostaSuporte({
-      para: r.para_email, assunto: `Re: ${base}`, texto: r.texto, inReplyTo: ultimo?.message_id || undefined, messageId: r.message_id,
+      para: r.para_email, assunto: `Re: ${base}`, texto: r.texto, inReplyTo: ultimo?.message_id || undefined, messageId: r.message_id, anexos,
     });
     await query(
       `INSERT INTO email_ia.respostas_agente (message_id, in_reply_to, para_email, assunto, corpo_texto, enviado_em, caso_id, board_id)

@@ -234,9 +234,15 @@ let linhasVisiveis = POR_PAGINA_FILA;
 const FILAS = [
   { chave: 'primeiro', rotulo: '1º e-mail — pendente de resposta' },
   { chave: 'segundo', rotulo: '2º e-mail em diante — pendente de resposta' },
-  { chave: 'todos', rotulo: 'Todos os atribuídos' },
   { chave: 'internas', rotulo: 'Pendências internas' },   // logística e ajuda pedidas por outros agentes (item 27) — fora das duas filas de resposta
+  // 4º momento, item 9: abas por status do ticket (Propriedades) no lugar de "Todos os atribuídos"; a lista vem do servidor filtrada por status (inclui Resolvido/Fechado).
+  { chave: 'st:Aberto', rotulo: 'Aberto', status: 'Aberto' },
+  { chave: 'st:Pendente', rotulo: 'Pendente', status: 'Pendente' },
+  { chave: 'st:Resolvido', rotulo: 'Resolvido', status: 'Resolvido' },
+  { chave: 'st:Fechado', rotulo: 'Fechado', status: 'Fechado' },
 ];
+const ABA_RESULTADOS = { chave: 'resultados', rotulo: 'Resultados da busca/filtros' };   // só aparece com busca ou filtro ligado
+const statusDaAba = (chave) => (chave.startsWith('st:') ? chave.slice(3) : null);
 
 /* ── filtros (itens 3, 4 e 13 do PDF de 07/10) ──
    Os filtros por lista suspensa e por tempo restante rodam no navegador (a fila já vem com até 1.000 casos); a busca roda no servidor
@@ -255,6 +261,13 @@ const FILTROS_LISTA = [
   { chave: 'quantidade_reenvio', rotulo: 'Quantidade para reenvio', opcoes: () => Array.from({ length: 30 }, (_, i) => i + 1) },
   { chave: 'percentual_reembolso', rotulo: 'Percentual do reembolso', opcoes: (o) => (o.percentual_reembolso ?? []).map((p) => [p, `${p}%`]) },
 ];
+// 4º momento, item 7: campos do reembolso parcial no filtro, só quando o Tipo de resolução filtrado é "Reembolso parcial" (como em Propriedades).
+const FILTROS_FAIXA = [
+  { chave: 'valor_compra', rotulo: 'Valor da compra (US$)' },
+  { chave: 'deducao', rotulo: 'Valor do frasco a deduzir (US$)' },
+  { chave: 'valor_reembolsar', rotulo: 'Valor a reembolsar (US$)' },
+];
+const CHAVES_PARCIAL = ['percentual_reembolso', ...FILTROS_FAIXA.flatMap((f) => [`${f.chave}_min`, `${f.chave}_max`])];
 const VENCE_EM = [
   ['30', 'Vence em 30 minutos', (r) => r >= 0 && r <= 30],
   ['60', 'Vence em 1 hora', (r) => r > 30 && r <= 60],
@@ -270,12 +283,24 @@ let selecionados = new Set();
 let pendenciasInternas = [];
 
 /** Filtros por lista suspensa vão ao servidor (acham também tickets resolvidos/fechados); só "tempo restante" roda no navegador. */
-const paramsFiltros = () => Object.entries(filtros).filter(([k, v]) => v && k !== 'vence').map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join('');
+const paramsFiltros = () => {
+  const f = { ...filtros };
+  const st = statusDaAba(filaAba);
+  if (st) f.status_ticket = st;   // a aba de status manda no filtro de status
+  return Object.entries(f).filter(([k, v]) => v && k !== 'vence').map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join('');
+};
 const emConsulta = () => Boolean(busca) || Object.entries(filtros).some(([k, v]) => v && k !== 'vence');
+
+/** Com busca/filtro ligado a lista de resultados aparece (4º momento, item 9: "Todos atribuídos" saiu); sem eles, volta para a 1ª fila. */
+function irParaResultados() {
+  if (emConsulta()) { if (filaAba !== 'internas' && !statusDaAba(filaAba)) filaAba = 'resultados'; }
+  else if (filaAba === 'resultados') filaAba = 'primeiro';
+}
 
 function passaFiltros(c) {
   for (const f of FILTROS_LISTA) {
     const v = filtros[f.chave];
+    if (f.chave === 'status_ticket' && statusDaAba(filaAba)) continue;
     if (v && String(c[f.chave] ?? '') !== v) return false;
   }
   if (filtros.vence) {
@@ -355,7 +380,7 @@ async function montarBarraFiltros() {
   barra.className = 'esc-filtros';
   const campoBusca = document.createElement('input');
   campoBusca.type = 'search'; campoBusca.placeholder = 'Buscar por e-mail, nº do ticket, nº do pedido…'; campoBusca.className = 'esc-filtros-busca';
-  campoBusca.addEventListener('input', debounce(() => { busca = campoBusca.value.trim(); selecionados.clear(); linhasVisiveis = POR_PAGINA_FILA; if (busca && filaAba !== 'internas') filaAba = 'todos'; carregarFila(); }, 350));
+  campoBusca.addEventListener('input', debounce(() => { busca = campoBusca.value.trim(); selecionados.clear(); linhasVisiveis = POR_PAGINA_FILA; irParaResultados(); carregarFila(); }, 350));
   const detalhes = document.createElement('details');
   detalhes.className = 'esc-filtros-lista';
   const sum = document.createElement('summary');
@@ -369,7 +394,13 @@ async function montarBarraFiltros() {
   const aoMudar = (chave) => {
     atualizarTitulo(); selecionados.clear(); linhasVisiveis = POR_PAGINA_FILA;
     if (chave === 'vence') { renderFila(); return; }     // só no navegador
-    if (emConsulta() && filaAba !== 'internas') filaAba = 'todos';   // filtro/busca mostram tudo (inclusive encerrados) na lista "Todos"
+    if (chave === 'tipo_resolucao' || chave === '*') {   // os campos do reembolso parcial só valem com esse tipo
+      const parcial = filtros.tipo_resolucao === 'Reembolso parcial';
+      if (grupoParcial) grupoParcial.hidden = !parcial;
+      if (!parcial) for (const k of CHAVES_PARCIAL) delete filtros[k];
+      atualizarTitulo();
+    }
+    irParaResultados();   // filtro/busca mostram tudo (inclusive encerrados) numa lista própria de resultados
     carregarFila();
   };
   const campo = (chave, rotulo, itens) => {
@@ -384,12 +415,30 @@ async function montarBarraFiltros() {
     return rotuloDe(rotulo, sel);
   };
   grade.append(campo('vence', 'Tempo restante para responder', VENCE_EM.map(([v, t]) => [v, t])));
-  for (const f of FILTROS_LISTA) grade.append(campo(f.chave, f.rotulo, f.opcoes(opc) ?? []));
+  for (const f of FILTROS_LISTA) if (f.chave !== 'percentual_reembolso') grade.append(campo(f.chave, f.rotulo, f.opcoes(opc) ?? []));
+  // Grupo do Reembolso parcial: percentual (lista) + faixas de valor (de/até). Aparece só com o tipo "Reembolso parcial".
+  const grupoParcial = document.createElement('div');
+  grupoParcial.className = 'esc-filtros-parcial'; grupoParcial.hidden = filtros.tipo_resolucao !== 'Reembolso parcial';
+  const defPercentual = FILTROS_LISTA.find((f) => f.chave === 'percentual_reembolso');
+  grupoParcial.append(campo(defPercentual.chave, defPercentual.rotulo, defPercentual.opcoes(opc) ?? []));
+  for (const f of FILTROS_FAIXA) {
+    const faixa = (sufixo, rotulo) => {
+      const inp = document.createElement('input');
+      inp.type = 'number'; inp.min = '0'; inp.step = '0.01'; inp.placeholder = rotulo;
+      inp.value = filtros[`${f.chave}_${sufixo}`] ?? '';
+      inp.addEventListener('change', debounce(() => { filtros[`${f.chave}_${sufixo}`] = inp.value; aoMudar(`${f.chave}_${sufixo}`); }, 200));
+      return inp;
+    };
+    const par = document.createElement('div'); par.className = 'esc-filtros-faixa';
+    par.append(faixa('min', 'de'), faixa('max', 'até'));
+    grupoParcial.append(rotuloDe(f.rotulo, par));
+  }
+  grade.append(grupoParcial);
   const limpar = document.createElement('button');
   limpar.type = 'button'; limpar.className = 'btn'; limpar.textContent = 'Limpar filtros';
   limpar.addEventListener('click', () => {
     filtros = {};
-    for (const sel of grade.querySelectorAll('select')) sel.value = '';
+    for (const el of grade.querySelectorAll('select, input')) el.value = '';
     aoMudar('*');
   });
   grade.append(limpar);
@@ -417,7 +466,7 @@ function selarSla(caso) {
   }
   if (caso.restante_min === null || caso.fila === 'outros') {
     el.dataset.estado = 'espera';
-    el.textContent = caso.fila === 'outros' ? 'aguardando o cliente' : '—';
+    el.textContent = caso.status_ticket === 'Resolvido' || caso.status_ticket === 'Fechado' ? caso.status_ticket : (caso.fila === 'outros' ? 'aguardando o cliente' : '—');
     return el;
   }
   if (caso.restante_min < 0) { el.dataset.estado = 'estourado'; el.textContent = `estourado há ${minutosTxt(caso.restante_min)}`; }
@@ -507,15 +556,24 @@ function painelRanking(resumo) {
 function renderFila() {
   const raiz = $('sh-subaba-fila');
   const { resumo, casos, truncado } = filaDados;
-  const casosAba = (chave) => (chave === 'internas' ? pendenciasInternas : (chave === 'todos' ? casos : casos.filter((c) => c.fila === chave)).filter(passaFiltros));
+  const naAbaDeStatus = Boolean(statusDaAba(filaAba));
+  const casosAba = (chave) => (chave === 'internas' ? pendenciasInternas
+    : (chave === 'resultados' || statusDaAba(chave) ? casos : casos.filter((c) => c.fila === chave)).filter(passaFiltros));
+  // A lista carregada é a da aba ativa; as contagens das outras abas só valem quando elas são calculáveis sem nova consulta.
+  const rotuloAba = (f) => {
+    if (f.chave === 'internas') return `${f.rotulo} (${n(pendenciasInternas.length)})`;
+    if (statusDaAba(f.chave)) return filaAba === f.chave ? `${f.rotulo} (${n(casosAba(f.chave).length)})` : f.rotulo;
+    if (!emConsulta() && resumo[f.chave === 'primeiro' ? 'pendentes_primeira' : 'pendentes_segunda'] !== undefined) return `${f.rotulo} (${n(resumo[f.chave === 'primeiro' ? 'pendentes_primeira' : 'pendentes_segunda'])})`;
+    return naAbaDeStatus ? f.rotulo : `${f.rotulo} (${n(casosAba(f.chave).length)})`;
+  };
 
   const painel = document.createElement('section');
   painel.className = 'kpis kpis--suporte';
   const sla1 = slaResumo(resumo.sla_primeira);
   const sla2 = slaResumo(resumo.sla_segunda);
   painel.append(
-    kpiCard({ icone: '●', tom: 'atrasado', rotulo: 'Pendentes de 1ª resposta', valor: n(resumo.pendentes_primeira), nota: 'sem nenhuma resposta do agente', onClick: () => { filaAba = 'primeiro'; linhasVisiveis = POR_PAGINA_FILA; renderFila(); }, ativo: filaAba === 'primeiro' }),
-    kpiCard({ icone: '●', tom: 'travado', rotulo: 'Pendentes de 2ª resposta em diante', valor: n(resumo.pendentes_segunda), nota: 'o cliente escreveu de novo', onClick: () => { filaAba = 'segundo'; linhasVisiveis = POR_PAGINA_FILA; renderFila(); }, ativo: filaAba === 'segundo' }),
+    kpiCard({ icone: '●', tom: 'atrasado', rotulo: 'Pendentes de 1ª resposta', valor: n(resumo.pendentes_primeira), nota: 'sem nenhuma resposta do agente', onClick: () => { const antes = filaAba; filaAba = 'primeiro'; linhasVisiveis = POR_PAGINA_FILA; if (statusDaAba(antes)) carregarFila(); else renderFila(); }, ativo: filaAba === 'primeiro' }),
+    kpiCard({ icone: '●', tom: 'travado', rotulo: 'Pendentes de 2ª resposta em diante', valor: n(resumo.pendentes_segunda), nota: 'o cliente escreveu de novo', onClick: () => { const antes = filaAba; filaAba = 'segundo'; linhasVisiveis = POR_PAGINA_FILA; if (statusDaAba(antes)) carregarFila(); else renderFila(); }, ativo: filaAba === 'segundo' }),
     kpiCard({ icone: '●', tom: 'finalizado', rotulo: 'E-mails respondidos', valor: n(resumo.respondidos_hoje), nota: `${n(resumo.respondidos_tickets ?? 0)} tickets · ${rotuloPeriodo()} (1ª e 2ª resposta em diante)` }),
     kpiCard({ icone: '●', tom: 'em_dia', rotulo: 'SLA de 1ª resposta', valor: sla1.valor, nota: sla1.nota }),
     kpiCard({ icone: '●', tom: 'processando', rotulo: 'SLA de 2ª resposta em diante', valor: sla2.valor, nota: sla2.nota }),
@@ -526,14 +584,19 @@ function renderFila() {
   abas.setAttribute('role', 'tablist');
   const grupoAbas = document.createElement('div');
   grupoAbas.className = 'esc-fila-abas-grupo';
-  for (const f of FILAS) {
+  for (const f of (emConsulta() ? [ABA_RESULTADOS, ...FILAS] : FILAS)) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'subaba-btn';
     b.setAttribute('role', 'tab');
     b.setAttribute('aria-selected', String(filaAba === f.chave));
-    b.textContent = `${f.rotulo} (${n(casosAba(f.chave).length)})`;
-    b.addEventListener('click', () => { filaAba = f.chave; linhasVisiveis = POR_PAGINA_FILA; renderFila(); });
+    b.textContent = f.chave === 'resultados' ? `${f.rotulo} (${n(casosAba(f.chave).length)})` : rotuloAba(f);
+    b.addEventListener('click', () => {
+      const antes = filaAba;
+      filaAba = f.chave; linhasVisiveis = POR_PAGINA_FILA; selecionados.clear();
+      // Entrar ou sair de uma aba de status troca a consulta no servidor; as demais abas só reorganizam o que já veio.
+      if (statusDaAba(antes) || statusDaAba(f.chave)) carregarFila(); else renderFila();
+    });
     grupoAbas.append(b);
   }
   abas.append(grupoAbas, barraFiltros.campoBusca);
@@ -609,7 +672,7 @@ function renderFila() {
   renderTabela(corpo, linhas.slice(0, linhasVisiveis), colunasFila, {
     vazio: interna ? 'Nenhuma pendência interna para este board. 🎉'
       : (Object.values(filtros).some(Boolean) || busca ? 'Nenhum ticket encontrado com estes filtros.'
-        : (filaAba === 'todos' ? 'Nenhum ticket em aberto atribuído.' : 'Nada pendente de resposta nesta fila. 🎉')),
+        : (statusDaAba(filaAba) ? `Nenhum ticket com status ${statusDaAba(filaAba)}.` : 'Nada pendente de resposta nesta fila. 🎉')),
   });
 
   const nota = document.createElement('p');

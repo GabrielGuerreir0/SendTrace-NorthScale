@@ -2955,6 +2955,10 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .esc-filtros-lista { flex: 1 1 100%; }
 .esc-filtros-lista > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--tinta-2); }
 .esc-filtros-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px 14px; align-items: end; margin-top: 10px; }
+.esc-filtros-parcial { display: contents; }
+.esc-filtros-parcial[hidden] { display: none; }
+.esc-filtros-faixa { display: flex; gap: 6px; }
+.esc-filtros-faixa input { min-width: 0; flex: 1; }
 .esc-selecao { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 8px; font-size: 13px; }
 .esc-selecao-qtd { width: 72px; padding: 6px 8px; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--superficie); color: var(--tinta); }
 .esc-fila-email { display: flex; align-items: center; gap: 6px; }
@@ -3119,3 +3123,39 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 #rst-painel-fulfillments, #rst-painel-sppl { display: grid; gap: clamp(14px, 1.6vw, 20px); min-width: 0; }
 #rst-painel-fulfillments[hidden], #rst-painel-sppl[hidden] { display: none; }
 #rst-painel-fulfillments > *, #rst-painel-sppl > * { min-width: 0; }
+
+/* 4º momento da Késsia — formatação e anexos na resposta; anexos do cliente na conversa */
+.esc-atend-formato { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.esc-atend-formato .btn-icone { min-width: 34px; }
+.esc-fmt-b { font-weight: 800; }
+.esc-fmt-i { font-style: italic; }
+.esc-atend-anexos { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.esc-atend-anexo { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border: 1px solid var(--borda, #d0d4da); border-radius: 999px; font-size: 12px; background: var(--superficie-2); }
+.esc-atend-anexo button { border: 0; background: transparent; cursor: pointer; font-size: 15px; line-height: 1; color: inherit; }
+.ch-anexos { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.ch-anexos img { max-width: 160px; max-height: 120px; border-radius: 6px; border: 1px solid var(--borda, #d0d4da); display: block; object-fit: cover; }
+.ch-anexo-link { font-size: 13px; }
+.ch-anexos-caixa { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; align-items: flex-start; }
+
+/* Biblioteca de materiais (13/10/2026) */
+.bib-filtros { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 4px 0 8px; }
+.bib-busca { flex: 1 1 280px; min-width: 200px; }
+.bib-nicho { margin-top: 22px; }
+.bib-nicho-titulo { margin: 0 0 8px; font-family: var(--fonte-display); font-size: 1.15rem; }
+.bib-produto { margin-bottom: 12px; }
+.bib-produto-cab { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.bib-produto-qtd { color: var(--tinta-fraca); font-size: 12px; }
+.bib-lista { list-style: none; margin: 0; padding: 0; }
+.bib-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 10px 0; border-top: 1px solid var(--grade); }
+.bib-item:first-child { border-top: 0; }
+.bib-info { flex: 1 1 320px; min-width: 0; }
+.bib-titulo { font-weight: 600; overflow-wrap: anywhere; }
+.bib-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--tinta-fraca); margin-top: 2px; }
+.bib-tipo { font-weight: 600; color: var(--tinta-2); }
+.bib-desc { font-size: 13px; color: var(--tinta-2); margin-top: 2px; }
+.bib-acoes { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.bib-form { margin-bottom: 14px; }
+.bib-form-botoes { display: flex; gap: 8px; margin-top: 10px; }
+.bib-remover { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+@media (max-width: 640px) { .bib-acoes { width: 100%; } }
+.bib-acoes a.btn { text-decoration: none; }

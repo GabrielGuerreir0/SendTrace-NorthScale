@@ -47,7 +47,7 @@ import { pedidoDoCliente } from '../pedidoDoCliente.js';
 import {
   filtroEmails, filtroTickets, condicaoProdutoLoja, condicaoPeriodo, resolverEmailsProdutoLoja,
 } from '../filtrosEmailIA.js';
-import { acharNoWebmail, urlWebmail, webmailConfigurado } from '../webmail.js';
+import { acharNoWebmail, urlWebmail, webmailConfigurado, listarAnexosNaCaixa, baixarAnexoDaCaixa } from '../webmail.js';
 import { LABEL_CATEGORIA } from './relatorio.js';
 
 const rotuloCategoria = (c) => LABEL_CATEGORIA[c]
@@ -651,7 +651,9 @@ async function ultimosEmails(qs) {
   // (até 400 linhas, de clientes diferentes) isso só infligiria o payload
   // sem servir pra nada: ninguém lê corpo de e-mail numa tabela de resumo.
   const camposConversa = qs.email
-    ? ', corpo_texto, resposta_sugerida, resposta_enviada_em, resposta_automatica'
+    ? `, corpo_texto, resposta_sugerida, resposta_enviada_em, resposta_automatica,
+       (SELECT coalesce(json_agg(json_build_object('id', a.id, 'nome', a.nome_arquivo, 'mime_type', a.mime_type, 'tamanho', a.tamanho_bytes) ORDER BY a.id), '[]'::json)
+          FROM email_ia.anexos a WHERE a.message_id = email_ia.emails.message_id) AS anexos`
     : '';
   const { rows } = await query(
     `SELECT id, data_email, remetente_nome, remetente_email, assunto, categoria, sentimento, urgencia,
@@ -1001,6 +1003,41 @@ export default async function rotasEmailIACentral(app) {
     if (!achado) throw new ErroHttp(404, 'Não encontrei este e-mail na caixa (pode ter sido movido ou apagado por lá).');
 
     return { url: urlWebmail(achado.pasta, achado.uid), pasta: achado.pasta };
+  });
+
+  /* ═══════════  GET /api/emails/:id/anexos-caixa[/:parte]  ═══════════
+     PDF e outros arquivos que o cliente mandou (4º momento da Késsia, item 2): ficam só na caixa; aqui saem sob demanda, pelo IMAP. */
+  const lerEmailImap = async (id) => {
+    if (!webmailConfigurado) throw new ErroHttp(503, 'IMAP não configurado no servidor.');
+    const { rows: [e] } = await query('SELECT message_id, pasta_imap FROM email_ia.emails WHERE id = $1', [id]);
+    if (!e) throw new ErroHttp(404, 'E-mail não encontrado.');
+    return e;
+  };
+  app.get('/api/emails/:id/anexos-caixa', {
+    onRequest: [app.exigirSessao],
+    schema: { tags: ['Central de E-mail IA'], summary: 'Lista os anexos (PDF e outros, fora imagem) do e-mail, lidos na caixa real', security: [{ bearerAuth: [] }], params: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] } },
+  }, async (req) => {
+    const e = await lerEmailImap(req.params.id);
+    let anexos;
+    try { anexos = await listarAnexosNaCaixa(e.message_id, e.pasta_imap); } catch (err) { throw new ErroHttp(502, `Não consegui falar com a caixa de e-mail: ${err.message}`); }
+    if (anexos === null) throw new ErroHttp(404, 'Não encontrei este e-mail na caixa.');
+    return { anexos };
+  });
+  app.get('/api/emails/:id/anexos-caixa/:parte', {
+    onRequest: [app.exigirSessao],
+    schema: { tags: ['Central de E-mail IA'], summary: 'Baixa um anexo do e-mail direto da caixa real', security: [{ bearerAuth: [] }], params: { type: 'object', properties: { id: { type: 'integer' }, parte: { type: 'string', pattern: '^[0-9.]{1,20}$' } }, required: ['id', 'parte'] } },
+  }, async (req, resposta) => {
+    const e = await lerEmailImap(req.params.id);
+    let arq;
+    try { arq = await baixarAnexoDaCaixa(e.message_id, e.pasta_imap, req.params.parte); } catch (err) {
+      if (err.grande) throw new ErroHttp(413, err.message);
+      throw new ErroHttp(502, `Não consegui falar com a caixa de e-mail: ${err.message}`);
+    }
+    if (!arq) throw new ErroHttp(404, 'Anexo não encontrado neste e-mail.');
+    resposta.header('Content-Type', arq.mime_type || 'application/octet-stream');
+    resposta.header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(arq.nome)}`);
+    resposta.header('X-Content-Type-Options', 'nosniff');
+    return resposta.send(arq.conteudo);
   });
 
   /* ═══════════════════  boards do kanban de suporte escalado  ═════════════════

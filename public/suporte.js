@@ -39,6 +39,7 @@ const ABAS = {
   suporteescalado: 'aba-suporteescalado',
   suportehumano: 'aba-suportehumano',
   relatorioia: 'aba-relatorioia',
+  biblioteca: 'aba-biblioteca',
   rastreio: 'aba-rastreio',
   postmark: 'aba-postmark',
 };
@@ -56,6 +57,7 @@ const TITULOS = {
   suporteescalado: 'Suporte Escalado',
   suportehumano: 'Suporte Humano',
   relatorioia: 'Relatório de Métricas',
+  biblioteca: 'Biblioteca de materiais',
   rastreio: 'Rastreio de Pedidos',
   postmark: 'Postmark',
 };
@@ -68,7 +70,8 @@ let paginasPermitidas = null;
  * A API também recusa (403) quem chamar uma página sem acesso: isto aqui só evita mostrar botão que não abre.
  */
 export function aplicarAcessos(usuario) {
-  paginasPermitidas = usuario?.admin ? null : new Set((usuario?.acessos ?? []).map((a) => a.pagina));
+  // A Biblioteca de materiais é aberta a todo usuário logado (não depende de acesso marcado).
+  paginasPermitidas = usuario?.admin ? null : new Set([...(usuario?.acessos ?? []).map((a) => a.pagina), 'biblioteca']);
   for (const nome of Object.keys(ABAS)) {
     const liberada = paginasPermitidas === null || paginasPermitidas.has(nome);
     $(`aba-btn-${nome}`).hidden = !liberada;

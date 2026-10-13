@@ -21,6 +21,7 @@ import {
 import { n, dataHora, truncar } from './format.js';
 import { desenharColunas } from './charts.js';
 import { qsFiltroCE, aoMudarFiltroCE } from './emailFiltro.js';
+import { mdParaNos } from './formatoTexto.js';
 
 /* ═══════════════════════════════  estado  ═══════════════════════════════ */
 
@@ -156,7 +157,7 @@ function textoReal(corpo) {
   return t.trim();
 }
 
-export function balaoConversa(papel, remetente, texto, quando) {
+export function balaoConversa(papel, remetente, texto, quando, anexos = [], emailId = null) {
   const div = document.createElement('div');
   div.className = 'ch-balao';
   div.dataset.papel = papel;
@@ -170,14 +171,64 @@ export function balaoConversa(papel, remetente, texto, quando) {
   // deixar passar de outro jeito por markup nenhum — corpo_texto é texto
   // puro, não HTML, então não há risco de injeção aqui.
   txt.style.margin = '0';
-  txt.style.whiteSpace = 'pre-wrap';
-  txt.textContent = texto;
+  // Agente (4º momento, item 1): a marcação leve (**negrito**, listas, links) aparece formatada; os demais papéis seguem como texto puro.
+  const formatado = (papel === 'agente' || papel === 'falha') && /\*\*|__|(^|\n)\s*(\d{1,3}[.)]|[-•*])\s|\]\(|(^|[\s(])_\S|(^|[\s(])\*\S|https?:\/\//.test(texto ?? '');
+  if (formatado) txt.append(mdParaNos(texto)); else { txt.style.whiteSpace = 'pre-wrap'; txt.textContent = texto; }
   const hora = document.createElement('span');
   hora.className = 'ch-balao-hora';
   hora.textContent = quando ? dataHora(quando) : '';
-  corpo.append(rot, txt, hora);
+  corpo.append(rot);
+  if (texto) corpo.append(txt);
+  if (anexos?.length) corpo.append(blocoAnexos(anexos));
+  if (emailId) corpo.append(botaoOutrosAnexos(emailId));
+  corpo.append(hora);
   div.append(corpo);
   return div;
+}
+
+/** PDF e outros arquivos (não imagem) ficam só na caixa de e-mail: o botão busca a lista ao vivo e cada arquivo abre/baixa direto do SendTrace. */
+function botaoOutrosAnexos(emailId) {
+  const area = document.createElement('div');
+  area.className = 'ch-anexos-caixa';
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'btn ch-anexo-link'; btn.textContent = '📎 Ver PDF e outros arquivos deste e-mail';
+  btn.addEventListener('click', async () => {
+    btn.disabled = true; btn.textContent = 'Buscando na caixa de e-mail…';
+    const { ok, dados } = await api(`/api/emails/${emailId}/anexos-caixa`);
+    if (!ok) { btn.disabled = false; btn.textContent = '📎 Ver PDF e outros arquivos deste e-mail'; window.alert(dados?.erro ?? dados?.detail ?? 'Não consegui buscar os anexos na caixa.'); return; }
+    const lista = dados.anexos ?? [];
+    if (!lista.length) { btn.textContent = 'Este e-mail não tem PDF nem outros arquivos além das imagens.'; return; }
+    btn.remove();
+    for (const a of lista) {
+      const l = document.createElement('a');
+      l.href = `/api/emails/${emailId}/anexos-caixa/${encodeURIComponent(a.parte)}?nome=${encodeURIComponent(a.nome)}`;
+      l.target = '_blank'; l.rel = 'noopener noreferrer'; l.className = 'ch-anexo-link';
+      l.textContent = `📎 ${a.nome}${a.tamanho ? ` (${a.tamanho >= 1048576 ? `${(a.tamanho / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(a.tamanho / 1024))} KB`})` : ''}`;
+      area.append(l);
+    }
+  });
+  area.append(btn);
+  return area;
+}
+
+/** Anexos do e-mail do cliente (4º momento, item 2): foto aparece em miniatura (clique abre inteira); outro tipo vira link com o nome. */
+function blocoAnexos(anexos) {
+  const bloco = document.createElement('div');
+  bloco.className = 'ch-anexos';
+  for (const a of anexos) {
+    const link = document.createElement('a');
+    link.href = `/api/imagem/${a.id}`; link.target = '_blank'; link.rel = 'noopener noreferrer';
+    link.title = `${a.nome ?? 'anexo'}${a.tamanho ? ` · ${Math.max(1, Math.round(a.tamanho / 1024))} KB` : ''}`;
+    if (String(a.mime_type ?? '').startsWith('image/') && !/heic|dng|\*/.test(a.mime_type)) {
+      const im = document.createElement('img');
+      im.src = `/api/imagem/${a.id}`; im.alt = a.nome ?? 'anexo'; im.loading = 'lazy';
+      link.append(im);
+    } else {
+      link.className = 'ch-anexo-link'; link.textContent = `📎 ${a.nome ?? 'anexo'}`;
+    }
+    bloco.append(link);
+  }
+  return bloco;
 }
 
 /**
@@ -194,8 +245,9 @@ export function itensDaConversa({ emails, respostasAgente = [], boasVindas = nul
   const itens = [];
   for (const e of emOrdem) {
     const mensagemCliente = textoReal(e.corpo_texto);
-    if (mensagemCliente) {
-      itens.push({ papel: 'cliente', t: new Date(e.data_email ?? 0), b: balaoConversa('cliente', e.remetente_nome || e.remetente_email || 'Cliente', mensagemCliente, e.data_email) });
+    const anexosDoEmail = Array.isArray(e.anexos) ? e.anexos : [];
+    if (mensagemCliente || anexosDoEmail.length || e.tem_anexo) {
+      itens.push({ papel: 'cliente', t: new Date(e.data_email ?? 0), b: balaoConversa('cliente', e.remetente_nome || e.remetente_email || 'Cliente', mensagemCliente, e.data_email, anexosDoEmail, e.tem_anexo ? e.id : null) });
     }
     if (e.resposta_automatica && e.resposta_sugerida) {
       const quando = e.resposta_enviada_em ?? e.data_email;

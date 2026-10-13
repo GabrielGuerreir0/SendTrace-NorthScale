@@ -81,3 +81,55 @@ export async function acharNoWebmail(messageId, pastaSugerida) {
 export function urlWebmail(pasta, uid) {
   return `${enderecoWebmail}/mailboxes/${encodeURIComponent(pasta)}/${uid}?p=1&c=all`;
 }
+
+/* ═══════════════  anexos do e-mail do cliente (4º momento da Késsia, item 2)  ═══════════════
+   O sistema só guarda as imagens (email_ia.anexos). PDF e demais arquivos do cliente ficam na caixa: aqui eles são listados e baixados sob demanda
+   pelo IMAP (somente leitura). Mesma regra do restante do módulo: nunca marca como lido, nunca move, nunca apaga. */
+export const MAX_BYTES_ANEXO_IMAP = 25 * 1024 * 1024;
+
+async function comEmail(messageId, pastaSugerida, fazer) {
+  const achado = await acharNoWebmail(messageId, pastaSugerida);
+  if (!achado) return null;
+  const client = new ImapFlow({ host: HOST, port: PORTA, secure: true, auth: { user: USUARIO, pass: SENHA }, logger: false });
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock(achado.pasta);
+    try { return await fazer(client, achado.uid); } finally { lock.release(); }
+  } finally {
+    await client.logout().catch(() => client.close());
+  }
+}
+
+function partesAnexo(no, saida = []) {
+  if (!no) return saida;
+  if (no.childNodes?.length) { for (const f of no.childNodes) partesAnexo(f, saida); return saida; }
+  const nome = no.dispositionParameters?.filename || no.parameters?.name;
+  const tipo = String(no.type || '').toLowerCase();
+  const ehTexto = tipo === 'text/plain' || tipo === 'text/html';
+  if (nome && !(ehTexto && !no.disposition) && !tipo.startsWith('image/')) saida.push({ parte: no.part, nome, mime_type: tipo, tamanho: no.size ?? null });
+  return saida;
+}
+
+/** Lista os anexos que NÃO são imagem (PDF, documentos…). `null` = e-mail não achado na caixa. */
+export async function listarAnexosNaCaixa(messageId, pastaSugerida) {
+  if (!webmailConfigurado) throw new Error('IMAP não configurado.');
+  return comEmail(messageId, pastaSugerida, async (client, uid) => {
+    const m = await client.fetchOne(uid, { bodyStructure: true }, { uid: true });
+    return partesAnexo(m?.bodyStructure);
+  });
+}
+
+/** Baixa um anexo (parte MIME) do e-mail. `null` = não achado. Recusa arquivo acima de 25 MB. */
+export async function baixarAnexoDaCaixa(messageId, pastaSugerida, parte) {
+  if (!webmailConfigurado) throw new Error('IMAP não configurado.');
+  return comEmail(messageId, pastaSugerida, async (client, uid) => {
+    const m = await client.fetchOne(uid, { bodyStructure: true }, { uid: true });
+    const meta = partesAnexo(m?.bodyStructure).find((a) => a.parte === parte);   // só baixa o que a lista oferece
+    if (!meta) return null;
+    if (meta.tamanho && meta.tamanho > MAX_BYTES_ANEXO_IMAP * 1.4) throw Object.assign(new Error('Arquivo maior que 25 MB.'), { grande: true });
+    const { content } = await client.download(uid, parte, { uid: true });
+    const pedacos = []; let total = 0;
+    for await (const c of content) { total += c.length; if (total > MAX_BYTES_ANEXO_IMAP) throw Object.assign(new Error('Arquivo maior que 25 MB.'), { grande: true }); pedacos.push(c); }
+    return { ...meta, conteudo: Buffer.concat(pedacos) };
+  });
+}

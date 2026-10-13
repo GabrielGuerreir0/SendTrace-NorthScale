@@ -14,6 +14,7 @@ import {
 import { n, relativo, dataHora, duracaoH } from './format.js';
 import { desenharColunas } from './charts.js';
 import { abrirNaTabela } from './emailTickets.js';
+import { htmlColadoParaMd } from './formatoTexto.js';
 import { abrirModalEmails, itensDaConversa, carregarConversaDoCliente, balaoConversa } from './emailDetalhes.js';
 import { carregarFormularios } from './formulariosEscalado.js';
 
@@ -707,9 +708,9 @@ export function abrirDetalheEscalado(item) {
 function montarAtendimento(item, botaoTelaCheia) {
   const raiz = document.createElement('div');
   raiz.className = 'esc-atend';
-  const ABAS = [['humano', 'Atendimento humano'], ['ia', 'Atendimento IA'], ['tudo', 'Tudo'], ['historico', 'Histórico do ticket']];
+  const ABAS = [['tudo', 'Tudo'], ['humano', 'Atendimento humano'], ['ia', 'Atendimento IA'], ['historico', 'Histórico do ticket']];   // 4º momento, item 3: "Tudo" é a primeira e já abre nela
   const PAPEIS = { humano: ['cliente', 'agente', 'falha'], ia: ['cliente', 'ia', 'boasvindas', 'sistema'], tudo: null };
-  let aba = 'humano';
+  let aba = 'tudo';
   let itens = [];
   let carregado = false;
   let podeResponder = false;
@@ -732,7 +733,94 @@ function montarAtendimento(item, botaoTelaCheia) {
   const enviar = document.createElement('button'); enviar.type = 'submit'; enviar.className = 'btn btn-forte'; enviar.textContent = 'Responder';
   const rodape = document.createElement('div'); rodape.className = 'esc-atend-compor-rodape';
   rodape.append(para, contador, enviar);
-  compor.append(caixa, rodape);
+
+  /* ── 4º momento da Késsia, itens 1 e 2: formatação (negrito, itálico, lista numerada, link) e anexos (PDF/imagem, também print colado) ── */
+  const MAX_ANEXOS = 5; const MAX_BYTES = 10 * 1024 * 1024;
+  const TIPOS = ['application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+  let anexosPendentes = [];   // { id, nome, tamanho } já enviados ao servidor, esperando a resposta
+  const chips = document.createElement('div'); chips.className = 'esc-atend-anexos'; chips.hidden = true;
+  const arquivo = document.createElement('input'); arquivo.type = 'file'; arquivo.multiple = true; arquivo.hidden = true; arquivo.accept = 'application/pdf,image/png,image/jpeg,image/gif,image/webp';
+  const barraFormato = document.createElement('div'); barraFormato.className = 'esc-atend-formato';
+  const botaoFormato = (rotulo, titulo, aoClicar, classe = '') => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = `btn btn-icone ${classe}`.trim(); b.textContent = rotulo; b.title = titulo;
+    b.addEventListener('mousedown', (ev) => ev.preventDefault());   // não tira o foco/seleção do texto
+    b.addEventListener('click', aoClicar); return b;
+  };
+  const dispararInput = () => { caixa.dispatchEvent(new Event('input')); caixa.focus(); };
+  const envolver = (marca) => {
+    const { selectionStart: i, selectionEnd: f, value } = caixa;
+    const sel = value.slice(i, f) || 'texto';
+    caixa.setRangeText(`${marca}${sel}${marca}`, i, f, 'select');
+    caixa.setSelectionRange(i + marca.length, i + marca.length + sel.length); dispararInput();
+  };
+  const listaNumerada = () => {
+    const { selectionStart: i, selectionEnd: f, value } = caixa;
+    const ini = value.lastIndexOf('\n', i - 1) + 1; const fim = f === i ? (value.indexOf('\n', f) === -1 ? value.length : value.indexOf('\n', f)) : f;
+    const linhas = value.slice(ini, fim).split('\n').map((l) => l.replace(/^\s*(\d{1,3}[.)]|[-•])\s+/, ''));
+    caixa.setRangeText(linhas.map((l, k) => `${k + 1}. ${l}`).join('\n'), ini, fim, 'end'); dispararInput();
+  };
+  const inserirLink = () => {
+    const { selectionStart: i, selectionEnd: f, value } = caixa;
+    const url = window.prompt('Endereço do link (https://…):', 'https://');
+    if (!url || !/^(https?:\/\/|mailto:)/i.test(url.trim())) { if (url) window.alert('O link precisa começar com https:// ou http://.'); return; }
+    const rotulo = value.slice(i, f) || window.prompt('Texto que o cliente vai clicar:', '') || url.trim();
+    caixa.setRangeText(`[${rotulo}](${url.trim()})`, i, f, 'end'); dispararInput();
+  };
+  barraFormato.append(
+    botaoFormato('B', 'Negrito (Ctrl+B)', () => envolver('**'), 'esc-fmt-b'),
+    botaoFormato('I', 'Itálico (Ctrl+I)', () => envolver('_'), 'esc-fmt-i'),
+    botaoFormato('1.', 'Lista numerada', listaNumerada),
+    botaoFormato('🔗', 'Link', inserirLink),
+    botaoFormato('📎 Anexar', 'Anexar PDF ou imagem (também dá para colar um print no texto)', () => arquivo.click(), 'esc-fmt-anexar'),
+  );
+  caixa.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.shiftKey) return;
+    if (e.key.toLowerCase() === 'b') { e.preventDefault(); envolver('**'); } else if (e.key.toLowerCase() === 'i') { e.preventDefault(); envolver('_'); }
+  });
+
+  function desenharChips() {
+    chips.replaceChildren();
+    chips.hidden = anexosPendentes.length === 0;
+    for (const a of anexosPendentes) {
+      const c = document.createElement('span'); c.className = 'esc-atend-anexo';
+      c.textContent = `📎 ${a.nome} (${a.tamanho >= 1048576 ? `${(a.tamanho / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(a.tamanho / 1024))} KB`})`;
+      const x = document.createElement('button'); x.type = 'button'; x.textContent = '×'; x.title = 'Remover'; x.setAttribute('aria-label', `Remover ${a.nome}`);
+      x.addEventListener('click', () => { anexosPendentes = anexosPendentes.filter((y) => y.id !== a.id); desenharChips(); });
+      c.append(x); chips.append(c);
+    }
+  }
+  async function anexarArquivos(lista) {
+    for (const f of lista) {
+      if (anexosPendentes.length >= MAX_ANEXOS) { window.alert(`No máximo ${MAX_ANEXOS} arquivos por resposta.`); break; }
+      const tipo = f.type || '';
+      if (!TIPOS.includes(tipo)) { window.alert(`"${f.name}": só PDF e imagem (PNG, JPG, GIF ou WebP) podem ser anexados.`); continue; }
+      if (anexosPendentes.reduce((t, a) => t + a.tamanho, 0) + f.size > MAX_BYTES) { window.alert('Os anexos passam de 10 MB no total.'); break; }
+      const chipEspera = document.createElement('span'); chipEspera.className = 'esc-atend-anexo'; chipEspera.textContent = `⏳ Subindo ${f.name}…`;
+      chips.hidden = false; chips.append(chipEspera);
+      const base64 = await new Promise((ok) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] ?? ''); r.onerror = () => ok(''); r.readAsDataURL(f); });
+      const nome = /^image\.(png|jpe?g|gif|webp)$/i.test(f.name) ? `print-${new Date().toTimeString().slice(0, 8).replace(/:/g, '')}.${tipo.split('/')[1].replace('jpeg', 'jpg')}` : f.name;
+      const { ok, dados } = base64 ? await api(`/api/suporte-escalado/${item.id}/anexos-envio`, { metodo: 'POST', corpo: { nome, mime_type: tipo, base64 } }) : { ok: false, dados: { erro: 'Não consegui ler o arquivo.' } };
+      chipEspera.remove();
+      if (!ok) window.alert(`"${f.name}": ${dados?.erro ?? dados?.detail ?? dados?.message ?? 'não consegui anexar.'}`);
+      else anexosPendentes.push({ id: dados.id, nome: dados.nome, tamanho: dados.tamanho_bytes });
+      desenharChips();
+    }
+  }
+  arquivo.addEventListener('change', () => { const l = [...arquivo.files]; arquivo.value = ''; anexarArquivos(l); });
+  // Colar: print/imagem da área de transferência vira anexo; texto formatado (negrito, lista…) vira a marcação leve em vez de perder a formatação ou mandar asteriscos.
+  caixa.addEventListener('paste', (e) => {
+    const cb = e.clipboardData; if (!cb) return;
+    const arquivos = [...cb.files].filter((f) => TIPOS.includes(f.type));
+    if (arquivos.length && !cb.getData('text/plain').trim()) { e.preventDefault(); anexarArquivos(arquivos); return; }
+    const html = cb.getData('text/html');
+    if (html && /<(strong|b|em|i|ol|ul|li|a)[\s>]/i.test(html)) {
+      const md = htmlColadoParaMd(html);
+      if (md) { e.preventDefault(); caixa.setRangeText(md, caixa.selectionStart, caixa.selectionEnd, 'end'); dispararInput(); }
+    }
+  });
+  compor.append(barraFormato, caixa, chips, arquivo, rodape);
+  compor.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.types ?? [])].includes('Files')) e.preventDefault(); });
+  compor.addEventListener('drop', (e) => { if (e.dataTransfer?.files?.length) { e.preventDefault(); anexarArquivos([...e.dataTransfer.files]); } });
 
   const contar = (papeis) => itens.filter((i) => papeis.includes(i.papel)).length;
   function desenhar() {
@@ -821,17 +909,20 @@ function montarAtendimento(item, botaoTelaCheia) {
   compor.addEventListener('submit', async (e) => {
     e.preventDefault();
     const texto = caixa.value.trim();
-    if (!texto) return;
+    const anexosEnvio = anexosPendentes;
+    if (!texto && !anexosEnvio.length) return;
     const destino = para.hidden ? item.remetente_email : para.value;
     // Sem pergunta de confirmação e sem esperar a SMTP: a resposta já aparece como enviada e o envio segue em segundo plano.
     const agora = new Date();
-    itens.push({ papel: 'agente', t: agora, b: balaoConversa('agente', '👤 Agente', texto, agora) });
+    const textoTela = [texto, ...(anexosEnvio.length ? [`📎 ${anexosEnvio.map((a) => a.nome).join(', ')}`] : [])].filter(Boolean).join('\n\n');
+    itens.push({ papel: 'agente', t: agora, b: balaoConversa('agente', '👤 Agente', textoTela, agora) });
     caixa.value = ''; contador.textContent = '0/8000';
+    anexosPendentes = []; desenharChips();
     desenhar();
-    const { ok, dados } = await api(`/api/suporte-escalado/${item.id}/responder`, { metodo: 'POST', corpo: { texto, para_email: destino } });
+    const { ok, dados } = await api(`/api/suporte-escalado/${item.id}/responder`, { metodo: 'POST', corpo: { texto, para_email: destino, ...(anexosEnvio.length ? { anexos: anexosEnvio.map((a) => a.id) } : {}) } });
     if (!ok) {
-      // Só recusa imediata (sem permissão, resposta duplicada, envio não configurado): devolve o texto para o agente não perder o que escreveu.
-      caixa.value = texto; contador.textContent = `${texto.length}/8000`;
+      // Só recusa imediata (sem permissão, resposta duplicada, envio não configurado): devolve o texto e os anexos para o agente não perder o que fez.
+      caixa.value = texto; contador.textContent = `${texto.length}/8000`; anexosPendentes = anexosEnvio; desenharChips();
       window.alert(dados?.erro ?? dados?.detail ?? dados?.message ?? 'Não consegui enviar a resposta.');
       carregado = false; desenhar(); carregar();
       return;
