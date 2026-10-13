@@ -33,7 +33,7 @@ import { criarTradutor, idiomaAtual, montarSeletorIdioma } from './i18n.js';
 import './rastreioSppl.js';   // SPPL: regras e feriados (seção recolhível no fim da aba)
 import './rastreioAlertas.js';   // SPPL: alertas de logística (ocorrências) e cobranças
 import './rastreioLogistica.js';   // SPPL: saúde, relatório e não encontrados da Red Rock
-import { abrirLinhaTempo17, montarResumo17 } from './linhaTempo17.js';
+import { abrirLinhaTempo17, montarResumo17, statusPrincipal17 } from './linhaTempo17.js';
 
 /** dia (col. `date` do Postgres, "AAAA-MM-DD" sem hora/fuso) → "DD/MM" sem
  * passar por `new Date()`: um `date` puro seria lido como meia-noite UTC e o
@@ -252,6 +252,7 @@ const DIC = {
   fichaNao: { en: 'No', pt: 'Não' },
   fichaTransportadora: { en: 'Carrier', pt: 'Transportadora' },
   fichaCodigoRastreio: { en: 'Tracking code', pt: 'Código de rastreio' },
+  fichaStatusFulfillment: { en: 'Fulfillment (Red Rock)', pt: 'Fulfillment (Red Rock)' },
   fichaStatusTransportadora: { en: 'Carrier status', pt: 'Status na transportadora' },
   fichaLinkRastreio: { en: 'Tracking link', pt: 'Link de rastreio' },
   fichaEnviadoEm: { en: 'Shipped at', pt: 'Enviado em' },
@@ -533,11 +534,13 @@ async function abrirDetalhePedido(linha) {
     linkRastreio.textContent = d.tracking_url;
   }
 
+  const principal17 = statusPrincipal17(d);
   abrirFicha({
     titulo: d.transacao_id,
     subtitulo: d.nome || '',
     campos: [
-      { rotulo: t('fichaStatus'), valor: chipRastreio(d.status_interno) },
+      { rotulo: t('fichaStatus'), valor: principal17 || chipRastreio(d.status_interno) },
+      principal17 && { rotulo: t('fichaStatusFulfillment'), valor: chipRastreio(d.status_interno) },
       d.status_interno === 'exception' && d.ultimo_erro
         && { rotulo: t('fichaErroUltimaConsulta'), valor: d.ultimo_erro, largo: true },
       d.status_interno === 'desconhecido'

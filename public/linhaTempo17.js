@@ -31,6 +31,7 @@ const DIC = {
   etapa0: { en: 'Label created', pt: 'Etiqueta criada' }, etapa1: { en: 'In transit', pt: 'Em trânsito' },
   etapa2: { en: 'Out for delivery', pt: 'Saiu para entrega' }, etapa3: { en: 'Delivered', pt: 'Entregue' },
   fonte: { en: 'Source: 17TRACK · updated {quando}', pt: 'Fonte: 17TRACK · atualizado {quando}' },
+  fonte17: { en: 'via 17TRACK', pt: 'via 17TRACK' },
   verCompleta: { en: 'View the full timeline ({n} events)', pt: 'Ver a linha do tempo completa ({n} eventos)' },
 };
 const t = criarTradutor(DIC);
@@ -118,6 +119,21 @@ function blocoResumo(d, eventos) {
     const aviso = el('p', 'lt17-aviso', `⚠ ${t('alertaExc')}${registro?.ultimo_substatus ? ` ${rotuloSub(registro.ultimo_substatus)}.` : ''}`); aviso.setAttribute('role', 'alert'); frag.append(aviso);
   }
   return frag;
+}
+
+/** Status principal da ficha: o do 17TRACK (fonte de verdade) com a data do último evento; null quando o pedido não tem dado do 17TRACK. */
+export function statusPrincipal17(d) {
+  const eventos = (d.historico_17track ?? []).filter((e) => e.ocorreu_em);
+  const reg = d.registro_17track;
+  const st = reg?.ultimo_status || (eventos[0] ? statusEvento(eventos[0]) : '');
+  if (!st) return null;
+  const info = infoStatus(st);
+  const caixa = el('span', 'lt17-principal');
+  const pilula = el('span', `lt17-pilula lt17-pilula--p lt17-tom--${info.tom}`);
+  pilula.append(el('span', 'lt17-icone', info.icone), document.createTextNode(` ${info[idioma()]}${reg?.ultimo_substatus && detalheEvento({ substatus: reg.ultimo_substatus }) ? ` · ${detalheEvento({ substatus: reg.ultimo_substatus })}` : ''}`));
+  caixa.append(pilula);
+  if (eventos[0]) caixa.append(el('span', 'lt17-principal__quando', ` ${dataHora(eventos[0].ocorreu_em)} · ${t('fonte17')}`));
+  return caixa;
 }
 
 /** Resumo compacto para a ficha do pedido: status, etapas, os 3 últimos eventos e o botão da linha do tempo completa (a lista longa NÃO fica na ficha). */
