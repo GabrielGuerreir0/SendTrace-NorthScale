@@ -67,6 +67,12 @@ const ROTULO_STATUS = {
   delivered: { en: 'Delivered', pt: 'Entregue' },
   cancelled: { en: 'Cancelled', pt: 'Cancelado' },
 };
+/** O 17TRACK é a fonte de verdade da entrega: se ele diz Entregue, o pedido está entregue mesmo que a fulfillment ainda esteja em "shipped". Cancelado nunca é sobrescrito. */
+function statusEfetivo(dados) {
+  if (dados.status_interno === 'cancelled') return 'cancelled';
+  if (dados.fonte_17track?.disponivel && dados.fonte_17track.ultimo_status === 'Delivered') return 'delivered';
+  return dados.status_interno;
+}
 const rotuloStatus = (statusInterno) => ROTULO_STATUS[statusInterno]?.[idiomaAtual()] ?? t('statusIndisponivel');
 
 /** As 3 etapas da jornada, em ordem — cancelado é tratado à parte (não é um degrau, é um desvio). */
@@ -142,6 +148,14 @@ function renderizarEtapas(statusAtual, eventos) {
   }
 }
 
+/** Data da entrega vinda do 17TRACK (evento mais recente) — usada quando a fulfillment ainda não registrou. */
+function eventosComEntrega(dados, status) {
+  const base = dados.eventos ?? [];
+  if (status !== 'delivered' || base.some((e) => e.status === 'delivered')) return base;
+  const ultimo = (dados.historico_17track ?? []).find((e) => e.em);
+  return ultimo ? [...base, { status: 'delivered', em: ultimo.em }] : base;
+}
+
 /** Atualizações da transportadora (17TRACK). Texto sempre por textContent: o que a transportadora escreve nunca vira HTML. Sem dado, avisa e mantém o resto da tela. */
 function renderizarHistorico(dados) {
   const lista = $('r-historico-lista');
@@ -177,7 +191,8 @@ function renderizarResultado(dados) {
   $('r-resultado').hidden = false;
   $('r-sem-info').hidden = true;
 
-  $('r-status-rotulo').textContent = rotuloStatus(dados.status_interno);
+  const status = statusEfetivo(dados);
+  $('r-status-rotulo').textContent = rotuloStatus(status);
   $('r-produto').textContent = dados.produto || '';
   $('r-produto').hidden = !dados.produto;
 
@@ -188,8 +203,9 @@ function renderizarResultado(dados) {
       carrier: dados.carrier_code || t('transportadoraFallback'),
       codigo: dados.tracking_number,
     });
-    $('r-tracking-status').textContent = dados.tracking_status || '';
-    $('r-tracking-status').hidden = !dados.tracking_status;
+    const textoTrans = status === 'delivered' && dados.status_interno !== 'delivered' ? '' : dados.tracking_status;
+    $('r-tracking-status').textContent = textoTrans || '';
+    $('r-tracking-status').hidden = !textoTrans;
     const link = $('r-tracking-url');
     link.textContent = t('botaoTransportadora');
     if (dados.tracking_url) {
@@ -200,7 +216,7 @@ function renderizarResultado(dados) {
     }
   }
 
-  renderizarEtapas(dados.status_interno, dados.eventos);
+  renderizarEtapas(status, eventosComEntrega(dados, status));
   renderizarHistorico(dados);
 }
 

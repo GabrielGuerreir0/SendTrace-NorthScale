@@ -3206,3 +3206,10 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .lt17-principal { --lt-verde: var(--st-finalizado); --lt-azul: #4260e6; --lt-ambar: var(--st-atrasado); --lt-vermelho: var(--st-travado); --lt-cinza: var(--st-cancelado); --lt-ciano: var(--st-em-dia); display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .lt17-pilula--p { padding: 4px 12px; font-size: 13px; }
 .lt17-principal__quando { color: var(--texto-suave, #8a93a6); font-size: 12px; }
+
+/* /rastreio público: o painel da arte acompanha a rolagem (antes o texto ficava centrado numa coluna de 2 mil px e sumia), botão da transportadora legível e respiro antes do histórico */
+.login-palco:has(#r-resultado) .login-arte { align-self: start; position: sticky; top: 24px; min-height: 360px; }
+#r-tracking-url, #r-tracking-url:visited { color: #fff; text-decoration: none; }
+#r-historico { margin-top: 28px; }
+#r-historico-tit { margin: 0 0 4px; font-weight: 620; color: var(--tinta); }
+.rastreio-etapa-data:empty { display: none; }
