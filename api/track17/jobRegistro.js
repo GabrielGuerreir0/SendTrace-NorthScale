@@ -5,6 +5,7 @@
  * Cuidados:
  *  - só pedido ABERTO (enviado, não cancelado) e que NÃO foi reembolsado nem sofreu chargeback;
  *  - o 17TRACK detecta a transportadora (não mandamos a nossa: o nome que a FullStack envia não é confiável);
+ *  - só registra pedido enviado nos últimos `sppl_17track_janela_dias` dias (padrão 30; 0 = sem limite): pedido antigo não entra na carga nem gera card (decisão do Lucas, 13/10/2026);
  *  - não gasta cota sem limite: para quando restar `sppl_17track_cota_reserva` (padrão 20) e respeita `sppl_17track_lote_por_rodada` (padrão 200);
  *  - código recusado (ex.: USPS sem pacote pago) NÃO é reenviado a cada rodada: depois de comprar o pacote, reabra com
  *    `UPDATE rastreio_17t_registros SET situacao_registro='pendente' WHERE situacao_registro='recusado' AND motivo_recusa ILIKE '%USPS%'`.
@@ -19,11 +20,12 @@ const num = (v, padrao) => { const n = Number(v); return Number.isFinite(n) && n
 async function config() {
   const { rows } = await query(`SELECT chave, valor FROM config_disparos WHERE chave LIKE 'sppl_17track_%'`);
   const c = Object.fromEntries(rows.map((r) => [r.chave, r.valor]));
-  return { ativo: c.sppl_17track_ativo === 'true', reserva: num(c.sppl_17track_cota_reserva, 20), lote: Math.min(num(c.sppl_17track_lote_por_rodada, 200), 1000) };
+  return { ativo: c.sppl_17track_ativo === 'true', reserva: num(c.sppl_17track_cota_reserva, 20), lote: Math.min(num(c.sppl_17track_lote_por_rodada, 200), 1000),
+    janelaDias: Math.floor(num(c.sppl_17track_janela_dias, 30)) };
 }
 
 /** Códigos a registrar: abertos, com código, sem registro (ou 'pendente'), fora reembolso/chargeback/cancelado. Os mais recentes primeiro. */
-export async function candidatos(limite) {
+export async function candidatos(limite, janelaDias = 30) {
   const { rows } = await query(
     `SELECT DISTINCT ON (p.tracking_number) p.tracking_number AS numero, p.shipped_at
        FROM rastreio_pedidos p
@@ -32,8 +34,9 @@ export async function candidatos(limite) {
       WHERE p.tracking_number <> '' AND p.status_interno = 'shipped'
         AND (r.numero IS NULL OR r.situacao_registro = 'pendente')
         AND d.reembolsado_em IS NULL AND d.chargeback_em IS NULL
+        AND ($2::int = 0 OR p.shipped_at >= now() - make_interval(days => $2::int))   -- só pedidos recentes (janela em dias; 0 = sem limite)
       ORDER BY p.tracking_number, p.shipped_at DESC NULLS LAST
-      LIMIT $1`, [limite * 3]);
+      LIMIT $1`, [limite * 3, janelaDias]);
   return rows.sort((a, b) => String(b.shipped_at).localeCompare(String(a.shipped_at))).slice(0, limite).map((r) => r.numero);
 }
 
@@ -46,7 +49,7 @@ export async function registrarPendentes({ cliente = clientePadrao, forcar = fal
   const restante = cota.quota_remain;
   const disponivel = Math.min(cfg.lote, Math.max(0, Number(restante) - cfg.reserva));
   if (disponivel <= 0) return { rodou: false, motivo: 'cota na reserva', restante };
-  const numeros = await candidatos(disponivel);
+  const numeros = await candidatos(disponivel, cfg.janelaDias);
   if (!numeros.length) return { rodou: true, candidatos: 0, aceitos: 0, recusados: 0, restante };
   const { aceitos, recusados } = await cliente.registrar(numeros);
   await gravarRegistro({ aceitos, recusados });
