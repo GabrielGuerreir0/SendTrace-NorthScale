@@ -98,7 +98,7 @@ export default async function rotasSuporteEscaladoFila(app) {
     // Cache de 10 s (a lista) e de 60 s (a média do SLA, que quase não muda): vários agentes e a recarga automática dividem a mesma consulta.
     const chave = `fila:${todos ? 'todos' : boardId}`;
     const chaveCasos = `${chave}:${q}:${JSON.stringify(Object.keys(FILTROS_SQL).map((k) => req.query[k] ?? ''))}`;
-    const [casosRes, resumoRes, hojeRes, slaRes, falhasRes, rankingRes, slaEquipeRes, statusRes] = await Promise.all([
+    const [casosRes, resumoRes, hojeRes, slaRes, falhasRes, rankingRes, statusRes, slaEquipeRes] = await Promise.all([
       memo(`${chaveCasos}:casos`, 10_000, () => query(
         `SELECT s.id, s.remetente_email, s.nome, e.assunto, s.status, s.tag_motivo, s.prioridade_nivel, s.prioridade, s.board_id,
                 b.nome AS agente, s.email_id, s.iniciado_em, s.finalizado_em, s.alerta_ameaca, s.criado_em, s.ultimo_email_cliente_em, s.primeira_resposta_agente_em, s.ultima_resposta_agente_em,
