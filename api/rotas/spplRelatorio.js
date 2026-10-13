@@ -27,7 +27,6 @@ export default async function rotasSpplRelatorio(app) {
       ok: problemas.length === 0, problemas,
       interruptores: {
         motor: cfg.sppl_motor_ativo === 'true', registro_17track: cfg.sppl_17track_ativo === 'true', reconciliacao_17track: cfg.sppl_17track_reconciliar_ativo === 'true',
-        sorteio: cfg.sppl_sorteio_ativo === 'true', cards: cfg.sppl_cards_ativo === 'true',
       },
       cota_restante: cfg.sppl_17track_cota_restante === '' || cfg.sppl_17track_cota_restante === undefined ? null : Number(cfg.sppl_17track_cota_restante),
       cota_lida_em: cfg.sppl_17track_cota_restante_em || null,

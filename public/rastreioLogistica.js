@@ -62,7 +62,6 @@ function desenharSaude() {
   const onoff = (b) => ({ txt: b ? t('saLigado') : t('saDesligado'), on: b ? '1' : '0' });
   const linhas = [
     [t('saMotor'), onoff(s.interruptores.motor)], [t('saRegistro'), onoff(s.interruptores.registro_17track)], [t('saReconc'), onoff(s.interruptores.reconciliacao_17track)],
-    [t('saSorteio'), onoff(s.interruptores.sorteio)], [t('saCards'), onoff(s.interruptores.cards)],
     [t('saCota'), s.cota_restante === null ? t('saDesconhecida') : String(s.cota_restante)],
     [t('saUltWebhook'), quando(s.ultimo_webhook_em)], [t('saUltReconc'), quando(s.ultima_reconciliacao_em)], [t('saUltRedRock'), quando(s.ultima_consulta_redrock)],
     [t('saAcompanhando'), String(s.em_acompanhamento)], [t('saRecusados'), `${s.registros_17track.recusado} / ${s.registros_17track.sem_dado}`], [t('saAbertas'), String(s.ocorrencias_abertas)],

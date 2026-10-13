@@ -15,11 +15,10 @@ import { query, pool } from '../../server/db.js';
 const num = (v, p) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? n : p; };
 
 export async function configMotor() {
-  const { rows } = await query(`SELECT chave, valor FROM config_disparos WHERE chave LIKE 'sppl_motor_%' OR chave IN ('sppl_sorteio_ativo', 'sppl_cards_ativo')`);
+  const { rows } = await query(`SELECT chave, valor FROM config_disparos WHERE chave LIKE 'sppl_motor_%'`);
   const c = Object.fromEntries(rows.map((r) => [r.chave, r.valor]));
   return {
     ativo: c.sppl_motor_ativo === 'true', maxNovas: Math.min(num(c.sppl_motor_max_novas_por_rodada, 200), 5000),
-    sorteio: c.sppl_sorteio_ativo === 'true', cards: c.sppl_cards_ativo === 'true',
   };
 }
 
@@ -137,41 +136,10 @@ export async function fechar() {
   return rowCount;
 }
 
-/**
- * Dá dono às ocorrências abertas que ainda têm o responsável GENÉRICO da regra (ninguém mexeu) e nenhum board. Sorteio ponderado
- * (email_ia.sppl_escolher_board, migração 092). Sem board elegível, deixa como está. Uma por vez: o peso depende de quantas o agente já tem.
+/*
+ * DECISÃO DO LUCAS (13/10/2026): alertas de logística NÃO têm responsável e NÃO geram card no Suporte Humano nem no Suporte Escalado — ficam só na tela de Alertas, para
+ * quem tiver acesso resolver. Por isso o sorteio de responsável e a abertura de cards foram REMOVIDOS daqui (e do banco: migração 100). Não recriar.
  */
-export async function atribuir({ limite = 500 } = {}) {
-  const { rows } = await query(
-    `SELECT o.id, o.transacao_id FROM sppl_ocorrencias o JOIN sppl_regras g ON g.id = o.regra_id
-      WHERE o.board_id IS NULL AND o.situacao NOT IN ('resolvida','cancelada') AND o.responsavel IS NOT DISTINCT FROM g.responsavel
-      ORDER BY o.prioridade, o.aberta_em LIMIT $1`, [limite]);
-  let n = 0;
-  for (const { id, transacao_id } of rows) {
-    // dono do lead de e-mail (se o cliente já tem card no Suporte Escalado); sem card, sorteio ponderado (migração 095)
-    const b = (await query('SELECT email_ia.sppl_escolher_board_para($1) AS board_id', [transacao_id])).rows[0].board_id;
-    if (!b) break;   // ninguém elegível: não adianta tentar as outras
-    const r = await query(
-      // $2::bigint nos DOIS usos: em produção suporte_escalado_boards.id é bigint e sppl_ocorrencias.board_id é integer — sem o cast o Postgres
-      // deduz dois tipos para o mesmo parâmetro ("inconsistent types deduced for parameter $2") e o sorteio falha (12/10/2026).
-      `UPDATE sppl_ocorrencias o SET board_id = $2::bigint, atualizado_em = now(),
-              responsavel = coalesce((SELECT nome FROM email_ia.suporte_escalado_boards WHERE id = $2::bigint), o.responsavel)
-        WHERE o.id = $1 AND o.board_id IS NULL`, [id, b]);
-    n += r.rowCount;
-  }
-  return n;
-}
-
-/** Abre o card do cliente no Suporte Escalado para ocorrência que exige contato (regra com contata_cliente) e ainda sem card. */
-export async function abrirCards({ limite = 100 } = {}) {
-  const { rows } = await query(
-    `SELECT o.id FROM sppl_ocorrencias o JOIN sppl_regras g ON g.id = o.regra_id
-      WHERE g.contata_cliente AND o.caso_id IS NULL AND o.board_id IS NOT NULL AND o.situacao NOT IN ('resolvida','cancelada')
-      ORDER BY o.prioridade, o.aberta_em LIMIT $1`, [limite]);
-  let n = 0;
-  for (const { id } of rows) { const r = await query('SELECT public.sppl_abrir_card($1) AS caso', [id]); if (r.rows[0].caso) n++; }
-  return n;
-}
 
 /**
  * Resolve sozinho o alerta cuja CONDIÇÃO deixou de valer: o pedido ganhou código de rastreio, a etiqueta foi coletada, o pacote voltou a se mover, saiu da exceção.
@@ -218,10 +186,8 @@ export async function rodar({ forcar = false, log = () => {} } = {}) {
   const fechadas = await fechar();
   const superadas = await resolverSuperadas().catch((e) => { log(`SPPL: fechamento por condição falhou: ${e.message}`); return e.parcial ?? 0; });
   const abertas = await abrir({ maxNovas: cfg.maxNovas });
-  const atribuidas = cfg.sorteio ? await atribuir().catch((e) => { log(`SPPL: sorteio falhou: ${e.message}`); return 0; }) : 0;
-  const cards = cfg.cards ? await abrirCards().catch((e) => { log(`SPPL: card falhou: ${e.message}`); return 0; }) : 0;
   const total = Object.values(abertas).reduce((a, b) => a + b, 0);
-  if (total || fechadas || superadas || atribuidas || cards) log(`SPPL: ${total} ocorrências abertas, ${fechadas} fechadas, ${superadas} resolvidas por condição superada, ${atribuidas} com responsável sorteado, ${cards} cards`);
-  return { rodou: true, abertas, fechadas, superadas, atribuidas, cards };
+  if (total || fechadas || superadas) log(`SPPL: ${total} ocorrências abertas, ${fechadas} fechadas, ${superadas} resolvidas por condição superada`);
+  return { rodou: true, abertas, fechadas, superadas };
 }
 void pool;
