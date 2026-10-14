@@ -8,9 +8,10 @@ import { ErroHttp } from '../comum.js';
 
 const QUADROS = [1, 2, 3, 4, 5];
 
-/** Produtos do pedido (principal + upsells/downsells), garrafas e valor: do dash quando existe; senão o produto da fila + compras de upsell na janela de 6 h. */
+/** Roda sobre `pag` (a página já recortada da view `sppl_logistica`, ver `consultaPagina`): os joins pesados só valem para as linhas que saem.
+ * Produtos do pedido (principal + upsells/downsells), garrafas e valor: do dash quando existe; senão o produto da fila + compras de upsell na janela de 6 h. */
 export const SELECT_RELATORIO = `
-  SELECT l.transacao_id, l.numero_pedido, l.nome, l.email, l.plataforma, l.quadro, l.sem_17track,
+  SELECT l.total_filtro, l.transacao_id, l.numero_pedido, l.nome, l.email, l.plataforma, l.quadro, l.sem_17track,
          p.endereco_entrega AS endereco,
          l.fulfillment, coalesce(t17.provedor, l.carrier_code) AS transportadora,
          coalesce(dash.produtos, l.produto || coalesce(' + ' || cud.itens, '')) AS produtos,
@@ -20,7 +21,7 @@ export const SELECT_RELATORIO = `
          l.data_pedido, l.idade_dias, l.ultima_movimentacao_em, l.dias_sem_movimentacao,
          coalesce(l.ultimo_substatus, l.ultimo_status) AS ultimo_status,
          tk.id AS ticket_id, tk.status_ticket
-    FROM sppl_logistica l
+    FROM pag l
     JOIN rastreio_pedidos p ON p.transacao_id = l.transacao_id
     LEFT JOIN LATERAL (SELECT e.provedor_17t AS provedor FROM rastreio_17t_eventos e WHERE e.numero = l.numero_17t AND e.provedor_17t IS NOT NULL ORDER BY e.ocorreu_em DESC LIMIT 1) t17 ON true
     LEFT JOIN LATERAL (
@@ -54,10 +55,10 @@ export default async function rotasSpplLogistica(app) {
     onRequest: [app.exigirSessao],
     schema: { tags: ['Rastreio'], summary: 'SPPL — contagem dos 5 quadros do Monitoramento Logístico', security: [{ bearerAuth: [] }] },
   }, async () => {
-    const { rows } = await query(`SELECT quadro, count(*)::int AS n FROM sppl_logistica WHERE quadro IS NOT NULL GROUP BY 1`);
+    const { rows } = await query(`SELECT quadro, count(*)::int AS n, count(*) FILTER (WHERE sem_17track)::int AS sem17 FROM sppl_logistica GROUP BY 1`);
     const quadros = Object.fromEntries(QUADROS.map((q) => [q, rows.find((r) => r.quadro === q)?.n ?? 0]));
-    const extra = (await query(`SELECT (SELECT count(*)::int FROM sppl_logistica WHERE sem_17track) AS sem_17track,
-                                       (SELECT count(*)::int FROM sppl_ativo_tickets WHERE status_ticket <> 'fechado') AS tickets_abertos`)).rows[0];
+    const extra = (await query(`SELECT (SELECT count(*)::int FROM sppl_ativo_tickets WHERE status_ticket <> 'fechado') AS tickets_abertos`)).rows[0];
+    extra.sem_17track = rows.reduce((t, r) => t + r.sem17, 0);
     return { quadros, ...extra, gerado_em: new Date().toISOString() };
   });
 
@@ -70,12 +71,17 @@ export default async function rotasSpplLogistica(app) {
     const todos = req.query?.todos === '1';
     const tamanho = todos ? 5000 : Math.min(200, Math.max(1, Number(req.query?.tamanho) || 50));
     const pagina = Math.max(1, Number(req.query?.pagina) || 1);
-    const total = (await query(`SELECT count(*)::int AS n FROM sppl_logistica l ${f.sql}`, f.valores)).rows[0].n;
-    // ordem: mais tempo parado primeiro; sem movimentação (quadros 1 e 2) pela idade do pedido
+    // A view sppl_logistica é cara (~2 s com ~5 mil pedidos): roda UMA vez (count(*) OVER) e os joins do relatório só valem para a página.
     const { rows } = await query(
-      `${SELECT_RELATORIO} ${f.sql} ORDER BY l.dias_sem_movimentacao DESC NULLS LAST, l.idade_dias DESC NULLS LAST, l.transacao_id LIMIT ${tamanho} OFFSET ${todos ? 0 : (pagina - 1) * tamanho}`,
+      `WITH pag AS MATERIALIZED (
+         SELECT l.*, count(*) OVER ()::int AS total_filtro FROM sppl_logistica l ${f.sql}
+          ORDER BY l.dias_sem_movimentacao DESC NULLS LAST, l.idade_dias DESC NULLS LAST, l.transacao_id LIMIT ${tamanho} OFFSET ${todos ? 0 : (pagina - 1) * tamanho})
+       ${SELECT_RELATORIO} ORDER BY l.dias_sem_movimentacao DESC NULLS LAST, l.idade_dias DESC NULLS LAST, l.transacao_id`,
       f.valores,
     );
+    let total = rows[0]?.total_filtro ?? 0;
+    if (!rows.length && pagina > 1) total = (await query(`SELECT count(*)::int AS n FROM sppl_logistica l ${f.sql}`, f.valores)).rows[0].n;
+    for (const r of rows) delete r.total_filtro;
     return { total, pagina: todos ? 1 : pagina, tamanho, cortado: todos && total > tamanho, itens: rows };
   });
 }
