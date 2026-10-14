@@ -2103,7 +2103,7 @@ async function atender(req, res, url, sessao) {
     const resto = url.pathname.slice('/api/rastreio/sppl/'.length).replace(/\/$/, '');
     const escrita = req.method !== 'GET';
     // Ocorrências e cobranças são o trabalho do dia a dia do time (qualquer conta com a página Rastreio); regras e feriados só administrador.
-    const operacional = /^(ocorrencias|cobrancas)(\/|$)/.test(resto);
+    const operacional = /^(ocorrencias|cobrancas|logistica|ativo)(\/|$)/.test(resto);
     if (escrita && !operacional && !usuario.admin) return json(res, 403, { erro: 'Só administradores alteram as regras do SPPL.' });
     const rotaRegra = /^regras\/(\d+)$/.exec(resto);
     const rotaFeriado = /^feriados\/(\d{4}-\d{2}-\d{2})$/.exec(resto);
@@ -2129,6 +2129,13 @@ async function atender(req, res, url, sessao) {
       if (resto === 'nao-encontrados' && req.method === 'GET') {
         const q = url.searchParams;
         return json(res, 200, await obterApi('/api/rastreio/sppl/nao-encontrados', { faixa: q.get('faixa'), plataforma: q.get('plataforma'), busca: q.get('busca'), page: q.get('page'), page_size: q.get('page_size'), todos: q.get('todos') }));
+      }
+      // ── Monitoramento Logístico (5 quadros + relatório) e Suporte Ativo (2º momento da Késsia, migração 101). Repasse direto: a API valida tudo. ──
+      if (resto.startsWith('logistica/') || resto.startsWith('ativo/')) {
+        const caminho = `/api/rastreio/sppl/${resto}`;
+        if (req.method === 'GET') return json(res, 200, await obterApi(caminho, Object.fromEntries(url.searchParams)));
+        if (req.method === 'POST') return json(res, 200, await criarApi(caminho, await lerJson(req, 256 * 1024)));
+        if (req.method === 'PATCH') return json(res, 200, await remendarApi(caminho, await lerJson(req, 64 * 1024)));
       }
       if (resto === 'saude' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/saude'));
       if (resto === 'relatorio' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/relatorio', { dias: url.searchParams.get('dias') }));

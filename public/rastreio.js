@@ -29,7 +29,7 @@ import {
 } from './emailComum.js';
 import { n, dataHora, dia, duracaoH } from './format.js';
 import { desenharLinha } from './charts.js';
-import { criarTradutor, idiomaAtual, montarSeletorIdioma } from './i18n.js';
+import { criarTradutor, idiomaAtual, montarSeletorIdioma, forcarIdioma } from './i18n.js';
 import './rastreioSppl.js';   // SPPL: regras e feriados (seção recolhível no fim da aba)
 import './rastreioAlertas.js';   // SPPL: alertas de logística (ocorrências) e cobranças
 import './rastreioLogistica.js';   // SPPL: saúde, relatório e não encontrados da Red Rock
@@ -521,9 +521,14 @@ function renderOcorrenciasSppl(lista) {
   return ul;
 }
 
+/** A folha do pedido é sempre em português (pedido da Késsia), independente do idioma escolhido na página. */
 async function abrirDetalhePedido(linha) {
   const { ok, dados: d } = await api(`/api/rastreio/${encodeURIComponent(linha.transacao_id)}`);
-  if (!ok) { window.alert(t('erroCarregarFicha')); return; }
+  forcarIdioma('pt');
+  try { if (!ok) { window.alert(t('erroCarregarFicha')); return; } montarFichaPedido(d); } finally { forcarIdioma(null); }
+}
+
+function montarFichaPedido(d) {
 
   let linkRastreio = null;
   if (d.tracking_url) {
@@ -1034,7 +1039,7 @@ for (const nome of Object.keys(SUBABAS_PROVEDOR)) {
  * Abas internas do Rastreio de Pedidos: "Fulfillments" (pedidos, KPIs, saúde do rastreio, lista — com o filtro por fulfillment acima)
  * e "SPPL" (Saúde do SPPL, Relatório de logística, Alertas de logística, Regras). Lembra a última aba por navegador.
  */
-const ABAS_RASTREIO = ['fulfillments', 'sppl'];
+const ABAS_RASTREIO = ['fulfillments', 'sppl', 'monitor', 'ativo'];
 function mudarAbaRastreio(nome) {
   if (!ABAS_RASTREIO.includes(nome)) nome = 'fulfillments';
   for (const chave of ABAS_RASTREIO) {
@@ -1042,6 +1047,10 @@ function mudarAbaRastreio(nome) {
     const painel = $(`rst-painel-${chave}`);
     if (painel) painel.hidden = chave !== nome;
   }
+  if (nome === 'monitor') import('./spplMonitor.js').then((m) => m.abrirMonitor()).catch(() => {});
+  else import('./spplMonitor.js').then((m) => m.fecharMonitor()).catch(() => {});
+  if (nome === 'ativo') import('./spplAtivo.js').then((m) => m.abrirAtivo()).catch(() => {});
+  else import('./spplAtivo.js').then((m) => m.fecharAtivo()).catch(() => {});
   try { localStorage.setItem('rstAbaPrincipal', nome); } catch { /* sem armazenamento: só não lembra */ }
 }
 for (const chave of ABAS_RASTREIO) $(`rst-aba-btn-${chave}`)?.addEventListener('click', () => mudarAbaRastreio(chave));

@@ -222,3 +222,10 @@ export async function abrirLinhaTempo17({ transacaoId, subtitulo = '' }) {
   }
   desenhar(corpo, { ...dados, transacao_id: transacaoId }, eventos, true);
 }
+
+/** Rótulo em PORTUGUÊS do status do 17TRACK (aceita substatus "Principal_Detalhe" ou só o status). Usado nas tabelas do SPPL, que são sempre em português. */
+export function rotuloStatus17Pt(valor) {
+  const s = String(valor || ''); if (!s) return '—';
+  const principal = s.split('_')[0]; const base = (STATUS[principal] ?? { pt: principal }).pt;
+  return SUB[s] && !/_Other$/.test(s) ? `${base} · ${SUB[s][0]}` : base;
+}

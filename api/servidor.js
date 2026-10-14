@@ -58,6 +58,9 @@ import rotasSpplRegras from './rotas/spplRegras.js';
 import rotasSpplOcorrencias from './rotas/spplOcorrencias.js';
 import rotasSpplNaoEncontrados from './rotas/spplNaoEncontrados.js';
 import rotasSpplRelatorio from './rotas/spplRelatorio.js';
+import rotasSpplLogistica from './rotas/spplLogistica.js';
+import rotasSpplAtivo from './rotas/spplAtivo.js';
+import { iniciarEnvioAtivo } from './sppl/ativoEnvios.js';
 import { registrarPendentes as registrarNo17Track } from './track17/jobRegistro.js';
 import { rodar as rodarMotorSppl } from './sppl/motor.js';
 import { reconciliar as reconciliar17Track } from './track17/reconciliar.js';
@@ -392,6 +395,8 @@ await app.register(rotasSpplRegras);
 await app.register(rotasSpplOcorrencias);
 await app.register(rotasSpplNaoEncontrados);
 await app.register(rotasSpplRelatorio);
+await app.register(rotasSpplLogistica);
+await app.register(rotasSpplAtivo);
 await app.register(rotasPostmark);
 await app.register(rotasFormularios);
 await app.register(rotasDescadastro);
@@ -479,6 +484,8 @@ const intervaloRisco = setInterval(recalcularRisco, RISCO_INTERVALO_MS);
  */
 /* Envio em segundo plano das respostas do agente (migração 087): reenvia o que falhou e o que sobrou de um reinício. */
 const desligarFilaDeRespostas = iniciarFilaDeRespostas(app.log);
+/* SPPL Suporte Ativo (migração 101): envio em massa individual em segundo plano, espaçado e com teto por hora. */
+const intervaloEnvioAtivo = iniciarEnvioAtivo((m) => app.log.info(m));
 
 const FECHAMENTO_INTERVALO_MS = 15 * 60 * 1000;
 const fecharTicketsAutomatico = async () => {
@@ -506,6 +513,7 @@ for (const sinal of ['SIGINT', 'SIGTERM']) {
     clearInterval(intervaloFechamento);
     clearInterval(intervaloRegistro17Track);
     clearInterval(intervaloMotorSppl);
+    clearInterval(intervaloEnvioAtivo);
     clearInterval(intervaloReconciliacao17Track);
     desligarFilaDeRespostas();
     await app.close();

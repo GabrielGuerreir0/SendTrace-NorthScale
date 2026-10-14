@@ -54,7 +54,7 @@ async function copiarParaEnviados(raw) {
 }
 
 /** Envia a resposta. Devolve `{ messageId, enviadoEm, copiadoParaEnviados }`; lança se o SMTP recusar. */
-export async function enviarRespostaSuporte({ para, assunto, texto, inReplyTo, references, messageId: idDefinido, anexos = [] }) {
+export async function enviarRespostaSuporte({ para, assunto, texto, inReplyTo, references, messageId: idDefinido, anexos = [], copiarEnviados = true }) {
   if (!respostaConfigurada) throw Object.assign(new Error('Envio de resposta não configurado neste servidor.'), { naoConfigurado: true });
   const dominio = (DE.match(/@([^>\s]+)/)?.[1] ?? 'localhost').replace(/>$/, '');
   const messageId = idDefinido || `<${randomUUID()}@${dominio}>`;
@@ -68,6 +68,7 @@ export async function enviarRespostaSuporte({ para, assunto, texto, inReplyTo, r
   const raw = await new MailComposer(opcoes).compile().build();
   await obterTransporte().sendMail({ envelope: { from: USUARIO, to: [para] }, raw });
   let copiado = true;
-  try { await copiarParaEnviados(raw); } catch { copiado = false; }
+  // copiarEnviados=false (Suporte Ativo do SPPL): a cópia em Enviados faria o leitor de Enviados registrar a mensagem como resposta de agente e mover cards do Escalado
+  if (copiarEnviados) { try { await copiarParaEnviados(raw); } catch { copiado = false; } } else copiado = false;
   return { messageId, enviadoEm, copiadoParaEnviados: copiado };
 }

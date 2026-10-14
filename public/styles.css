@@ -3213,3 +3213,8 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 #r-historico { margin-top: 28px; }
 #r-historico-tit { margin: 0 0 4px; font-weight: 620; color: var(--tinta); }
 .rastreio-etapa-data:empty { display: none; }
+
+/* SPPL 2º momento: quadros do monitoramento e Suporte Ativo */
+.sppl-kpis--quadros { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.sppl-kpi-criterio { display: block; margin-top: 4px; font-size: 11px; line-height: 1.35; color: var(--tinta-fraca); }
+.tabela--larga { min-width: 1100px; }

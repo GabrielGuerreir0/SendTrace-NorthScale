@@ -13,7 +13,12 @@
 const CHAVE_STORAGE = 'idioma';
 export const PADRAO = 'en';
 
+let idiomaForcado = null;
+/** Força um idioma só durante uma renderização síncrona (ex.: a folha do pedido, sempre em português); `null` volta ao normal. */
+export function forcarIdioma(idioma) { idiomaForcado = idioma; }
+
 export function idiomaAtual() {
+  if (idiomaForcado) return idiomaForcado;
   try {
     const salvo = localStorage.getItem(CHAVE_STORAGE);
     return salvo === 'pt' ? 'pt' : PADRAO;
