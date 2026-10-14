@@ -996,7 +996,7 @@ $('rst-sel-plataforma').addEventListener('change', (e) => {
  * confuso. Lembra a última escolha por navegador, mesmo padrão das subabas
  * do Suporte Escalado (ver emailSuporteEscalado.js).
  */
-const SUBABAS_PROVEDOR = { todos: '', redrock: 'redrock', fullstack: 'fullstack' };
+const SUBABAS_PROVEDOR = { todos: '', redrock: 'redrock', fullstack: 'fullstack', jetstream: 'jetstream' };
 
 function aplicarVisibilidadeProvedor() {
   const combinado = estado.provedor === '';

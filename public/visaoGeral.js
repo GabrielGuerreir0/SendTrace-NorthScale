@@ -135,7 +135,7 @@ function renderFiltros(s) {
       sel('plataforma', 'Plataforma', 'Todas', op.plataformas.map((x) => [x, x])),
       sel('linha', 'Família da régua', 'Todas', op.linhas.filter((l) => l.linha !== null).map((l) => [String(l.linha), `Linha ${l.linha} · ${String(l.nomes).split(', ').filter((x) => x !== 'your order').slice(0, 2).join(', ')}`])),
       sel('produto', 'Produto', 'Todos', produtos.map((p) => [p.slug, p.nome])),
-      sel('fulfillment', 'Fulfillment', 'Todos', [['redrock', 'Red Rock'], ['fullstack', 'FullStack']]),
+      sel('fulfillment', 'Fulfillment', 'Todos', [['redrock', 'Red Rock'], ['fullstack', 'FullStack'], ['jetstream', 'JetStream']]),
     );
     if (filtro.plataforma || filtro.linha || filtro.produto || filtro.fulfillment) {
       const limpar = el('button', 'btn vg-limpar', 'Limpar filtros');

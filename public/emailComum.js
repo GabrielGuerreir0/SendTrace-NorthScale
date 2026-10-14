@@ -222,7 +222,7 @@ export const chipRastreio = (v) => chip(`rst-${v}`, LABEL_STATUS_RASTREIO[v] ?? 
    principalmente BuyGoods). Quem olhar a tabela/ficha precisa saber de cara
    qual pedido veio de qual — por isso este selo vai em TODO lugar que
    mostra dado de rastreio. */
-const ROTULO_PROVEDOR = { redrock: 'Red Rock', fullstack: 'FullStack' };
+const ROTULO_PROVEDOR = { redrock: 'Red Rock', fullstack: 'FullStack', jetstream: 'JetStream' };
 export function seloProvedor(v) {
   const span = document.createElement('span');
   span.className = 'selo-etapa selo-provedor';
