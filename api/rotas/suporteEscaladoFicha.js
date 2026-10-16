@@ -32,11 +32,12 @@ export const OPCOES = {
     'Comprou muito - Upsell', 'Comprar mais potes', 'Problemas Financeiros', 'Acha que é fraude/golpe', 'Rótulo ou Ingredientes', 'Pessoa incapaz comprou',
     'Arrepen. pós compra - pedido não entregue', 'Arrepen. pós compra - pedido entregue', 'Logística - pedido não entregue',
     'Logística - pedido incompleto', 'Logística - pedido quebrado', 'Logística - divergência no produto', 'Cliente não retornou',
+    'Sem informação - Reembolsado pela plataforma',   // preenchida pelo sistema quando a plataforma já reembolsou (migração 104)
   ],
   tipo_resolucao: [
     'Verificando - Ag. Cliente', 'Reversão total do reembolso', 'Reembolso parcial', 'Reembolsado pela plataforma', 'Não revertido', 'Não envolve reembolso', 'Não respondido - Autorizado pelo líder',
-    'Virou chargeback', 'Cliente não retornou', 'Link para compra enviado',
-  ],
+    'Virou chargeback', 'Cliente não retornou',
+  ],   // 'Link para compra enviado' saiu em 16/10 (nenhum ticket usava)
   // Aparece ao lado quando o tipo de resolução é "Reembolso parcial" (5% a 90%, de 5 em 5; 5% e 10% entraram no 4º momento da Késsia).
   percentual_reembolso: Array.from({ length: 18 }, (_, i) => 5 + i * 5),
   status_ticket: ['Aberto', 'Pendente', 'Resolvido', 'Fechado'],
