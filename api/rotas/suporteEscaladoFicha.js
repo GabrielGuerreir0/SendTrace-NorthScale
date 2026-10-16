@@ -63,6 +63,18 @@ const BLOCO_AJUDA = ['status_ajuda'];
 // Item 17 do PDF (07/10): ao salvar Propriedades, estes quatro campos são obrigatórios.
 const PROPRIEDADES_OBRIGATORIAS = ['motivo_contato', 'detalhamento_motivo', 'tipo_resolucao', 'status_ticket'];
 
+// Pedido da Késsia (16/10): o agente só responde o cliente com as Propriedades completas e SALVAS (mesmas regras do salvamento).
+const ROTULO_PROPRIEDADE = {
+  motivo_contato: 'Motivo do contato', detalhamento_motivo: 'Detalhamento do motivo do contato', tipo_resolucao: 'Tipo de resolução',
+  status_ticket: 'Status do ticket', percentual_reembolso: 'Percentual do reembolso', valor_compra_usd: 'Valor da compra (US$)',
+};
+export function propriedadesFaltando(ficha) {
+  const f = ficha ?? {};
+  const faltam = PROPRIEDADES_OBRIGATORIAS.filter((c) => f[c] == null || f[c] === '');
+  if (f.tipo_resolucao === 'Reembolso parcial') for (const c of ['percentual_reembolso', 'valor_compra_usd']) if (f[c] == null || f[c] === '') faltam.push(c);
+  return faltam.map((c) => ROTULO_PROPRIEDADE[c] ?? c);
+}
+
 const lista = (valores) => ({ type: ['string', 'null'], enum: [...valores, null] });
 const texto = (max) => ({ type: ['string', 'null'], maxLength: max });
 
@@ -311,6 +323,14 @@ export default async function rotasSuporteEscaladoFicha(app) {
     const permitidos = [c.remetente_email, ...c.filhos].filter(Boolean).map((e) => e.toLowerCase());
     const para = (req.body.para_email ?? c.remetente_email).trim().toLowerCase();
     if (!permitidos.includes(para)) throw new ErroHttp(400, 'Este e-mail não pertence ao ticket.');
+    // Bloqueio (Késsia, 16/10): sem Propriedades completas e salvas o cliente não recebe resposta.
+    const { rows: [fi] } = await query(
+      `SELECT motivo_contato, detalhamento_motivo, tipo_resolucao, percentual_reembolso, status_ticket, valor_compra_usd
+         FROM email_ia.suporte_escalado_ficha WHERE suporte_escalado_id = $1`,
+      [c.id],
+    );
+    const faltamProp = propriedadesFaltando(fi);
+    if (faltamProp.length) throw new ErroHttp(422, `Preencha e salve as Propriedades do ticket antes de responder o cliente (faltam: ${faltamProp.join(', ')}).`);
     const { rows: dup } = await query(
       `SELECT 1 FROM email_ia.respostas_fila WHERE caso_id = $1 AND para_email = $2 AND texto = $3 AND criado_em > now() - interval '60 seconds' AND status <> 'falhou' LIMIT 1`,
       [c.id, para, texto],

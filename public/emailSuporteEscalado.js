@@ -705,6 +705,18 @@ export function abrirDetalheEscalado(item) {
 /* ═══════════════════  Atendimento: conversa em abas + responder pelo SendTrace  ═══════════════════
    PDF de 07/10, itens 2 e 18. Abas dentro da ficha — Atendimento humano (cliente ↔ agentes), Atendimento IA (cliente ↔ IA e e-mails automáticos),
    Tudo e Histórico do ticket — e, abaixo, o campo de resposta: o e-mail sai como support@ pela SMTP da Hostinger, sem abrir o webmail. */
+/** Propriedades que faltam preencher/salvar (mesma regra do servidor): sem elas o botão Responder fica bloqueado (pedido da Késsia, 16/10). */
+function propriedadesFaltando(f) {
+  const x = f ?? {};
+  const vazio = (v) => v == null || v === '';
+  const faltam = [['motivo_contato', 'Motivo do contato'], ['detalhamento_motivo', 'Detalhamento do motivo'], ['tipo_resolucao', 'Tipo de resolução'], ['status_ticket', 'Status do ticket']].filter(([k]) => vazio(x[k])).map(([, r]) => r);
+  if (x.tipo_resolucao === 'Reembolso parcial') {
+    if (vazio(x.percentual_reembolso)) faltam.push('Percentual do reembolso');
+    if (vazio(x.valor_compra_usd)) faltam.push('Valor da compra');
+  }
+  return faltam;
+}
+
 function montarAtendimento(item, botaoTelaCheia) {
   const raiz = document.createElement('div');
   raiz.className = 'esc-atend';
@@ -733,6 +745,18 @@ function montarAtendimento(item, botaoTelaCheia) {
   const enviar = document.createElement('button'); enviar.type = 'submit'; enviar.className = 'btn btn-forte'; enviar.textContent = 'Responder';
   const rodape = document.createElement('div'); rodape.className = 'esc-atend-compor-rodape';
   rodape.append(para, contador, enviar);
+  // Bloqueio: o botão só libera com as Propriedades completas e salvas (o servidor também confere).
+  const avisoProp = document.createElement('p'); avisoProp.className = 'esc-atend-bloqueio'; avisoProp.hidden = true; avisoProp.style.cssText = 'margin:6px 0 0;font-size:.85em;color:var(--alerta,#b45309)';
+  const atualizarBloqueio = () => {
+    const faltam = item._propsFaltam;
+    const bloqueia = Array.isArray(faltam) && faltam.length > 0;
+    enviar.disabled = bloqueia; enviar.title = bloqueia ? 'Preencha e salve as Propriedades para responder' : '';
+    avisoProp.hidden = !bloqueia;
+    if (bloqueia) avisoProp.textContent = `🔒 Para responder o cliente, preencha e salve as Propriedades do ticket. Faltam: ${faltam.join(', ')}.`;
+  };
+  const aoMudarProps = () => { if (!raiz.isConnected) { document.removeEventListener('escalado:props-status', aoMudarProps); return; } atualizarBloqueio(); };
+  document.addEventListener('escalado:props-status', aoMudarProps);
+  atualizarBloqueio();
 
   /* ── 4º momento da Késsia, itens 1 e 2: formatação (negrito, itálico, lista numerada, link) e anexos (PDF/imagem, também print colado) ── */
   const MAX_ANEXOS = 5; const MAX_BYTES = 10 * 1024 * 1024;
@@ -911,6 +935,7 @@ function montarAtendimento(item, botaoTelaCheia) {
     const texto = caixa.value.trim();
     const anexosEnvio = anexosPendentes;
     if (!texto && !anexosEnvio.length) return;
+    if (Array.isArray(item._propsFaltam) && item._propsFaltam.length) { window.alert(`Preencha e salve as Propriedades do ticket antes de responder o cliente. Faltam: ${item._propsFaltam.join(', ')}.`); return; }
     const destino = para.hidden ? item.remetente_email : para.value;
     // Sem pergunta de confirmação e sem esperar a SMTP: a resposta já aparece como enviada e o envio segue em segundo plano.
     const agora = new Date();
@@ -931,6 +956,7 @@ function montarAtendimento(item, botaoTelaCheia) {
     acompanhar();
   });
 
+  compor.append(avisoProp);
   raiz.append(barra, painel, compor, acoes);
   desenhar();
   carregar();
@@ -1340,6 +1366,8 @@ async function carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl,
     item._preencherResumo?.(dados.caso);   // a fila não carrega os textos longos: chegam com a ficha
     const recarregar = () => { carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl, ticketEl, true); carregarAjudaRecebida(); };
     const f = dados.ficha;
+    item._propsFaltam = propriedadesFaltando(f);   // libera/bloqueia o botão Responder do Atendimento
+    document.dispatchEvent(new CustomEvent('escalado:props-status', { detail: { id: item.id } }));
     if (ticketEl) {
       const m = dados.mesclagem ?? {};
       ticketEl.textContent = `#${item.id}${m.mae ? ` · filho do ticket-mãe #${m.mae.id}` : ''}${m.filhos?.length ? ` · ticket-mãe de ${m.filhos.map((x) => `#${x.id}`).join(', ')}` : ''}`;
