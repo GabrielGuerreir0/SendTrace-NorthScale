@@ -15,7 +15,7 @@ import { ErroHttp } from '../comum.js';
 import { memo } from '../cacheCurto.js';
 import { lerPeriodo, descreverPeriodo } from '../periodo.js';
 
-const ABERTOS = "('pendente', 'iniciado', 'lead_respondeu', 'esperando_resposta', 'em_analise', 'pendente_consulta')";
+const ABERTOS = "('pendente', 'iniciado', 'lead_respondeu', 'esperando_resposta', 'em_analise', 'pendente_consulta', 'pendente_recorrencia')";
 const ENCERRADO_NA_FICHA = "coalesce(fi.status_ticket, '') NOT IN ('Resolvido', 'Fechado')";
 
 export default async function rotasSuporteEscaladoKpis(app) {

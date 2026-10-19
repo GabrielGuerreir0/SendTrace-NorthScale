@@ -66,7 +66,7 @@ export default async function rotasSuporteEscaladoRelatorios(app) {
               fi.novo_rastreio, rb.nome AS responsavel_logistica, fi.logistica_atualizado_por, fi.logistica_atualizado_em,
               fi.status_ajuda, fi.ajuda_atualizado_por, fi.ajuda_atualizado_em,
               (SELECT count(*) FROM email_ia.suporte_escalado_ajuda a WHERE a.suporte_escalado_id = s.id)::int AS pedidos_ajuda,
-              s.primeira_resposta_agente_em, s.ultima_resposta_agente_em, v.meta_min, v.primeira_resposta_min, v.primeira_resposta_sla, v.pausado
+              s.primeira_resposta_agente_em, s.ultima_resposta_agente_em, s.ultimo_email_cliente_em, v.meta_min, v.primeira_resposta_min, v.primeira_resposta_sla, v.pausado
          FROM email_ia.suporte_escalado s
          LEFT JOIN email_ia.emails e ON e.id = s.email_id
          LEFT JOIN email_ia.suporte_escalado_boards b ON b.id = s.board_id

@@ -337,6 +337,7 @@ const COLUNAS_RELATORIO = [
   ['Logística — última alteração por', (r) => r.logistica_atualizado_por], ['Logística — última alteração em', (r) => dt(r.logistica_atualizado_em)],
   ['Status de ajuda', (r) => r.status_ajuda], ['Pedidos de ajuda', (r) => r.pedidos_ajuda], ['Ajuda — última alteração por', (r) => r.ajuda_atualizado_por], ['Ajuda — última alteração em', (r) => dt(r.ajuda_atualizado_em)],
   ['1ª resposta do agente em', (r) => dt(r.primeira_resposta_agente_em)], ['Última resposta do agente em', (r) => dt(r.ultima_resposta_agente_em)],
+  ['Data da última resposta do cliente', (r) => dt(r.ultimo_email_cliente_em)],
   ['Meta de SLA (min de turno)', (r) => r.meta_min], ['Tempo da 1ª resposta (min de turno)', (r) => (r.primeira_resposta_min == null ? '' : Math.round(Number(r.primeira_resposta_min)))],
   ['SLA da 1ª resposta', (r) => r.primeira_resposta_sla], ['SLA suspenso (Pendente)', (r) => (r.pausado ? 'Sim' : 'Não')],
 ];
