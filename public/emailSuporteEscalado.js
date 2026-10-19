@@ -667,6 +667,12 @@ export function abrirDetalheEscalado(item) {
       paragrafosResumo[1].textContent = c?.motivo_escalonamento || '—';
     };
   }
+  // Dentro do bloco Propriedades (pedido da Késsia, 18/10): campos de hoje → Resumo da IA (ocupa o espaço vazio ao lado de "Dados do pedido") → Comissão no fim.
+  const comissaoContainer = document.createElement('div');
+  comissaoContainer.className = 'esc-ficha-bloco esc-comissao';
+  const propriedadesBloco = document.createElement('div');
+  propriedadesBloco.className = 'esc-ficha-bloco';
+  propriedadesBloco.append(propriedadesContainer, resumoIA, comissaoContainer);
   const alertaEl = document.createElement('span');
   alertaEl.textContent = ROTULO_AMEACA[item.alerta_ameaca] ? `🚨 ${ROTULO_AMEACA[item.alerta_ameaca]} — responder em até 2 dias úteis` : '—';
 
@@ -688,8 +694,7 @@ export function abrirDetalheEscalado(item) {
       { rotulo: 'Alerta', valor: alertaEl },
       { rotulo: 'Última movimentação', largo: true, valor: item.movido_em ? `${item.movido_de ? 'de ' + item.movido_de + ' ' : ''}por ${item.movido_por || 'Sistema (automação)'} em ${dataHora(item.movido_em)}` : '—' },
       { rotulo: 'Dados do pedido', valor: contextoContainer, bloco: true, metade: true },
-      { rotulo: 'Propriedades', valor: propriedadesContainer, bloco: true, metade: true },
-      { rotulo: 'Resumo da IA', valor: resumoIA, bloco: true },
+      { rotulo: 'Propriedades', valor: propriedadesBloco, bloco: true, metade: true },
       { rotulo: 'Atendimento', valor: atendimentoContainer, bloco: true },
       { rotulo: 'Logística', valor: logisticaContainer, bloco: true, metade: true },
       { rotulo: 'Ajuda — escalar para alguém da equipe', valor: ajudaContainer, bloco: true, metade: true },
@@ -698,7 +703,7 @@ export function abrirDetalheEscalado(item) {
   });
 
   carregarContexto(item, contextoContainer);
-  carregarFichaAgente(item, propriedadesContainer, logisticaContainer, ajudaContainer, alertaEl, ticketEl);
+  carregarFichaAgente(item, propriedadesContainer, logisticaContainer, ajudaContainer, alertaEl, ticketEl, false, comissaoContainer);
   carregarNotas(item.id, notasContainer);
 }
 
@@ -1025,7 +1030,7 @@ const ROTULO_CAMPO = {
   status_logistica: 'Status logística', motivo_reenvio: 'Motivo do reenvio', quantidade_reenvio: 'Quantidade para reenvio',
   produto_reenvio: 'Produto a ser enviado', observacao_reenvio: 'Observação do reenvio', endereco_divergencia: 'Endereço (divergência)',
   novo_rastreio: 'Novo número de rastreio', responsavel_board_id: 'Responsável (logística)', status_ajuda: 'Status de ajuda',
-  agente: 'Agente responsável alterado', mesclagem: 'Tickets mesclados',
+  agente: 'Agente responsável alterado', mesclagem: 'Tickets mesclados', comissao: 'Comissão',
 };
 const ICONE_ATIVIDADE = { chegada: '📥', coluna: '🔀', atribuicao: '👤', nota: '📝', ajuda: '🆘', resposta_agente: '✉️', cliente: '💬', propriedade: '✏️' };
 
@@ -1359,12 +1364,12 @@ function formResposta(ajudaId, aoResponder) {
   return form;
 }
 
-async function carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl, ticketEl, forcar = false) {
+async function carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl, ticketEl, forcar = false, contComissao = null) {
   try {
     const [opc, { ok, dados }] = await Promise.all([obterOpcoes(), obterFicha(item.id, forcar)]);
     if (!ok) throw new Error('ficha');
     item._preencherResumo?.(dados.caso);   // a fila não carrega os textos longos: chegam com a ficha
-    const recarregar = () => { carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl, ticketEl, true); carregarAjudaRecebida(); };
+    const recarregar = () => { carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl, ticketEl, true, contComissao); carregarAjudaRecebida(); };
     const f = dados.ficha;
     item._propsFaltam = propriedadesFaltando(f);   // libera/bloqueia o botão Responder do Atendimento
     document.dispatchEvent(new CustomEvent('escalado:props-status', { detail: { id: item.id } }));
@@ -1407,6 +1412,28 @@ async function carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl,
         { chave: 'status_ticket', rotulo: 'Status do ticket', tipo: 'lista', opcoes: opc.status_ticket, obrigatorio: true },
       ],
     });
+    if (contComissao) {
+      // Comissão (107): bloco próprio no fim de Propriedades; quem preencheu, quando e o histórico são só deste campo.
+      montarBlocoFicha({
+        ...base, container: contComissao, atualizadoPor: f.comissao_atualizado_por, atualizadoEm: f.comissao_atualizado_em,
+        definicao: [{ chave: 'comissao', rotulo: 'Comissão', tipo: 'lista', opcoes: opc.comissao }],
+      });
+      const hist = dados.comissao_historico ?? [];
+      if (hist.length) {
+        const det = document.createElement('details');
+        const sum = document.createElement('summary');
+        sum.textContent = `Histórico da Comissão (${hist.length})`;
+        const ul = document.createElement('ul');
+        ul.className = 'esc-comissao-hist';
+        for (const h of hist) {
+          const li = document.createElement('li');
+          li.textContent = `${dataHora(h.ocorrido_em)} · ${h.ator} · ${h.de || '—'} → ${h.para || '—'}`;
+          ul.append(li);
+        }
+        det.append(sum, ul);
+        contComissao.append(det);
+      }
+    }
     montarBlocoFicha({
       ...base, podeEditar: dados.pode_editar_logistica ?? dados.pode_editar, container: contLog, atualizadoPor: f.logistica_atualizado_por, atualizadoEm: f.logistica_atualizado_em,
       definicao: [
@@ -1428,7 +1455,7 @@ async function carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl,
       }),
     });
   } catch {
-    for (const c of [contProp, contLog, contAjuda]) {
+    for (const c of [contProp, contLog, contAjuda, contComissao].filter(Boolean)) {
       c.replaceChildren();
       const erro = document.createElement('p');
       erro.className = 'vazio-suave';

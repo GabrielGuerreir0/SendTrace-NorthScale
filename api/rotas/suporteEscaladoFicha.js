@@ -44,23 +44,25 @@ export const OPCOES = {
   motivo_reenvio: ['Itens quebrados', 'Pedido incompleto', 'Pedido não entregue', 'Cortesia'],
   status_logistica: ['Solicitar', 'Solicitado', 'Responder cliente', 'Resolvido'],
   status_ajuda: ['Preciso de ajuda', 'Orientado - seguir atendimento', 'Resolvido'],
+  comissao: ['Sim', 'Não passível', 'Sob análise'],   // 18/10 (107): campo opcional no fim de Propriedades, com histórico próprio
 };
 
 const CAMPOS_FICHA = [
   'motivo_contato', 'detalhamento_motivo', 'tipo_resolucao', 'percentual_reembolso', 'status_ticket',
   'motivo_reenvio', 'quantidade_reenvio', 'produto_reenvio', 'observacao_reenvio',
   'endereco_divergencia', 'novo_rastreio', 'responsavel_board_id',
-  'status_logistica', 'status_ajuda', 'valor_compra_usd', 'deducao_frascos_usd', 'chargeback_em',
+  'status_logistica', 'status_ajuda', 'valor_compra_usd', 'deducao_frascos_usd', 'chargeback_em', 'comissao',
 ];
 // Colunas só lidas (calculadas/guardadas pela API): valor a reembolsar e a data/autor da última alteração de cada bloco.
 const CAMPOS_LEITURA = [
   'valor_a_reembolsar_usd', 'atualizado_por', 'atualizado_em',
   'propriedades_atualizado_por', 'propriedades_atualizado_em', 'logistica_atualizado_por', 'logistica_atualizado_em',
-  'ajuda_atualizado_por', 'ajuda_atualizado_em', 'ticket_reaberto_em',
+  'ajuda_atualizado_por', 'ajuda_atualizado_em', 'ticket_reaberto_em', 'comissao_atualizado_por', 'comissao_atualizado_em',
 ];
 const BLOCO_PROPRIEDADES = ['motivo_contato', 'detalhamento_motivo', 'tipo_resolucao', 'percentual_reembolso', 'status_ticket', 'valor_compra_usd', 'deducao_frascos_usd', 'chargeback_em'];
 const BLOCO_LOGISTICA = ['motivo_reenvio', 'quantidade_reenvio', 'produto_reenvio', 'observacao_reenvio', 'endereco_divergencia', 'novo_rastreio', 'responsavel_board_id', 'status_logistica'];
 const BLOCO_AJUDA = ['status_ajuda'];
+const BLOCO_COMISSAO = ['comissao'];   // bloco próprio: não conta como Propriedades (nem some no "última alteração" delas)
 // Item 17 do PDF (07/10): ao salvar Propriedades, estes quatro campos são obrigatórios.
 const PROPRIEDADES_OBRIGATORIAS = ['motivo_contato', 'detalhamento_motivo', 'tipo_resolucao', 'status_ticket'];
 
@@ -236,6 +238,10 @@ export default async function rotasSuporteEscaladoFicha(app) {
       ),
     ]);
     const ficha = fichaRes.rows[0] ?? {};
+    const { rows: comissaoHistorico } = await query(
+      `SELECT ocorrido_em, coalesce(ator, 'Sistema') AS ator, de, para FROM email_ia.suporte_escalado_eventos
+        WHERE caso_id = $1 AND campo = 'comissao' ORDER BY ocorrido_em DESC, id DESC LIMIT 30`, [req.params.id],
+    );
     // Pedido do cliente: sugere o valor da compra e acusa chargeback já registrado no dash (item 11).
     const { rows: [c] } = await query('SELECT remetente_email FROM email_ia.suporte_escalado WHERE id = $1', [req.params.id]);
     const pedido = c?.remetente_email ? await pedidoDoCliente(c.remetente_email) : null;
@@ -247,6 +253,7 @@ export default async function rotasSuporteEscaladoFicha(app) {
       pedido_sugerido: pedido ? { valor_usd: pedido.valor_usd ?? null, plataforma: pedido.plataforma } : null,
       chargeback_pedido_em: pedido?.chargeback ? (pedido.chargeback_em ?? true) : null,
       ficha: { ...Object.fromEntries(CAMPOS_FICHA.map((c) => [c, null])), status_ticket: 'Aberto', ...ficha },
+      comissao_historico: comissaoHistorico,
       ajudas: ajudaRes.rows.map(({ destino_id: destinoId, ...a }) => ({
         ...a,
         pode_responder: !a.respondido_em && (!!req.usuario.admin || (destinoId != null && destinoId === req.usuario.user_id)),
@@ -549,6 +556,7 @@ export default async function rotasSuporteEscaladoFicha(app) {
           valor_compra_usd: { type: ['number', 'null'], minimum: 0, maximum: 100000 },
           deducao_frascos_usd: { type: ['number', 'null'], minimum: 0, maximum: 100000 },
           chargeback_em: { type: ['string', 'null'], format: 'date' },
+          comissao: lista(OPCOES.comissao),
         },
       },
     },
@@ -608,7 +616,7 @@ export default async function rotasSuporteEscaladoFicha(app) {
     const cols = Object.fromEntries(campos2.map((c) => [c, limpa(corpo[c])]));
     Object.assign(cols, extras);
     // Data e autor da última alteração de cada bloco (item 5): só o bloco tocado muda.
-    for (const [bloco, prefixo] of [[BLOCO_PROPRIEDADES, 'propriedades'], [BLOCO_LOGISTICA, 'logistica'], [BLOCO_AJUDA, 'ajuda']]) {
+    for (const [bloco, prefixo] of [[BLOCO_PROPRIEDADES, 'propriedades'], [BLOCO_LOGISTICA, 'logistica'], [BLOCO_AJUDA, 'ajuda'], [BLOCO_COMISSAO, 'comissao']]) {
       if (toca(bloco)) { cols[`${prefixo}_atualizado_por`] = quem; cols[`${prefixo}_atualizado_em`] = new Date(); }
     }
     cols.atualizado_por = quem;

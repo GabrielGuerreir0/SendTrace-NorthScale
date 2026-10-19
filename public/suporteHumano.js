@@ -331,6 +331,7 @@ const COLUNAS_RELATORIO = [
   ['Valor a reembolsar', (r) => r.valor_a_reembolsar_usd], ['Status do ticket', (r) => r.status_ticket],
   ['Virou chargeback', (r) => (r.tipo_resolucao === 'Virou chargeback' || r.chargeback_em ? 'Sim' : 'Não')], ['Virou chargeback em', (r) => dia(r.chargeback_em)],
   ['Ticket reaberto em', (r) => dt(r.ticket_reaberto_em)], ['Propriedades — última alteração por', (r) => r.propriedades_atualizado_por], ['Propriedades — última alteração em', (r) => dt(r.propriedades_atualizado_em)],
+  ['Comissão', (r) => r.comissao], ['Comissão — preenchida por', (r) => r.comissao_atualizado_por], ['Comissão — preenchida em', (r) => dt(r.comissao_atualizado_em)],
   ['Status logística', (r) => r.status_logistica], ['Motivo do reenvio', (r) => r.motivo_reenvio], ['Quantidade para reenvio', (r) => r.quantidade_reenvio],
   ['Produto a ser enviado', (r) => r.produto_reenvio], ['Observação do reenvio', (r) => r.observacao_reenvio], ['Endereço (divergência)', (r) => r.endereco_divergencia],
   ['Novo rastreio', (r) => r.novo_rastreio], ['Responsável (logística)', (r) => r.responsavel_logistica],

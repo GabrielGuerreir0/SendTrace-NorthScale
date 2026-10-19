@@ -61,7 +61,7 @@ export default async function rotasSuporteEscaladoRelatorios(app) {
               ped.tracking_number, t.primeiro_email_em,
               fi.motivo_contato, fi.detalhamento_motivo, fi.tipo_resolucao, fi.percentual_reembolso, fi.valor_compra_usd, fi.deducao_frascos_usd,
               fi.valor_a_reembolsar_usd, coalesce(fi.status_ticket, 'Aberto') AS status_ticket, fi.chargeback_em, fi.ticket_reaberto_em,
-              fi.propriedades_atualizado_por, fi.propriedades_atualizado_em,
+              fi.propriedades_atualizado_por, fi.propriedades_atualizado_em, fi.comissao, fi.comissao_atualizado_por, fi.comissao_atualizado_em,
               fi.status_logistica, fi.motivo_reenvio, fi.quantidade_reenvio, fi.produto_reenvio, fi.observacao_reenvio, fi.endereco_divergencia,
               fi.novo_rastreio, rb.nome AS responsavel_logistica, fi.logistica_atualizado_por, fi.logistica_atualizado_em,
               fi.status_ajuda, fi.ajuda_atualizado_por, fi.ajuda_atualizado_em,

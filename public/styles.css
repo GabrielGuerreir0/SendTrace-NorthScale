@@ -3218,3 +3218,5 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .sppl-kpis--quadros { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
 .sppl-kpi-criterio { display: block; margin-top: 4px; font-size: 11px; line-height: 1.35; color: var(--tinta-fraca); }
 .tabela--larga { min-width: 1100px; }
+.esc-comissao-hist { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--tinta-2); }
+.esc-comissao .esc-ficha-form { max-width: 360px; }
