@@ -33,6 +33,7 @@ export const OPCOES = {
     'Arrepen. pós compra - pedido não entregue', 'Arrepen. pós compra - pedido entregue', 'Logística - pedido não entregue',
     'Logística - pedido incompleto', 'Logística - pedido quebrado', 'Logística - divergência no produto', 'Cliente não retornou',
     'Sem informação - Reembolsado pela plataforma',   // preenchida pelo sistema quando a plataforma já reembolsou (migração 104)
+    'Sem informação - Higienização',                  // atualização em massa dos casos anteriores a 20/09 (pedido da Késsia, 19/10)
   ],
   tipo_resolucao: [
     'Verificando - Ag. Cliente', 'Reversão total do reembolso', 'Reembolso parcial', 'Reembolsado pela plataforma', 'Não revertido', 'Não envolve reembolso', 'Não respondido - Autorizado pelo líder',
