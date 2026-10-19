@@ -69,6 +69,35 @@ async function padroesDaFamilia(linha) {
   return rows.map((r) => `%${r.slug.toLowerCase().replace(/pro$/, '').replace(/\d+$/, '')}%`);
 }
 
+/** Junta etapas, enviados e abertos em: por família (linha) → etapas → total e por produto. Também devolve a lista plana (usada pelo PDF). */
+export function montarRegua({ etapas, linhas, enviados, abertos, produtos, linhaFiltro }) {
+  const nomeLinha = new Map(linhas.map((l) => [String(l.linha), l.nome]));
+  const nomeProduto = new Map(produtos.map((p) => [p.slug, p.slug === '*' ? 'Produto genérico (your order)' : p.nome]));
+  const env = new Map(); // `${etapa}|${produto}` → enviados
+  for (const r of enviados) env.set(`${r.etapa}|${r.produto}`, r.enviados);
+  const abr = new Map();
+  for (const r of abertos) abr.set(`${r.etapa}|${r.produto}`, r.abertos);
+  const taxa = (a, e) => (e > 0 ? a / e : null);
+  const porLinha = [], flat = [];
+  const ordem = [...new Set(etapas.map((e) => String(e.linha)))].sort((a, b) => (linhas.find((l) => String(l.linha) === a)?.ordem ?? 99) - (linhas.find((l) => String(l.linha) === b)?.ordem ?? 99));
+  for (const lin of ordem) {
+    if (linhaFiltro && String(linhaFiltro) !== lin) continue;
+    const slugs = produtos.filter((p) => String(p.linha) === lin).map((p) => p.slug).sort((a, b) => (a === '*') - (b === '*') || a.localeCompare(b));
+    const lista = etapas.filter((e) => String(e.linha) === lin).map((e) => {
+      const porProduto = slugs.map((sl) => {
+        const e1 = env.get(`${e.etapa}|${sl}`) ?? 0, a1 = abr.get(`${e.etapa}|${sl}`) ?? 0;
+        return { produto: sl, nome: nomeProduto.get(sl), enviados_aprox: e1, abertos: a1, taxa: taxa(a1, e1) };
+      });
+      const enviadosTot = porProduto.reduce((x, y) => x + y.enviados_aprox, 0), abertosTot = porProduto.reduce((x, y) => x + y.abertos, 0);
+      const linhaEtapa = { etapa: e.etapa, nome: e.nome, ativo: e.ativo, offset_h: e.offset_h, enviados_aprox: enviadosTot, abertos: abertosTot, taxa: taxa(abertosTot, enviadosTot), produtos: porProduto };
+      flat.push({ linha: lin, familia: nomeLinha.get(lin) ?? `Linha ${lin}`, etapa: e.etapa, nome: e.nome, enviados_aprox: enviadosTot, abertos: abertosTot, taxa: linhaEtapa.taxa });
+      return linhaEtapa;
+    });
+    porLinha.push({ linha: lin, nome: nomeLinha.get(lin) ?? `Linha ${lin}`, produtos: slugs.map((sl) => ({ produto: sl, nome: nomeProduto.get(sl) })), etapas: lista });
+  }
+  return { porLinha, flat };
+}
+
 async function coletarMetricas(dias, linha) {
   const p = [dias];
   const padroesFamilia = await padroesDaFamilia(linha);
@@ -76,7 +105,7 @@ async function coletarMetricas(dias, linha) {
 
   const [
     contatosSerie, motivosChat, jornada,
-    aberturaRegua, aberturaResposta,
+    reguaEtapas, reguaLinhas, reguaEnviados, reguaAbertos, nomesProdutos, aberturaResposta,
     reembolsoEmail, reembolsoChat, reembolsoTipo,
     motivosCategoria, motivosArea, motivosReembolso,
     fotosPorTipo, fotosResumo,
@@ -101,24 +130,28 @@ async function coletarMetricas(dias, linha) {
       WHERE coalesce(a.iniciado_em, a.criado_em) >= now() - ($1::int || ' days')::interval
       GROUP BY coalesce(e.nome, 'Fora da régua') ORDER BY total DESC`, p),
 
-    // "enviados_aprox" só conta disparos CRIADOS depois do pixel entrar no
-    // ar — etapa_atual é um ponteiro de estado sem data própria, então não
-    // dá pra saber quando cada etapa foi mandada de verdade; usar criado_em
-    // do pedido é a aproximação mais simples que não mistura pedido velho
-    // (nunca teve pixel) com pedido novo. "abertos" segue o mesmo recorte
-    // (join com disparos_pos_venda) pra numerador e denominador falarem da
-    // MESMA população — sem isso um disparo antigo que abrisse por acaso
-    // contaria no numerador sem nunca poder contar no denominador.
+    // Abertura por etapa da régua — TODAS as etapas de TODAS as famílias (linha) e de cada produto.
+    // Cada família (linha) tem as suas etapas em `etapas_regua` (linha 1 = genérica, 4 = Neuro, 5 = Metabólico… cada uma com 0–7 etapas);
+    // antes só a linha 1 (etapas 0–5) aparecia. "enviados_aprox" segue a regra antiga: disparo CRIADO depois do pixel, com `etapa_atual` além da etapa
+    // (ponteiro de estado, sem data própria); "abertos" usa o mesmo recorte, para numerador e denominador falarem da MESMA população.
+    query(`SELECT linha, etapa, nome, offset_h::float AS offset_h, ativo FROM etapas_regua WHERE linha IS NOT NULL AND etapa >= 0 ORDER BY linha::int, etapa`),
+    query(`SELECT linha, nome, ordem FROM painel_linhas_copy ORDER BY ordem`),
     query(`
-      SELECT e.etapa, e.nome,
-        (SELECT count(*)::int FROM disparos_pos_venda d
-           WHERE d.etapa_atual > e.etapa AND d.criado_em >= $1::timestamptz) AS enviados_aprox,
-        (SELECT count(DISTINCT ab.disparo_id)::int FROM aberturas_disparo ab
-           JOIN disparos_pos_venda d2 ON d2.id = ab.disparo_id
-           WHERE ab.etapa = e.etapa AND d2.criado_em >= $1::timestamptz) AS abertos
-      FROM etapas_regua e
-      WHERE e.etapa BETWEEN 0 AND 5
-      ORDER BY e.etapa`, [PIXEL_ABERTURA_DESDE]),
+      SELECT coalesce(p.linha, '1') AS linha, d.produto_slug AS produto, e.etapa, count(*)::int AS enviados
+      FROM disparos_pos_venda d
+      LEFT JOIN produtos p ON p.slug = d.produto_slug
+      JOIN etapas_regua e ON e.linha = coalesce(p.linha, '1') AND e.etapa >= 0 AND d.etapa_atual > e.etapa
+      WHERE d.criado_em >= $1::timestamptz
+      GROUP BY 1, 2, 3`, [PIXEL_ABERTURA_DESDE]),
+    query(`
+      SELECT coalesce(p.linha, '1') AS linha, d.produto_slug AS produto, ab.etapa, count(DISTINCT ab.disparo_id)::int AS abertos
+      FROM aberturas_disparo ab
+      JOIN disparos_pos_venda d ON d.id = ab.disparo_id
+      LEFT JOIN produtos p ON p.slug = d.produto_slug
+      WHERE d.criado_em >= $1::timestamptz
+      GROUP BY 1, 2, 3`, [PIXEL_ABERTURA_DESDE]),
+
+    query(`SELECT slug, nome, linha FROM produtos`),
 
     // Aqui não precisa aproximar: resposta_enviada_em É o instante do envio
     // de verdade (não um ponteiro de estado), então o corte pelo cutover é
@@ -206,6 +239,7 @@ async function coletarMetricas(dias, linha) {
   ]);
 
   const taxa = (abertos, enviados) => (enviados > 0 ? abertos / enviados : null);
+  const regua = montarRegua({ etapas: reguaEtapas.rows, linhas: reguaLinhas.rows, enviados: reguaEnviados.rows, abertos: reguaAbertos.rows, produtos: nomesProdutos.rows, linhaFiltro: linha });
 
   return {
     periodo_dias: dias,
@@ -217,9 +251,8 @@ async function coletarMetricas(dias, linha) {
       jornada: jornada.rows,
     },
     abertura: {
-      regua_por_etapa: aberturaRegua.rows.map((r) => ({
-        ...r, taxa: taxa(r.abertos, r.enviados_aprox),
-      })),
+      regua_por_etapa: regua.flat,
+      regua_por_linha: regua.porLinha,
       resposta_automatica: {
         enviados: aberturaResposta.rows[0].enviados,
         abertos: aberturaResposta.rows[0].abertos,
@@ -515,7 +548,7 @@ function montarPdf(m) {
   barrasPercentual(
     doc,
     m.abertura.regua_por_etapa.map((r) => ({
-      rotulo: `Etapa ${r.etapa} — ${r.nome}`, taxa: r.taxa, detalhe: `${n(r.abertos)}/${n(r.enviados_aprox)}`,
+      rotulo: `${r.familia} · Etapa ${r.etapa} — ${r.nome}`, taxa: r.taxa, detalhe: `${n(r.abertos)}/${n(r.enviados_aprox)}`,
     })),
     { campoRotulo: 'rotulo', campoTaxa: 'taxa', campoDetalhe: 'detalhe', cor: COR.VERDE },
   );

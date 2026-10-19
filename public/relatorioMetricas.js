@@ -70,29 +70,74 @@ function renderGraficoBuckets(container, itens, unidade) {
   });
 }
 
+/** Abertura por etapa da régua: um bloco por família (nicho), com TODAS as etapas dela; colunas = total da família + cada produto. */
 function renderAberturaRegua(m) {
   const container = $('rel-abertura-regua');
   container.replaceChildren();
-  const ul = document.createElement('ul');
-  ul.className = 'sup-ranking';
-  for (const r of m.abertura.regua_por_etapa) {
-    const li = document.createElement('li');
-    li.className = 'sup-item';
-    const rot = document.createElement('span');
-    rot.className = 'sup-item-rotulo';
-    rot.textContent = `Etapa ${r.etapa} — ${r.nome}`;
-    const num = document.createElement('span');
-    num.className = 'sup-item-num';
-    num.textContent = `${pct(r.taxa)} (${n(r.abertos)}/${n(r.enviados_aprox)})`;
-    const barra = document.createElement('span');
-    barra.className = 'sup-item-barra';
-    const cheio = document.createElement('span');
-    cheio.style.width = `${r.taxa ? Math.max(2, r.taxa * 100) : 0}%`;
-    barra.append(cheio);
-    li.append(rot, num, barra);
-    ul.append(li);
+  const familias = m.abertura.regua_por_linha || [];
+  if (!familias.length) {
+    const vazio = document.createElement('p');
+    vazio.className = 'vazio-suave';
+    vazio.textContent = 'Sem dados de régua.';
+    container.append(vazio);
+    return;
   }
-  container.append(ul);
+  const celula = (tr, e, enviados, abertos, taxaV, destaque) => {
+    const td = document.createElement('td');
+    td.className = 'abre-cel' + (destaque ? ' abre-cel--total' : '');
+    if (!enviados) { td.textContent = '—'; td.title = 'Nenhum e-mail dessa etapa enviado no período do pixel'; tr.append(td); return; }
+    const pctEl = document.createElement('strong');
+    pctEl.textContent = pct(taxaV);
+    const det = document.createElement('small');
+    det.textContent = `${n(abertos)}/${n(enviados)}`;
+    td.append(pctEl, det);
+    td.title = `${e.nome}: ${n(abertos)} aberturas em ~${n(enviados)} e-mails enviados`;
+    if (destaque) {
+      const barra = document.createElement('span');
+      barra.className = 'abre-barra';
+      const cheio = document.createElement('span');
+      cheio.style.width = `${taxaV ? Math.max(2, taxaV * 100) : 0}%`;
+      barra.append(cheio);
+      td.append(barra);
+    }
+    tr.append(td);
+  };
+  for (const f of familias) {
+    const bloco = document.createElement('section');
+    bloco.className = 'abre-familia';
+    const h = document.createElement('h3');
+    h.textContent = f.nome;
+    const env = f.etapas.reduce((x, e) => x + e.enviados_aprox, 0);
+    const sub = document.createElement('small');
+    sub.textContent = ` · ${f.etapas.length} etapas · ${f.produtos.length} ${f.produtos.length === 1 ? 'produto' : 'produtos'}${env ? '' : ' · sem envios no período'}`;
+    h.append(sub);
+    const envolve = document.createElement('div');
+    envolve.className = 'tabela-envolve';
+    const tab = document.createElement('table');
+    tab.className = 'tabela abre-tabela';
+    const cab = document.createElement('thead');
+    const trh = document.createElement('tr');
+    for (const t of ['Etapa', 'Família (total)', ...f.produtos.map((p) => p.nome)]) {
+      const th = document.createElement('th');
+      th.textContent = t;
+      trh.append(th);
+    }
+    cab.append(trh);
+    const corpo = document.createElement('tbody');
+    for (const e of f.etapas) {
+      const tr = document.createElement('tr');
+      const tdE = document.createElement('td');
+      tdE.textContent = `Etapa ${e.etapa} — ${e.nome}` + (e.ativo === false ? ' (pausada)' : '');
+      tr.append(tdE);
+      celula(tr, e, e.enviados_aprox, e.abertos, e.taxa, true);
+      for (const p of e.produtos) celula(tr, e, p.enviados_aprox, p.abertos, p.taxa, false);
+      corpo.append(tr);
+    }
+    tab.append(cab, corpo);
+    envolve.append(tab);
+    bloco.append(h, envolve);
+    container.append(bloco);
+  }
 }
 
 async function carregar() {

@@ -3220,3 +3220,13 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .tabela--larga { min-width: 1100px; }
 .esc-comissao-hist { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--tinta-2); }
 .esc-comissao .esc-ficha-form { max-width: 360px; }
+
+/* Relatório de métricas — abertura por etapa, por família e por produto */
+.abre-familia { margin: 18px 0 26px; }
+.abre-familia h3 { margin: 0 0 8px; font-size: 14px; } .abre-familia h3 small { color: var(--texto-suave, #8b95a7); font-weight: 400; }
+.abre-tabela { min-width: 0; } .abre-tabela th { white-space: normal; text-align: left; } .abre-tabela td:first-child { min-width: 190px; }
+.abre-cel { white-space: nowrap; } .abre-cel strong { display: block; font-size: 13px; } .abre-cel small { color: var(--texto-suave, #8b95a7); font-size: 11px; }
+.abre-cel--total { background: rgba(80, 180, 200, .08); }
+.abre-barra { display: block; height: 4px; margin-top: 5px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; }
+.abre-barra span { display: block; height: 100%; background: #4fb3c8; }
+.cartao--larga { grid-column: 1 / -1; }
