@@ -3230,3 +3230,8 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .abre-barra { display: block; height: 4px; margin-top: 5px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; }
 .abre-barra span { display: block; height: 100%; background: #4fb3c8; }
 .cartao--larga { grid-column: 1 / -1; }
+
+/* Tier do valor do pedido (5º momento, item 10): quanto maior o pedido, mais quente a cor */
+.tier-tag { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; letter-spacing: .02em; color: #fff; white-space: nowrap; }
+.tier-tag--1 { background: #d6336c; } .tier-tag--2 { background: #e8590c; } .tier-tag--3 { background: #e0a100; color: #1b1500; }
+.tier-tag--4 { background: #2f9e44; } .tier-tag--5 { background: #1c7ed6; } .tier-tag--6 { background: #6b7280; }

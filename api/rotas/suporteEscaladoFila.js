@@ -100,7 +100,7 @@ export default async function rotasSuporteEscaladoFila(app) {
     const chaveCasos = `${chave}:${q}:${JSON.stringify(Object.keys(FILTROS_SQL).map((k) => req.query[k] ?? ''))}`;
     const [casosRes, resumoRes, hojeRes, slaRes, falhasRes, rankingRes, statusRes, slaEquipeRes] = await Promise.all([
       memo(`${chaveCasos}:casos`, 10_000, () => query(
-        `SELECT s.id, s.remetente_email, s.nome, e.assunto, s.status, s.tag_motivo, s.prioridade_nivel, s.prioridade, s.board_id,
+        `SELECT s.id, s.remetente_email, s.nome, e.assunto, s.status, s.tag_motivo, s.prioridade_nivel, s.prioridade, s.board_id, s.tier, s.valor_pedido_usd,
                 b.nome AS agente, s.email_id, s.iniciado_em, s.finalizado_em, s.alerta_ameaca, s.criado_em, s.ultimo_email_cliente_em, s.primeira_resposta_agente_em, s.ultima_resposta_agente_em,
                 fi.motivo_contato, fi.detalhamento_motivo, fi.tipo_resolucao, fi.status_ticket, fi.motivo_reenvio, fi.status_logistica,
                 fi.responsavel_board_id AS responsavel_logistica_id, fi.status_ajuda, fi.quantidade_reenvio, fi.percentual_reembolso,

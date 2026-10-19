@@ -691,6 +691,7 @@ export function abrirDetalheEscalado(item) {
       { rotulo: 'Finalizado em', valor: item.finalizado_em ? dataHora(item.finalizado_em) : '—' },
       { rotulo: 'Tag do motivo do contato', valor: ROTULO_TAG[item.tag_motivo] || '—' },
       { rotulo: 'Prioridade', valor: ROTULO_NIVEL[item.prioridade_nivel] || '—' },
+      { rotulo: 'Tier do pedido', valor: etiquetaTier(item) ? (() => { const w = document.createElement('span'); w.append(etiquetaTier(item)); w.append(document.createTextNode(` US$ ${Number(item.valor_pedido_usd).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)); return w; })() : '—' },
       { rotulo: 'Alerta', valor: alertaEl },
       { rotulo: 'Última movimentação', largo: true, valor: item.movido_em ? `${item.movido_de ? 'de ' + item.movido_de + ' ' : ''}por ${item.movido_por || 'Sistema (automação)'} em ${dataHora(item.movido_em)}` : '—' },
       { rotulo: 'Dados do pedido', valor: contextoContainer, bloco: true, metade: true },
@@ -1654,6 +1655,18 @@ function criarNotaItem(casoId, container, nota) {
 
 const ROTULO_AMEACA = { chargeback: 'Chargeback', legal: 'Ameaça legal', ambos: 'Chargeback + ameaça legal' };
 /* Tag do motivo do contato e prioridade Alta/Média (065, pedido da Késsia): automáticas, só leitura. */
+/** Tier do valor do pedido (5º momento, item 10): tag colorida. Tier 1 = pedidos acima de US$ 600 … Tier 6 = até US$ 199. Sem valor conhecido: nada. */
+export function etiquetaTier(item) {
+  const t = Number(item?.tier);
+  if (!t) return null;
+  const el = document.createElement('span');
+  el.className = `tier-tag tier-tag--${t}`;
+  el.textContent = `Tier ${t}`;
+  const v = item.valor_pedido_usd != null ? Number(item.valor_pedido_usd) : null;
+  el.title = v != null ? `Valor do pedido: US$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Tier do valor do pedido';
+  return el;
+}
+
 export const ROTULO_TAG = { reembolso: 'Reembolso', chargeback: 'Chargeback', rastreio: 'Rastreio', outros: 'Outros motivos' };
 const ROTULO_NIVEL = { alta: 'Prioridade Alta', media: 'Prioridade Média' };
 const ROTULO_RASTREIO = { pending: 'Aguardando envio', shipped: 'Enviado', delivered: 'Entregue', cancelled: 'Cancelado', nao_encontrado: 'Não encontrado', pendente_consulta: 'Ainda não consultado' };

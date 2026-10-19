@@ -55,7 +55,7 @@ export default async function rotasSuporteEscaladoRelatorios(app) {
     const { rows } = await query(
       `SELECT s.id AS numero, s.remetente_email, s.nome, e.assunto, s.status AS status_kanban, s.criado_em, s.iniciado_em, s.finalizado_em,
               s.data_entrega, s.resumo_conversa, s.motivo_escalonamento,
-              s.tag_motivo, s.prioridade_nivel, s.alerta_ameaca, s.ticket_mae_id, b.nome AS agente,
+              s.tag_motivo, s.prioridade_nivel, s.alerta_ameaca, s.ticket_mae_id, s.tier, s.valor_pedido_usd, b.nome AS agente,
               mv.movido_por, mv.mudou_em AS movido_em, mv.status_anterior AS movido_de,
               ped.produto, ped.plataforma, ped.status_pedido, ped.pedido_em, ped.valor AS valor_pedido, ped.rastreio_status, ped.carrier_code,
               ped.tracking_number, t.primeiro_email_em,
@@ -184,7 +184,7 @@ export default async function rotasSuporteEscaladoRelatorios(app) {
          LEFT JOIN email_ia.suporte_escalado_boards b ON b.id = s.board_id
         WHERE s.ticket_mae_id IS NULL AND s.criado_em >= ${periodo.ini} AND s.criado_em < ${periodo.fim}
           AND (s.tag_motivo IN ('reembolso', 'chargeback') OR fi.motivo_contato IN ('Reembolso', 'Chargeback'))
-          AND coalesce(fi.tipo_resolucao, '') <> 'Não envolve reembolso'   -- 4º momento, item 4: não conta no painel (decisão do Lucas, 13/10)
+          AND coalesce(fi.tipo_resolucao, '') NOT IN ('Não envolve reembolso', 'Não reembolsado - Fora da garantia')   -- fora do painel: 'Não envolve reembolso' (4º momento, decisão do Lucas, 13/10) e 'Fora da garantia' (5º momento, 19/10: a negativa é regra da empresa, não efetividade do agente)
         GROUP BY 1, 2, 3`,
     ));
     const pct = (v, t) => (t ? Math.round((v / t) * 1000) / 10 : 0);
