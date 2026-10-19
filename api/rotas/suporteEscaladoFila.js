@@ -29,6 +29,7 @@ const FILTROS_SQL = {
   valor_compra_min: { col: 'fi.valor_compra_usd', op: '>=', num: true }, valor_compra_max: { col: 'fi.valor_compra_usd', op: '<=', num: true },
   deducao_min: { col: 'fi.deducao_frascos_usd', op: '>=', num: true }, deducao_max: { col: 'fi.deducao_frascos_usd', op: '<=', num: true },
   valor_reembolsar_min: { col: 'fi.valor_a_reembolsar_usd', op: '>=', num: true }, valor_reembolsar_max: { col: 'fi.valor_a_reembolsar_usd', op: '<=', num: true },
+  agente_id: { col: 's.board_id', num: true },   // 5º momento, item 9: filtro por nome do agente (id do board)
   ajuda_para_id: { sql: (ph) => `EXISTS (SELECT 1 FROM email_ia.suporte_escalado_ajuda a WHERE a.suporte_escalado_id = s.id AND a.para_board_id = ${ph})`, num: true },
 };
 const ABERTO_SQL = `(s.status IN ${ABERTOS} AND ${ENCERRADO_NA_FICHA})`;

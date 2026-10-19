@@ -963,7 +963,10 @@ function montarAtendimento(item, botaoTelaCheia) {
   });
 
   compor.append(avisoProp);
-  raiz.append(barra, painel, compor, acoes);
+  // 5º momento, item 8: "Abrir a conversa em tela cheia" e "Mesclar tickets" saem de baixo do campo de resposta e vão para a mesma linha das abas.
+  const linhaAbas = document.createElement('div'); linhaAbas.className = 'esc-atend-linha';
+  linhaAbas.append(barra, acoes);
+  raiz.append(linhaAbas, painel, compor);
   desenhar();
   carregar();
   return raiz;
@@ -1085,6 +1088,33 @@ async function carregarContexto(item, container) {
   }
 }
 
+/** Tabela do pedido (5º momento, item 5): Tipo · Nº do pedido/transação · quantidade e produto · valor, com o TOTAL. */
+const ROTULO_TIPO_ITEM = { front: 'FRONT', upsell: 'UPSELL', downsell: 'DOWNSELL' };
+function tabelaPedido(itens) {
+  const moeda = (m) => ((m || 'USD') === 'USD' ? 'US$' : m);
+  const fmt = (v, m) => (v == null ? '—' : `${moeda(m)} ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+  const tab = document.createElement('table');
+  tab.className = 'esc-pedido-tabela';
+  const cab = tab.createTHead().insertRow();
+  for (const t of ['Tipo', 'Nº do pedido', 'Quantidade e produto', 'Valor']) { const th = document.createElement('th'); th.textContent = t; cab.append(th); }
+  const corpo = tab.createTBody();
+  let ups = 0, down = 0, total = 0, temValor = false;
+  for (const it of itens) {
+    const tr = corpo.insertRow();
+    const tipo = it.tipo === 'upsell' ? `UP${++ups}` : it.tipo === 'downsell' ? `DOWN${++down}` : (ROTULO_TIPO_ITEM[it.tipo] || String(it.tipo || '').toUpperCase());
+    const qtd = it.quantidade ? `${it.quantidade} ${it.quantidade === 1 ? 'frasco' : 'frascos'} — ` : '';
+    for (const [txt, cls] of [[tipo], [it.transacao_id || '—', 'esc-pedido-num'], [`${qtd}${it.produto || ''}`], [fmt(it.valor, it.moeda), 'esc-pedido-valor']]) {
+      const td = tr.insertCell(); td.textContent = txt; if (cls) td.className = cls;
+    }
+    if (it.valor != null) { total += Number(it.valor); temValor = true; }
+  }
+  const tr = corpo.insertRow();
+  tr.className = 'esc-pedido-total';
+  const t0 = tr.insertCell(); t0.textContent = 'TOTAL'; t0.colSpan = 3;
+  const t1 = tr.insertCell(); t1.textContent = temValor ? fmt(total, itens[0]?.moeda) : '—'; t1.className = 'esc-pedido-valor';
+  return tab;
+}
+
 function renderContexto(item, container, ctx) {
   container.replaceChildren();
 
@@ -1111,7 +1141,8 @@ function renderContexto(item, container, ctx) {
   linha('Plataforma', principal?.plataforma ? rotularPlataforma(principal.plataforma) : '—');
   linha('Status do pedido', principal?.status_pedido || '—');
   const detalhe = pedidos.find((p) => p.transacao_id === principal?.transacao_id) ?? pedidos[0] ?? null;
-  linha('Valor do pedido', detalhe?.valor != null ? `${(detalhe.moeda || 'USD') === 'USD' ? 'US$' : detalhe.moeda} ${Number(detalhe.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—');
+  if (detalhe?.itens?.length) linha('Itens e valores do pedido', tabelaPedido(detalhe.itens));
+  else linha('Valor do pedido', detalhe?.valor != null ? `${(detalhe.moeda || 'USD') === 'USD' ? 'US$' : detalhe.moeda} ${Number(detalhe.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—');
   linha('Status da entrega', detalhe?.rastreio_status ? (ROTULO_RASTREIO[detalhe.rastreio_status] || detalhe.rastreio_status) : '—');
   linha('Transportadora', detalhe?.carrier_code || '—');
   if (detalhe?.tracking_number && /^https?:\/\//i.test(detalhe.tracking_url || '')) {
@@ -1415,9 +1446,24 @@ async function carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl,
     });
     if (contComissao) {
       // Comissão (107): bloco próprio no fim de Propriedades; quem preencheu, quando e o histórico são só deste campo.
+      // 5º momento: Comissão e os indicadores abaixo são acompanhados pela gestão — a equipe só vê.
+      const podeGestao = dados.pode_editar_gestao === true;
       montarBlocoFicha({
-        ...base, container: contComissao, atualizadoPor: f.comissao_atualizado_por, atualizadoEm: f.comissao_atualizado_em,
+        ...base, podeEditar: podeGestao, container: contComissao, atualizadoPor: f.comissao_atualizado_por, atualizadoEm: f.comissao_atualizado_em,
         definicao: [{ chave: 'comissao', rotulo: 'Comissão', tipo: 'lista', opcoes: opc.comissao }],
+      });
+      // Indicadores gerenciais (110): preenchidos pela rotina quando o reembolso total / o chargeback acontece depois do 1º e-mail do cliente.
+      const contIndicadores = document.createElement('div');
+      contIndicadores.className = 'esc-ficha-bloco esc-indicadores';
+      contComissao.append(contIndicadores);
+      montarBlocoFicha({
+        ...base, podeEditar: podeGestao, container: contIndicadores, atualizadoPor: f.indicadores_atualizado_por, atualizadoEm: f.indicadores_atualizado_em,
+        definicao: [
+          { chave: 'reembolso_apos_1o_email', rotulo: 'Reembolso após 1º e-mail?', tipo: 'lista', opcoes: opc.sim_nao },
+          { chave: 'data_reembolso_total', rotulo: 'Data do reembolso total', tipo: 'data' },
+          { chave: 'chargeback_apos_1o_email', rotulo: 'Chargeback após 1º e-mail?', tipo: 'lista', opcoes: opc.sim_nao },
+          { chave: 'data_chargeback', rotulo: 'Data do chargeback', tipo: 'data' },
+        ],
       });
       const hist = dados.comissao_historico ?? [];
       if (hist.length) {

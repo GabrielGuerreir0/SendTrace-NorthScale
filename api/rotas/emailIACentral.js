@@ -1886,7 +1886,11 @@ export default async function rotasEmailIACentral(app) {
       // TODOS os pedidos deste cliente (pode ter mais de um) — por e-mail,
       // mesmo índice que a tela de Tickets já usa.
       query(
-        `SELECT d.transacao_id, d.produto, d.plataforma, d.status AS status_pedido, d.criado_em AS pedido_em,
+        `SELECT d.id AS disparo_id, d.transacao_id, d.produto, d.plataforma, d.status AS status_pedido, d.criado_em AS pedido_em,
+                -- 5º momento, item 5: o pedido com todos os itens (front, upsells, downsells), cada um com o seu Nº de transação, produto, frascos e valor
+                (SELECT coalesce(json_agg(json_build_object('tipo', x.etapa_funil, 'transacao_id', x.transacao_id, 'produto', x.produto,
+                                                            'quantidade', x.quantidade, 'valor', x.valor, 'moeda', x.moeda)), '[]'::json)
+                   FROM public.pedido_detalhado(d.id) x) AS itens,
                 coalesce((SELECT abs(e.valor) FROM eventos_plataforma e
                            WHERE e.transacao_id = d.transacao_id AND btrim(e.plataforma) = d.plataforma
                              AND e.evento IN ('SALE', 'payment', 'neworder') AND e.valor IS NOT NULL

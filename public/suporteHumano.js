@@ -248,6 +248,7 @@ const statusDaAba = (chave) => (chave.startsWith('st:') ? chave.slice(3) : null)
    Os filtros por lista suspensa e por tempo restante rodam no navegador (a fila já vem com até 1.000 casos); a busca roda no servidor
    porque procura também pelo nº do pedido do cliente. */
 const FILTROS_LISTA = [
+  { chave: 'agente_id', rotulo: 'Agente', opcoes: (o) => (o.equipe ?? []).map((e) => [e.id, e.nome]) },
   { chave: 'tag_motivo', rotulo: 'Motivo (tag automática)', opcoes: () => Object.entries(ROTULO_TAG) },
   { chave: 'motivo_contato', rotulo: 'Motivo do contato', opcoes: (o) => o.motivo_contato },
   { chave: 'detalhamento_motivo', rotulo: 'Detalhamento do motivo', opcoes: (o) => o.detalhamento_motivo },
@@ -331,6 +332,8 @@ const COLUNAS_RELATORIO = [
   ['Valor a reembolsar', (r) => r.valor_a_reembolsar_usd], ['Status do ticket', (r) => r.status_ticket],
   ['Virou chargeback', (r) => (r.tipo_resolucao === 'Virou chargeback' || r.chargeback_em ? 'Sim' : 'Não')], ['Virou chargeback em', (r) => dia(r.chargeback_em)],
   ['Ticket reaberto em', (r) => dt(r.ticket_reaberto_em)], ['Propriedades — última alteração por', (r) => r.propriedades_atualizado_por], ['Propriedades — última alteração em', (r) => dt(r.propriedades_atualizado_em)],
+  ['Reembolso total após o 1º e-mail', (r) => r.reembolso_apos_1o_email || 'Não'], ['Data do reembolso total', (r) => dia(r.data_reembolso_total)],
+  ['Chargeback após o 1º e-mail', (r) => r.chargeback_apos_1o_email || 'Não'], ['Data do chargeback (indicador)', (r) => dia(r.data_chargeback)],
   ['Comissão', (r) => r.comissao], ['Comissão — preenchida por', (r) => r.comissao_atualizado_por], ['Comissão — preenchida em', (r) => dt(r.comissao_atualizado_em)],
   ['Status logística', (r) => r.status_logistica], ['Motivo do reenvio', (r) => r.motivo_reenvio], ['Quantidade para reenvio', (r) => r.quantidade_reenvio],
   ['Produto a ser enviado', (r) => r.produto_reenvio], ['Observação do reenvio', (r) => r.observacao_reenvio], ['Endereço (divergência)', (r) => r.endereco_divergencia],
@@ -612,7 +615,7 @@ function renderFila() {
   const cab = tabela.createTHead().insertRow();
   const titulos = interna
     ? ['Tipo', 'E-mail do cliente', 'Assunto', 'Pedido por', 'Para', 'O que fazer', 'Desde']
-    : ['Nº', 'E-mail do cliente', 'Assunto', 'Motivo', 'Prioridade', 'Tier', 'Tempo para responder', 'Agente responsável'];
+    : ['Nº', 'E-mail do cliente', 'Assunto', 'Motivo', 'Detalhamento do motivo', 'Status do ticket', 'Prioridade', 'Tier', 'Tempo para responder', 'Agente responsável'];
   if (podeSelecionar) {
     const th = document.createElement('th');
     const todosMarcados = linhas.length > 0 && linhas.every((c) => selecionados.has(c.id));
@@ -655,6 +658,8 @@ function renderFila() {
       { render: celulaEmail },
       { classe: 'esc-fila-assunto', render: (c) => c.assunto || '—' },
       { render: (c) => `${ROTULO_TAG[c.tag_motivo] || '—'}${c.ticket_reaberto_em ? ' · 🔁 reaberto' : ''}` },
+      { render: (c) => c.detalhamento_motivo || '—' },
+      { render: (c) => c.status_ticket || 'Aberto' },
       { render: (c) => (c.prioridade_nivel === 'alta' ? 'Alta' : c.prioridade_nivel === 'media' ? 'Média' : '—') },
       { render: (c) => etiquetaTier(c) || '—' },
       { render: selarSla },

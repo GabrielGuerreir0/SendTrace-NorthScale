@@ -3235,3 +3235,19 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .tier-tag { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; letter-spacing: .02em; color: #fff; white-space: nowrap; }
 .tier-tag--1 { background: #d6336c; } .tier-tag--2 { background: #e8590c; } .tier-tag--3 { background: #e0a100; color: #1b1500; }
 .tier-tag--4 { background: #2f9e44; } .tier-tag--5 { background: #1c7ed6; } .tier-tag--6 { background: #6b7280; }
+
+/* 5º momento, item 8: ações do Atendimento na linha das abas */
+.esc-atend-linha { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; }
+.esc-atend-linha .esc-atend-acoes { align-items: center; gap: 8px 14px; margin-left: auto; }
+.esc-atend-linha .esc-mesclar { position: relative; }
+.esc-atend-linha .esc-mesclar > summary { padding: 6px 12px; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--superficie); list-style: none; }
+.esc-atend-linha .esc-mesclar > summary::-webkit-details-marker { display: none; }
+.esc-atend-linha .esc-mesclar[open] > .esc-mesclar-corpo { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: min(560px, 90vw); padding: 12px; border: 1px solid var(--borda); border-radius: var(--raio); background: var(--superficie); box-shadow: 0 12px 32px rgba(0,0,0,.35); }
+
+/* 5º momento, item 5: tabela do pedido (front, upsells, total) */
+.esc-pedido-tabela { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 2px 0 4px; }
+.esc-pedido-tabela th { text-align: left; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--tinta-2); padding: 5px 8px; border-bottom: 1px solid var(--borda); }
+.esc-pedido-tabela td { padding: 6px 8px; border-bottom: 1px solid var(--borda); vertical-align: top; }
+.esc-pedido-num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; word-break: break-all; }
+.esc-pedido-valor { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.esc-pedido-total td { font-weight: 700; border-bottom: 0; }

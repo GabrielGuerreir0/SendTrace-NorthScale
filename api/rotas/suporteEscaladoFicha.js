@@ -46,6 +46,7 @@ export const OPCOES = {
   motivo_reenvio: ['Itens quebrados', 'Pedido incompleto', 'Pedido não entregue', 'Cortesia'],
   status_logistica: ['Solicitar', 'Solicitado', 'Responder cliente', 'Resolvido'],
   status_ajuda: ['Preciso de ajuda', 'Orientado - seguir atendimento', 'Resolvido'],
+  sim_nao: ['Sim', 'Não'],   // 19/10 (110): indicadores gerenciais (reembolso/chargeback após o 1º e-mail)
   comissao: ['Sim', 'Não passível', 'Sob análise'],   // 18/10 (107): campo opcional no fim de Propriedades, com histórico próprio
 };
 
@@ -54,16 +55,19 @@ const CAMPOS_FICHA = [
   'motivo_reenvio', 'quantidade_reenvio', 'produto_reenvio', 'observacao_reenvio',
   'endereco_divergencia', 'novo_rastreio', 'responsavel_board_id',
   'status_logistica', 'status_ajuda', 'valor_compra_usd', 'deducao_frascos_usd', 'chargeback_em', 'comissao',
+  'reembolso_apos_1o_email', 'data_reembolso_total', 'chargeback_apos_1o_email', 'data_chargeback',
 ];
 // Colunas só lidas (calculadas/guardadas pela API): valor a reembolsar e a data/autor da última alteração de cada bloco.
 const CAMPOS_LEITURA = [
   'valor_a_reembolsar_usd', 'atualizado_por', 'atualizado_em',
   'propriedades_atualizado_por', 'propriedades_atualizado_em', 'logistica_atualizado_por', 'logistica_atualizado_em',
   'ajuda_atualizado_por', 'ajuda_atualizado_em', 'ticket_reaberto_em', 'comissao_atualizado_por', 'comissao_atualizado_em',
+  'indicadores_atualizado_por', 'indicadores_atualizado_em',
 ];
 const BLOCO_PROPRIEDADES = ['motivo_contato', 'detalhamento_motivo', 'tipo_resolucao', 'percentual_reembolso', 'status_ticket', 'valor_compra_usd', 'deducao_frascos_usd', 'chargeback_em'];
 const BLOCO_LOGISTICA = ['motivo_reenvio', 'quantidade_reenvio', 'produto_reenvio', 'observacao_reenvio', 'endereco_divergencia', 'novo_rastreio', 'responsavel_board_id', 'status_logistica'];
 const BLOCO_AJUDA = ['status_ajuda'];
+const BLOCO_INDICADORES = ['reembolso_apos_1o_email', 'data_reembolso_total', 'chargeback_apos_1o_email', 'data_chargeback'];   // 110: indicadores gerenciais (preenchidos pela rotina; só a gestão edita)
 const BLOCO_COMISSAO = ['comissao'];   // bloco próprio: não conta como Propriedades (nem some no "última alteração" delas)
 // Item 17 do PDF (07/10): ao salvar Propriedades, estes quatro campos são obrigatórios.
 const PROPRIEDADES_OBRIGATORIAS = ['motivo_contato', 'detalhamento_motivo', 'tipo_resolucao', 'status_ticket'];
@@ -249,6 +253,7 @@ export default async function rotasSuporteEscaladoFicha(app) {
     const pedido = c?.remetente_email ? await pedidoDoCliente(c.remetente_email) : null;
     return {
       pode_editar: ehDono(req, caso),
+      pode_editar_gestao: !!(req.usuario.admin || req.usuario.gestorHumano),   // Comissão e indicadores (5º momento)
       pode_editar_logistica: ehDono(req, caso) || (await ehResponsavelLogistica(req, req.params.id)),
       mesclagem: await mesclagemDe(req.params.id),
       caso: await textosDoCaso(req.params.id),
@@ -559,6 +564,10 @@ export default async function rotasSuporteEscaladoFicha(app) {
           deducao_frascos_usd: { type: ['number', 'null'], minimum: 0, maximum: 100000 },
           chargeback_em: { type: ['string', 'null'], format: 'date' },
           comissao: lista(OPCOES.comissao),
+          reembolso_apos_1o_email: lista(OPCOES.sim_nao),
+          data_reembolso_total: { type: ['string', 'null'], format: 'date' },
+          chargeback_apos_1o_email: lista(OPCOES.sim_nao),
+          data_chargeback: { type: ['string', 'null'], format: 'date' },
         },
       },
     },
@@ -569,6 +578,10 @@ export default async function rotasSuporteEscaladoFicha(app) {
       // O responsável da logística só mexe no bloco Logística (ex.: trocar o status para "Responder cliente" e passar a vez).
       const soLogistica = Object.keys(req.body).every((c) => BLOCO_LOGISTICA.includes(c));
       if (!(soLogistica && await ehResponsavelLogistica(req, req.params.id))) throw new ErroHttp(403, 'Este caso não é de um board seu.');
+    }
+    // 5º momento: Comissão e os indicadores gerenciais (Reembolso/Chargeback após o 1º e-mail) são acompanhados pela gestão — o restante da equipe só lê.
+    if (Object.keys(req.body).some((c) => c === 'comissao' || BLOCO_INDICADORES.includes(c)) && !(req.usuario.admin || req.usuario.gestorHumano)) {
+      throw new ErroHttp(403, 'Comissão e os indicadores de reembolso/chargeback só podem ser alterados pela gestão.');
     }
     const tem = (o, c) => Object.prototype.hasOwnProperty.call(o, c);
     const limpa = (v) => (typeof v === 'string' ? (v.trim() === '' ? null : v.trim()) : (v ?? null));
@@ -618,7 +631,7 @@ export default async function rotasSuporteEscaladoFicha(app) {
     const cols = Object.fromEntries(campos2.map((c) => [c, limpa(corpo[c])]));
     Object.assign(cols, extras);
     // Data e autor da última alteração de cada bloco (item 5): só o bloco tocado muda.
-    for (const [bloco, prefixo] of [[BLOCO_PROPRIEDADES, 'propriedades'], [BLOCO_LOGISTICA, 'logistica'], [BLOCO_AJUDA, 'ajuda'], [BLOCO_COMISSAO, 'comissao']]) {
+    for (const [bloco, prefixo] of [[BLOCO_PROPRIEDADES, 'propriedades'], [BLOCO_LOGISTICA, 'logistica'], [BLOCO_AJUDA, 'ajuda'], [BLOCO_COMISSAO, 'comissao'], [BLOCO_INDICADORES, 'indicadores']]) {
       if (toca(bloco)) { cols[`${prefixo}_atualizado_por`] = quem; cols[`${prefixo}_atualizado_em`] = new Date(); }
     }
     cols.atualizado_por = quem;

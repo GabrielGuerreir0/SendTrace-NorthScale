@@ -499,6 +499,17 @@ const fecharTicketsAutomatico = async () => {
 fecharTicketsAutomatico();
 const intervaloFechamento = setInterval(fecharTicketsAutomatico, FECHAMENTO_INTERVALO_MS);
 
+/* Indicadores gerenciais (migração 110): Reembolso total / Chargeback após o 1º e-mail, preenchidos sozinhos (só campos vazios), a cada 30 min. */
+const INDICADORES_INTERVALO_MS = 30 * 60 * 1000;
+const atualizarIndicadoresGerenciais = async () => {
+  try {
+    const { rows: [r] } = await pool.query('SELECT * FROM email_ia.atualizar_indicadores_gerenciais(false)');
+    if (r && (r.reembolsos || r.chargebacks)) app.log.info(r, 'indicadores de reembolso/chargeback atualizados');
+  } catch (err) { app.log.error(err, 'falha ao atualizar os indicadores gerenciais'); }
+};
+setTimeout(atualizarIndicadoresGerenciais, 60_000);
+const intervaloIndicadores = setInterval(atualizarIndicadoresGerenciais, INDICADORES_INTERVALO_MS);
+
 /*
  * Sincronização com o dash (só leitura) — de hora em hora + varredura semanal de 90 dias. Só liga com
  * DASH_API_KEY no .env; sem a chave é um no-op e a API sobe igual. Erro vira só log.
@@ -511,6 +522,7 @@ for (const sinal of ['SIGINT', 'SIGTERM']) {
     clearInterval(intervaloAlertas);
     clearInterval(intervaloRisco);
     clearInterval(intervaloFechamento);
+    clearInterval(intervaloIndicadores);
     clearInterval(intervaloRegistro17Track);
     clearInterval(intervaloMotorSppl);
     clearInterval(intervaloEnvioAtivo);
