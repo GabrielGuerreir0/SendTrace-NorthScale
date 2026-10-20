@@ -30,9 +30,27 @@ const FILTROS_SQL = {
   deducao_min: { col: 'fi.deducao_frascos_usd', op: '>=', num: true }, deducao_max: { col: 'fi.deducao_frascos_usd', op: '<=', num: true },
   valor_reembolsar_min: { col: 'fi.valor_a_reembolsar_usd', op: '>=', num: true }, valor_reembolsar_max: { col: 'fi.valor_a_reembolsar_usd', op: '<=', num: true },
   agente_id: { col: 's.board_id', num: true },   // 5º momento, item 9: filtro por nome do agente (id do board)
+  situacao_fila: { sql: (ph) => `${SITUACAO_FILA_SQL} = ${ph}` }, motivo_fora_fila: { sql: (ph) => `${MOTIVO_FORA_FILA_SQL} = ${ph}` },   // 20/10: na fila × fora da fila
   ajuda_para_id: { sql: (ph) => `EXISTS (SELECT 1 FROM email_ia.suporte_escalado_ajuda a WHERE a.suporte_escalado_id = s.id AND a.para_board_id = ${ph})`, num: true },
 };
 const ABERTO_SQL = `(s.status IN ${ABERTOS} AND ${ENCERRADO_NA_FICHA})`;
+
+/* Situação na fila (pedido da Késsia, 20/10): a pergunta única "o ticket está na fila ou fora dela?". Mesma regra da lista e do relatório.
+ *   Ag. resposta do agente  = está na fila e o último e-mail é do cliente (ou o agente nunca respondeu)
+ *   Ag. resposta do cliente = está na fila e o último e-mail é do agente
+ *   Fora da fila - definições internas = card fora das colunas de fila ou ficha Fechada/Resolvida (higienização, reembolso direto pela plataforma etc.)
+ * Cliente que escreve depois de um caso "fora da fila" volta para a fila (novo e-mail; regras 106/108/111). */
+export const SITUACAO_FILA_SQL = `(CASE WHEN NOT ${ABERTO_SQL} THEN 'Fora da fila - definições internas'
+  WHEN s.primeira_resposta_agente_em IS NULL OR s.ultimo_email_cliente_em > coalesce(s.ultima_resposta_agente_em, '-infinity'::timestamptz) THEN 'Ag. resposta do agente'
+  ELSE 'Ag. resposta do cliente' END)`;
+/* Por que está fora (só quando está fora): serve para a Késsia conferir se só as regras combinadas deixam ticket fora da fila. */
+export const MOTIVO_FORA_FILA_SQL = `(CASE WHEN ${ABERTO_SQL} THEN NULL
+  WHEN fi.detalhamento_motivo = 'Sem informação - Higienização' THEN 'Higienização'
+  WHEN s.status = 'reembolsado' OR fi.tipo_resolucao = 'Reembolsado pela plataforma' OR fi.detalhamento_motivo = 'Sem informação - Reembolsado pela plataforma' THEN 'Reembolso direto pela plataforma'
+  WHEN coalesce(fi.status_ticket, '') IN ('Resolvido', 'Fechado') THEN 'Fechado/resolvido pelo agente'
+  WHEN s.status IN ('formulario', 'formulario_nao_respondeu_a_tempo') THEN 'Formulário - sem regra definida (conferir)'
+  WHEN s.status = 'finalizado' THEN 'Finalizado - sem regra definida (conferir)'
+  ELSE 'Outro - sem regra definida (conferir)' END)`;
 
 export default async function rotasSuporteEscaladoFila(app) {
   app.get('/api/suporte-escalado/fila', {
@@ -108,7 +126,7 @@ export default async function rotasSuporteEscaladoFila(app) {
                 fi.chargeback_em, fi.ticket_reaberto_em,
                 (SELECT a.para_board_id FROM email_ia.suporte_escalado_ajuda a WHERE a.suporte_escalado_id = s.id ORDER BY a.criado_em DESC LIMIT 1) AS ajuda_para_id,
                 CASE WHEN NOT ${ABERTO_SQL} THEN 'outros' WHEN s.primeira_resposta_agente_em IS NULL THEN 'primeiro' WHEN v.vez_do_agente THEN 'segundo' ELSE 'outros' END AS fila,
-                ${ABERTO_SQL} AS em_aberto,
+                ${ABERTO_SQL} AS em_aberto, ${SITUACAO_FILA_SQL} AS situacao_fila, ${MOTIVO_FORA_FILA_SQL} AS motivo_fora_fila,
                 v.meta_min, v.pausado,
                 CASE WHEN NOT ${ABERTO_SQL} THEN NULL WHEN s.primeira_resposta_agente_em IS NULL THEN v.primeira_resposta_min WHEN v.vez_do_agente THEN v.vez_agente_min END AS espera_min
            FROM email_ia.suporte_escalado s

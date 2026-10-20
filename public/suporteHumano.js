@@ -247,12 +247,17 @@ const statusDaAba = (chave) => (chave.startsWith('st:') ? chave.slice(3) : null)
 /* ── filtros (itens 3, 4 e 13 do PDF de 07/10) ──
    Os filtros por lista suspensa e por tempo restante rodam no navegador (a fila já vem com até 1.000 casos); a busca roda no servidor
    porque procura também pelo nº do pedido do cliente. */
+/* Situação na fila (Késsia, 20/10): na fila ou fora dela; calculada na API (api/rotas/suporteEscaladoFila.js) e igual no relatório. */
+const SITUACOES_FILA = ['Ag. resposta do agente', 'Ag. resposta do cliente', 'Fora da fila - definições internas'];
+const MOTIVOS_FORA_FILA = ['Higienização', 'Reembolso direto pela plataforma', 'Fechado/resolvido pelo agente', 'Formulário - sem regra definida (conferir)', 'Finalizado - sem regra definida (conferir)', 'Outro - sem regra definida (conferir)'];
 const FILTROS_LISTA = [
   { chave: 'agente_id', rotulo: 'Agente', opcoes: (o) => (o.equipe ?? []).map((e) => [e.id, e.nome]) },
   { chave: 'tag_motivo', rotulo: 'Motivo (tag automática)', opcoes: () => Object.entries(ROTULO_TAG) },
   { chave: 'motivo_contato', rotulo: 'Motivo do contato', opcoes: (o) => o.motivo_contato },
   { chave: 'detalhamento_motivo', rotulo: 'Detalhamento do motivo', opcoes: (o) => o.detalhamento_motivo },
   { chave: 'tipo_resolucao', rotulo: 'Tipo de resolução', opcoes: (o) => o.tipo_resolucao },
+  { chave: 'situacao_fila', rotulo: 'Situação na fila', opcoes: () => SITUACOES_FILA },
+  { chave: 'motivo_fora_fila', rotulo: 'Motivo de estar fora da fila', opcoes: () => MOTIVOS_FORA_FILA },
   { chave: 'status_ticket', rotulo: 'Status do ticket', opcoes: (o) => o.status_ticket },
   { chave: 'motivo_reenvio', rotulo: 'Motivo do reenvio', opcoes: (o) => o.motivo_reenvio },
   { chave: 'status_logistica', rotulo: 'Status logística', opcoes: (o) => o.status_logistica },
@@ -319,6 +324,7 @@ const COLUNAS_RELATORIO = [
   ['Nº do ticket', (r) => `#${r.numero}`], ['Ticket-mãe', (r) => (r.ticket_mae_id ? `#${r.ticket_mae_id}` : '')],
   ['E-mail do cliente', (r) => r.remetente_email], ['Nome', (r) => r.nome], ['Assunto', (r) => r.assunto],
   ['Agente responsável', (r) => r.agente], ['Status no Kanban', (r) => r.status_kanban],
+  ['Situação na fila', (r) => r.situacao_fila], ['Motivo de estar fora da fila', (r) => r.motivo_fora_fila],
   ['Escalado em', (r) => dt(r.criado_em)], ['Iniciado em', (r) => dt(r.iniciado_em)], ['Finalizado em', (r) => dt(r.finalizado_em)],
   ['Tag do motivo do contato', (r) => ROTULO_TAG[r.tag_motivo] || ''], ['Prioridade', (r) => (r.prioridade_nivel === 'alta' ? 'Alta' : r.prioridade_nivel === 'media' ? 'Média' : '')],
   ['Alerta', (r) => ROTULO_ALERTA[r.alerta_ameaca] || ''],
@@ -471,14 +477,8 @@ function selarSla(caso) {
   }
   if (caso.restante_min === null || caso.fila === 'outros') {
     el.dataset.estado = 'espera';
-    el.textContent = caso.status_ticket === 'Resolvido' || caso.status_ticket === 'Fechado' ? caso.status_ticket : (caso.fila === 'outros' ? 'aguardando o cliente' : '—');
-    // Card fora das colunas de fila com o cliente por último: ninguém espera o cliente, o caso só não está na fila do agente (achado da Késsia, 20/10).
-    const clientePorUltimo = caso.ultimo_email_cliente_em && new Date(caso.ultimo_email_cliente_em) > new Date(caso.ultima_resposta_agente_em || 0);
-    if (caso.fila === 'outros' && caso.em_aberto === false && clientePorUltimo && el.textContent === 'aguardando o cliente') {
-      const nome = { finalizado: 'finalizado', reembolsado: 'reembolsado', formulario: 'formulário', formulario_nao_respondeu_a_tempo: 'formulário' }[caso.status];
-      el.textContent = nome ? `fora da fila (${nome})` : 'fora da fila';
-      el.title = 'O cliente escreveu por último, mas o card está fora das colunas de fila do agente.';
-    }
+    // A situação na fila (na fila × fora dela) tem coluna própria; aqui só o estado do ticket, para não duplicar a informação (Késsia, 20/10).
+    el.textContent = caso.status_ticket === 'Resolvido' || caso.status_ticket === 'Fechado' ? caso.status_ticket : '—';
     return el;
   }
   if (caso.restante_min < 0) { el.dataset.estado = 'estourado'; el.textContent = `estourado há ${minutosTxt(caso.restante_min)}`; }
@@ -622,7 +622,7 @@ function renderFila() {
   const cab = tabela.createTHead().insertRow();
   const titulos = interna
     ? ['Tipo', 'E-mail do cliente', 'Assunto', 'Pedido por', 'Para', 'O que fazer', 'Desde']
-    : ['Nº', 'E-mail do cliente', 'Assunto', 'Motivo', 'Detalhamento do motivo', 'Status do ticket', 'Prioridade', 'Tier', 'Tempo para responder', 'Agente responsável'];
+    : ['Nº', 'E-mail do cliente', 'Assunto', 'Motivo', 'Detalhamento do motivo', 'Status do ticket', 'Situação na fila', 'Prioridade', 'Tier', 'Tempo para responder', 'Agente responsável'];
   if (podeSelecionar) {
     const th = document.createElement('th');
     const todosMarcados = linhas.length > 0 && linhas.every((c) => selecionados.has(c.id));
@@ -650,6 +650,13 @@ function renderFila() {
     if (c.nome) { const s2 = document.createElement('small'); s2.textContent = c.nome; d.append(s2); }
     return d;
   };
+  const celulaSituacaoFila = (c) => {
+    const d = document.createElement('div');
+    d.textContent = c.situacao_fila || '—';
+    d.title = c.motivo_fora_fila ? `Fora da fila: ${c.motivo_fora_fila}` : (c.situacao_fila === 'Ag. resposta do agente' ? 'Na fila: o último e-mail é do cliente' : 'Na fila: o último e-mail é do agente');
+    if (c.motivo_fora_fila) { const m = document.createElement('small'); m.textContent = c.motivo_fora_fila; d.append(m); }
+    return d;
+  };
   const colunasBase = interna
     ? [
       { render: (p) => (p.tipo === 'ajuda' ? 'Ajuda' : 'Logística') },
@@ -667,6 +674,7 @@ function renderFila() {
       { render: (c) => `${ROTULO_TAG[c.tag_motivo] || '—'}${c.ticket_reaberto_em ? ' · 🔁 reaberto' : ''}` },
       { render: (c) => c.detalhamento_motivo || '—' },
       { render: (c) => c.status_ticket || 'Aberto' },
+      { render: celulaSituacaoFila },
       { render: (c) => (c.prioridade_nivel === 'alta' ? 'Alta' : c.prioridade_nivel === 'media' ? 'Média' : '—') },
       { render: (c) => etiquetaTier(c) || '—' },
       { render: selarSla },
