@@ -506,6 +506,11 @@ const atualizarIndicadoresGerenciais = async () => {
     const { rows: [r] } = await pool.query('SELECT * FROM email_ia.atualizar_indicadores_gerenciais(false)');
     if (r && (r.reembolsos || r.chargebacks)) app.log.info(r, 'indicadores de reembolso/chargeback atualizados');
   } catch (err) { app.log.error(err, 'falha ao atualizar os indicadores gerenciais'); }
+  /* Migração 114: ticket que a plataforma reembolsa depois recebe as Propriedades do Reembolsado (só ficha vazia). */
+  try {
+    const { rows: [p] } = await pool.query('SELECT email_ia.preencher_propriedades_reembolso_plataforma(false) AS preenchidos');
+    if (p && p.preenchidos) app.log.info(p, 'propriedades de reembolso da plataforma preenchidas');
+  } catch (err) { app.log.error(err, 'falha ao preencher as propriedades de reembolso da plataforma'); }
 };
 setTimeout(atualizarIndicadoresGerenciais, 60_000);
 const intervaloIndicadores = setInterval(atualizarIndicadoresGerenciais, INDICADORES_INTERVALO_MS);
