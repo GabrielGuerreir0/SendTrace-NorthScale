@@ -1426,7 +1426,9 @@ async function carregarFichaAgente(item, contProp, contLog, contAjuda, alertaEl,
       ...base, container: contProp, atualizadoPor: f.propriedades_atualizado_por, atualizadoEm: f.propriedades_atualizado_em,
       definicao: [
         { chave: 'motivo_contato', rotulo: 'Motivo do contato', tipo: 'lista', opcoes: opc.motivo_contato, obrigatorio: true },
-        { chave: 'detalhamento_motivo', rotulo: 'Detalhamento do motivo do contato', tipo: 'lista', opcoes: opc.detalhamento_motivo, obrigatorio: true },
+        { chave: 'detalhamento_motivo', rotulo: 'Detalhamento do motivo do contato', tipo: 'lista', obrigatorio: true,
+          // Os dois "Sem informação" são só da gestão/sistema: o agente não os vê na lista (a não ser que a ficha já esteja com um deles).
+          opcoes: dados.pode_editar_gestao === true ? opc.detalhamento_motivo : opc.detalhamento_motivo.filter((o) => !(opc.detalhamento_reservado ?? []).includes(o) || o === f.detalhamento_motivo) },
         { chave: 'tipo_resolucao', rotulo: 'Tipo de resolução', tipo: 'lista', opcoes: opc.tipo_resolucao, obrigatorio: true },
         { chave: 'percentual_reembolso', rotulo: 'Percentual do reembolso', tipo: 'lista', numero: true, obrigatorio: true,
           opcoes: (opc.percentual_reembolso ?? []).map((p) => [p, `${p}%`]), visivelSe: { chave: 'tipo_resolucao', valor: 'Reembolso parcial' } },

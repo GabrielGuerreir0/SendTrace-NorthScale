@@ -50,6 +50,10 @@ export const OPCOES = {
   comissao: ['Sim', 'Não passível', 'Sob análise'],   // 18/10 (107): campo opcional no fim de Propriedades, com histórico próprio
 };
 
+// Detalhamentos reservados à gestão (pedido da Késsia, 19/10): marcam a atualização automática do sistema e a higienização em massa.
+// O agente não os escolhe (o sistema e os scripts gravam direto no banco); quem já está com o valor na ficha continua com ele.
+const DETALHAMENTOS_RESERVADOS = ['Sem informação - Reembolsado pela plataforma', 'Sem informação - Higienização'];
+
 const CAMPOS_FICHA = [
   'motivo_contato', 'detalhamento_motivo', 'tipo_resolucao', 'percentual_reembolso', 'status_ticket',
   'motivo_reenvio', 'quantidade_reenvio', 'produto_reenvio', 'observacao_reenvio',
@@ -214,7 +218,7 @@ export default async function rotasSuporteEscaladoFicha(app) {
     const { rows } = await query(
       `SELECT id, nome FROM email_ia.suporte_escalado_boards WHERE usuario_id IS NOT NULL ORDER BY nome`,
     );
-    return { ...OPCOES, equipe: rows };
+    return { ...OPCOES, detalhamento_reservado: DETALHAMENTOS_RESERVADOS, equipe: rows };
   });
 
   /* ═══════════════════════  GET /api/suporte-escalado/:id/ficha  ══════════════ */
@@ -584,6 +588,12 @@ export default async function rotasSuporteEscaladoFicha(app) {
       throw new ErroHttp(403, 'Comissão e os indicadores de reembolso/chargeback só podem ser alterados pela gestão.');
     }
     const tem = (o, c) => Object.prototype.hasOwnProperty.call(o, c);
+    if (DETALHAMENTOS_RESERVADOS.includes(req.body.detalhamento_motivo) && !(req.usuario.admin || req.usuario.gestorHumano)) {
+      const { rows: det } = await query('SELECT detalhamento_motivo FROM email_ia.suporte_escalado_ficha WHERE suporte_escalado_id = $1', [req.params.id]);
+      if (det[0]?.detalhamento_motivo !== req.body.detalhamento_motivo) {
+        throw new ErroHttp(403, 'Este detalhamento do motivo é reservado à gestão (usado pelo sistema e na higienização).');
+      }
+    }
     const limpa = (v) => (typeof v === 'string' ? (v.trim() === '' ? null : v.trim()) : (v ?? null));
     const toca = (bloco) => bloco.some((c) => tem(req.body, c));
     const tocaProp = toca(BLOCO_PROPRIEDADES);
