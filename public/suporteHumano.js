@@ -472,6 +472,13 @@ function selarSla(caso) {
   if (caso.restante_min === null || caso.fila === 'outros') {
     el.dataset.estado = 'espera';
     el.textContent = caso.status_ticket === 'Resolvido' || caso.status_ticket === 'Fechado' ? caso.status_ticket : (caso.fila === 'outros' ? 'aguardando o cliente' : '—');
+    // Card fora das colunas de fila com o cliente por último: ninguém espera o cliente, o caso só não está na fila do agente (achado da Késsia, 20/10).
+    const clientePorUltimo = caso.ultimo_email_cliente_em && new Date(caso.ultimo_email_cliente_em) > new Date(caso.ultima_resposta_agente_em || 0);
+    if (caso.fila === 'outros' && caso.em_aberto === false && clientePorUltimo && el.textContent === 'aguardando o cliente') {
+      const nome = { finalizado: 'finalizado', reembolsado: 'reembolsado', formulario: 'formulário', formulario_nao_respondeu_a_tempo: 'formulário' }[caso.status];
+      el.textContent = nome ? `fora da fila (${nome})` : 'fora da fila';
+      el.title = 'O cliente escreveu por último, mas o card está fora das colunas de fila do agente.';
+    }
     return el;
   }
   if (caso.restante_min < 0) { el.dataset.estado = 'estourado'; el.textContent = `estourado há ${minutosTxt(caso.restante_min)}`; }
