@@ -69,6 +69,9 @@ import rotasFormularios from './rotas/formularios.js';
 import rotasDescadastro from './rotas/descadastro.js';
 import rotasRecorrencia from './rotas/recorrencia.js';
 import rotasDash from './rotas/dash.js';
+import rotasLeitura from './rotas/leitura.js';
+import rotasMcp from './rotas/mcp.js';
+import { ehTokenLeitura, validarChave, dentroDoLimite, auditar } from './leituraChaves.js';
 import { agendarSincronizacaoDash } from '../server/dash.js';
 
 const PORTA = Number(process.env.API_PORT) || 4400;
@@ -123,7 +126,7 @@ const app = Fastify({
   logger: {
     level: process.env.API_LOG || 'info',
     // O corpo das requisições não entra no log: passa senha por ali.
-    serializers: { req: (r) => ({ metodo: r.method, url: r.url, ip: r.ip }) },
+    serializers: { req: (r) => ({ metodo: r.method, url: r.url.replace(/^\/mcp\/[^/?]+/, '/mcp/<chave>'), ip: r.ip }) },
   },
   // Corpo grande é o corpo_html de um e-mail; acima disso é abuso.
   bodyLimit: 512 * 1024,
@@ -161,6 +164,29 @@ app.decorate('emitirTokens', (u) => ({
  */
 app.decorate('exigirSessao', async (req) => {
   const bruto = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
+
+  /*
+   * Chave de LEITURA (`str_ro_…`, migração 115): lê tudo e não escreve nada. Só GET passa — a única exceção é o POST de /api/leitura/sql,
+   * que roda numa transação READ ONLY com outro usuário do banco. Como vale para QUALQUER rota, as telas (GET) respondem à chave sem
+   * restrição de página; por isso a chave se apresenta como administrador/gestor (para os GET não esconderem nada), e quem ADMINISTRA
+   * chaves e lê a auditoria confere `req.usuario.leitura` e recusa (api/rotas/leitura.js).
+   */
+  if (ehTokenLeitura(bruto)) {
+    const chave = await validarChave(bruto);
+    if (!chave) throw new ErroHttp(401, 'Chave de leitura inválida ou revogada.');
+    const caminho = req.url.split('?')[0].replace(/\/+$/, '');
+    if (req.method !== 'GET' && !(req.method === 'POST' && caminho === '/api/leitura/sql')) {
+      throw new ErroHttp(403, 'Esta chave é somente de leitura.');
+    }
+    if (!dentroDoLimite(chave.id)) throw new ErroHttp(429, 'Muitas consultas por minuto (limite 120). Espere um pouco.');
+    req.usuario = {
+      user_id: null, email: `leitura-${chave.id}@api`, nome: chave.dono, admin: true, gestorEscalado: true, gestorHumano: true, tipo: 'access',
+      leitura: true, chaveId: chave.id, mascararPii: chave.mascarar_pii,
+    };
+    req.auditoria = {};
+    return;
+  }
+
   if (tokenServicoValido(bruto)) {
     req.usuario = {
       user_id: null,
@@ -339,7 +365,15 @@ app.get('/api/health/', {
  * para a resposta — a não ser que você peça com API_ERROS_DETALHADOS.
  */
 app.setErrorHandler((err, req, resposta) => {
-  if (err instanceof ErroHttp) return resposta.code(err.statusCode).send({ detail: err.detalhe });
+  if (err instanceof ErroHttp) {
+    if (req.usuario?.leitura) req.auditoria = { ...req.auditoria, erro: err.detalhe };
+    return resposta.code(err.statusCode).send({ detail: err.detalhe });
+  }
+  // consulta de leitura que falhou (SQL inválido, sem permissão, tempo esgotado): quem consulta precisa ler a mensagem para corrigir
+  if (err.leitura) {
+    if (req.usuario?.leitura) req.auditoria = { ...req.auditoria, erro: err.message };
+    return resposta.code(err.statusCode).send({ detail: err.message });
+  }
 
   // Erro de validação do próprio Fastify: o schema já diz o que faltou.
   if (err.validation) {
@@ -402,11 +436,24 @@ await app.register(rotasFormularios);
 await app.register(rotasDescadastro);
 await app.register(rotasRecorrencia);
 await app.register(rotasDash);
+await app.register(rotasLeitura);
+await app.register(rotasMcp);
 
 /*
  * Qualquer escrita no Suporte Escalado/Humano (mover card, transferir, ficha, nota, resposta…) limpa o cache curto da fila e do painel da equipe,
  * para quem acabou de agir ver o efeito na hora (api/cacheCurto.js). Erro (4xx/5xx) não limpa.
  */
+/* Toda chamada feita com chave de leitura vira uma linha em `leitura_auditoria` (quem, o quê, quanto tempo, quantas linhas). */
+app.addHook('onResponse', async (req, resposta) => {
+  if (!req.usuario?.leitura) return;
+  const [caminho, consulta] = req.url.split('?');
+  await auditar({
+    chaveId: req.usuario.chaveId, dono: req.usuario.nome, metodo: req.method, rota: caminho, consulta: consulta ?? null,
+    sql: req.auditoria?.sql ?? null, status: resposta.statusCode, ms: Math.round(resposta.elapsedTime), linhas: req.auditoria?.linhas ?? null,
+    ip: String(req.headers['x-forwarded-for'] ?? req.ip).split(',')[0].trim(), erro: req.auditoria?.erro ?? null,
+  });
+});
+
 app.addHook('onResponse', async (req, resposta) => {
   if (req.method !== 'GET' && req.url.startsWith('/api/suporte-escalado') && resposta.statusCode < 400) invalidarCache();
 });

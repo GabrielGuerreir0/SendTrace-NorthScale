@@ -2365,6 +2365,74 @@ const servidor = http.createServer(async (req, res) => {
       }
     }
 
+    /*
+     * Chave de LEITURA (`Authorization: Bearer str_ro_…`, migração 115) — a Késsia/Claude consulta o SendTrace inteiro daqui, sem cookie.
+     * Repassa para a API: qualquer GET de /api/… (as telas) e o POST de /api/leitura/sql. A chave é conferida na API, que recusa tudo
+     * que não seja leitura, limita a 120 chamadas/min e grava a auditoria (leitura_auditoria). Resposta repassada como veio (JSON ou arquivo).
+     * ANTES da guarda de sessão. Repassa o IP de quem chegou para a auditoria.
+     */
+    if (/^Bearer str_ro_/i.test(String(req.headers.authorization ?? '')) && url.pathname.startsWith('/api/')) {
+      const ehSql = req.method === 'POST' && url.pathname.replace(/\/+$/, '') === '/api/leitura/sql';
+      if (req.method !== 'GET' && !ehSql) return json(res, 403, { detail: 'Esta chave é somente de leitura.' });
+      try {
+        let corpoSql;
+        if (ehSql) {
+          const partes = []; let n = 0;
+          for await (const bloco of req) { n += bloco.length; if (n > 128 * 1024) throw new Error('corpo grande demais'); partes.push(bloco); }
+          corpoSql = Buffer.concat(partes);
+        }
+        const alvo = await fetch(`${enderecoApi}${url.pathname}${url.search}`, {
+          method: req.method,
+          signal: AbortSignal.timeout(60000),
+          headers: {
+            Accept: 'application/json, */*',
+            Authorization: req.headers.authorization,
+            ...(ehSql && { 'Content-Type': 'application/json' }),
+            'X-Forwarded-For': req.headers['x-forwarded-for'] || req.socket.remoteAddress || '',
+          },
+          body: corpoSql,
+        });
+        const dados = Buffer.from(await alvo.arrayBuffer());
+        const cab = { 'Content-Type': alvo.headers.get('content-type') ?? 'application/json', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' };
+        const disp = alvo.headers.get('content-disposition');
+        if (disp) cab['Content-Disposition'] = disp;
+        res.writeHead(alvo.status, cab);
+        return res.end(dados);
+      } catch {
+        return json(res, 502, { erro: 'sem conexão com o servidor' });
+      }
+    }
+
+    /*
+     * MCP do SendTrace (api/rotas/mcp.js) — o Claude Desktop e o claude.ai (navegador) conectam em https://…/mcp/<chave str_ro_…>.
+     * A chave é o próprio endereço, então NADA aqui a registra. Só POST/GET/DELETE em /mcp/<chave>; a chave é conferida na API. ANTES da guarda de sessão.
+     */
+    if (/^\/mcp\/str_ro_[\w-]{43}\/?$/.test(url.pathname) && ['POST', 'GET', 'DELETE'].includes(req.method)) {
+      try {
+        let corpoMcp;
+        if (req.method === 'POST') {
+          const partes = []; let n = 0;
+          for await (const bloco of req) { n += bloco.length; if (n > 256 * 1024) throw new Error('corpo grande demais'); partes.push(bloco); }
+          corpoMcp = Buffer.concat(partes);
+        }
+        const alvo = await fetch(`${enderecoApi}${url.pathname.replace(/\/$/, '')}`, {
+          method: req.method,
+          signal: AbortSignal.timeout(90000),
+          headers: {
+            Accept: 'application/json',
+            ...(req.method === 'POST' && { 'Content-Type': 'application/json' }),
+            'X-Forwarded-For': req.headers['x-forwarded-for'] || req.socket.remoteAddress || '',
+          },
+          body: corpoMcp,
+        });
+        const dados = Buffer.from(await alvo.arrayBuffer());
+        res.writeHead(alvo.status, { 'Content-Type': alvo.headers.get('content-type') ?? 'application/json', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });
+        return res.end(dados);
+      } catch {
+        return json(res, 502, { erro: 'sem conexão com o servidor' });
+      }
+    }
+
     const sessao = lerSessao(lerCookie(req, COOKIE));
 
     // Tudo daqui em diante fala com a API usando o token DESTA pessoa. Sem
@@ -2372,7 +2440,7 @@ const servidor = http.createServer(async (req, res) => {
     // tela de entrada) não precisam de token.
     return await comCredencial(sessao?.credencial ?? null, () => atender(req, res, url, sessao));
   } catch (err) {
-    console.error(`[api] ${url.pathname}:`, err.message);
+    console.error(`[api] ${url.pathname.replace(/^\/mcp\/[^/]+/, '/mcp/<chave>')}:`, err.message);
     // A mensagem crua pode carregar nome de coluna, rota interna e trecho de
     // consulta. Isso ajuda no diagnóstico local e ajuda um atacante em
     // produção, então só sai quando você pedir.
