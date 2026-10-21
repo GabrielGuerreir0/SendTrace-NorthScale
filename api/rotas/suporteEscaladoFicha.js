@@ -39,6 +39,9 @@ export const OPCOES = {
     'Verificando - Ag. Cliente', 'Reversão total do reembolso', 'Reembolso parcial', 'Reembolsado pela plataforma', 'Não revertido', 'Não envolve reembolso', 'Não respondido - Autorizado pelo líder',
     'Virou chargeback', 'Cliente não retornou',
     'Não reembolsado - Fora da garantia',   // 19/10 (5º momento da Késsia, item 1)
+    // 21/10 (116, pedido da Késsia): gravados pela rotina de reversão indireta (api/reversaoIndireta.js); a pessoa também pode escolher
+    'Reversão indireta - 10D', 'Reversão indireta - 30D', 'Reversão indireta - 60D', 'Reversão indireta concluída - superior a 60D',
+    'Analisar - Possível caso de reversão indireta',
   ],   // 'Link para compra enviado' saiu em 16/10 (nenhum ticket usava)
   // Aparece ao lado quando o tipo de resolução é "Reembolso parcial" (5% a 90%, de 5 em 5; 5% e 10% entraram no 4º momento da Késsia).
   percentual_reembolso: Array.from({ length: 18 }, (_, i) => 5 + i * 5),

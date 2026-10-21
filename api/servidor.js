@@ -54,6 +54,7 @@ import rotasAlertas, { verificarEEnviarAlertas } from './rotas/alertas.js';
 import rotasRastreio from './rotas/rastreio.js';
 import rotasRecoverly from './rotas/recoverly.js';
 import rotasTrack17 from './rotas/track17.js';
+import { rodadaDiaria as rodadaDiariaReversaoIndireta } from './reversaoIndireta.js';
 import rotasSpplRegras from './rotas/spplRegras.js';
 import rotasSpplOcorrencias from './rotas/spplOcorrencias.js';
 import rotasSpplNaoEncontrados from './rotas/spplNaoEncontrados.js';
@@ -546,6 +547,11 @@ const fecharTicketsAutomatico = async () => {
 fecharTicketsAutomatico();
 const intervaloFechamento = setInterval(fecharTicketsAutomatico, FECHAMENTO_INTERVALO_MS);
 
+/* Reversão indireta (migração 116, pedido da Késsia): confere de hora em hora e só roda 1x por dia, depois das 6h de São Paulo, com `reversao_indireta_ativo = 'true'`. Nasce DESLIGADA. */
+const intervaloReversaoIndireta = setInterval(async () => {
+  try { await rodadaDiariaReversaoIndireta((m) => app.log.info(m)); } catch (err) { app.log.error(err, 'falha na rotina de reversão indireta'); }
+}, 60 * 60 * 1000);
+
 /* Indicadores gerenciais (migração 110): Reembolso total / Chargeback após o 1º e-mail, preenchidos sozinhos (só campos vazios), a cada 30 min. */
 const INDICADORES_INTERVALO_MS = 30 * 60 * 1000;
 const atualizarIndicadoresGerenciais = async () => {
@@ -573,6 +579,7 @@ for (const sinal of ['SIGINT', 'SIGTERM']) {
     desligarDash();
     clearInterval(intervaloAlertas);
     clearInterval(intervaloRisco);
+    clearInterval(intervaloReversaoIndireta);
     clearInterval(intervaloFechamento);
     clearInterval(intervaloIndicadores);
     clearInterval(intervaloRegistro17Track);
