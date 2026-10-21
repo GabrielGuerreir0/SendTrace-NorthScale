@@ -34,38 +34,42 @@ export function tipoPorDias(dias) {
  * 5/7 sem reembolso nem chargeback depois do 1º e-mail (indicadores, datas e coluna Reembolsado) · 6 não é reembolso parcial.
  * Dias = dias corridos (fuso de São Paulo) desde a última mensagem do agente.
  */
-export async function candidatos(db = { query }) {
-  const { rows } = await db.query(
-    `WITH ag AS (
-       SELECT s.id AS caso_id, max(r.enviado_em) AS agente_em
-         FROM email_ia.suporte_escalado s
-         JOIN email_ia.respostas_agente r ON r.caso_id = s.id OR r.caso_id IN (SELECT m.id FROM email_ia.suporte_escalado m WHERE m.ticket_mae_id = s.id)
-        WHERE s.ticket_mae_id IS NULL
-        GROUP BY s.id
-     )
-     SELECT s.id AS caso_id, f.tipo_resolucao, f.detalhamento_motivo, f.motivo_contato, ag.agente_em,
-            ((now() AT TIME ZONE 'America/Sao_Paulo')::date - (ag.agente_em AT TIME ZONE 'America/Sao_Paulo')::date) AS dias
-       FROM email_ia.suporte_escalado s
-       JOIN email_ia.suporte_escalado_ficha f ON f.suporte_escalado_id = s.id
-       JOIN ag ON ag.caso_id = s.id
-      WHERE s.ticket_mae_id IS NULL
-        AND f.motivo_contato IN ('Reembolso', 'Chargeback')
-        AND f.tipo_resolucao = ANY($1::text[])
-        AND coalesce(s.status, '') <> 'reembolsado'
-        AND (s.ultimo_email_cliente_em IS NULL OR s.ultimo_email_cliente_em < ag.agente_em)
-        AND NOT EXISTS (SELECT 1 FROM email_ia.mensagens_sistema ms WHERE ms.caso_id = s.id AND ms.enviado_em > ag.agente_em)
-        AND coalesce(f.reembolso_apos_1o_email, '') <> 'Sim' AND coalesce(f.chargeback_apos_1o_email, '') <> 'Sim'
-        AND f.data_reembolso_total IS NULL AND f.data_chargeback IS NULL AND f.chargeback_em IS NULL
-        AND f.percentual_reembolso IS NULL
-      ORDER BY ag.agente_em`, [TIPOS_ELEGIVEIS]);
-  return rows.map((r) => ({ ...r, dias: Number(r.dias) }));
+export async function candidatos() {
+  const cli = await pool.connect();
+  try {
+    await cli.query('BEGIN');
+    await cli.query("SET LOCAL statement_timeout = '120s'");   // o padrão do banco é 15 s; esta rotina diária é mais pesada que uma tela
+    const { rows } = await cli.query(
+      `WITH ag AS (   -- última mensagem do agente por ticket principal (mensagem de ticket mesclado conta no principal)
+         SELECT coalesce(s.ticket_mae_id, s.id) AS caso_id, max(r.enviado_em) AS agente_em
+           FROM email_ia.respostas_agente r JOIN email_ia.suporte_escalado s ON s.id = r.caso_id
+          GROUP BY 1
+       ), base AS (
+         SELECT s.id AS caso_id, s.status, s.ultimo_email_cliente_em, f.tipo_resolucao, f.detalhamento_motivo, f.motivo_contato,
+                f.reembolso_apos_1o_email, f.chargeback_apos_1o_email, f.data_reembolso_total, f.data_chargeback, f.chargeback_em, f.percentual_reembolso
+           FROM email_ia.suporte_escalado s JOIN email_ia.suporte_escalado_ficha f ON f.suporte_escalado_id = s.id
+          WHERE s.ticket_mae_id IS NULL AND f.motivo_contato IN ('Reembolso', 'Chargeback') AND f.tipo_resolucao = ANY($1::text[])
+       )
+       SELECT b.caso_id, b.tipo_resolucao, b.detalhamento_motivo, b.motivo_contato, ag.agente_em,
+              ((now() AT TIME ZONE 'America/Sao_Paulo')::date - (ag.agente_em AT TIME ZONE 'America/Sao_Paulo')::date) AS dias
+         FROM base b JOIN ag ON ag.caso_id = b.caso_id
+        WHERE coalesce(b.status, '') <> 'reembolsado'
+          AND (b.ultimo_email_cliente_em IS NULL OR b.ultimo_email_cliente_em < ag.agente_em)
+          AND NOT EXISTS (SELECT 1 FROM email_ia.mensagens_sistema ms WHERE ms.caso_id = b.caso_id AND ms.enviado_em > ag.agente_em)
+          AND coalesce(b.reembolso_apos_1o_email, '') <> 'Sim' AND coalesce(b.chargeback_apos_1o_email, '') <> 'Sim'
+          AND b.data_reembolso_total IS NULL AND b.data_chargeback IS NULL AND b.chargeback_em IS NULL
+          AND b.percentual_reembolso IS NULL
+        ORDER BY ag.agente_em`, [TIPOS_ELEGIVEIS]);
+    await cli.query('COMMIT');
+    return rows.map((r) => ({ ...r, dias: Number(r.dias) }));
+  } catch (e) { await cli.query('ROLLBACK').catch(() => {}); throw e; } finally { cli.release(); }
 }
 
 /** Texto da última mensagem do agente (já sem a parte citada). */
 async function ultimaMensagemAgente(casoId, agenteEm, db = { query }) {
   const { rows } = await db.query(
     `SELECT assunto, corpo_texto FROM email_ia.respostas_agente
-      WHERE enviado_em = $2 AND (caso_id = $1 OR caso_id IN (SELECT id FROM email_ia.suporte_escalado WHERE ticket_mae_id = $1))
+      WHERE enviado_em = $2 AND caso_id IN (SELECT id FROM email_ia.suporte_escalado WHERE id = $1 OR ticket_mae_id = $1)
       ORDER BY id DESC LIMIT 1`, [casoId, agenteEm]);
   return rows[0] ? { assunto: rows[0].assunto || '', corpo: rows[0].corpo_texto || '' } : null;
 }
