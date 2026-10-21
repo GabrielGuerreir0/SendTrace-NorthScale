@@ -131,8 +131,9 @@ const clienteAnthropic = () => { if (!process.env.ANTHROPIC_API_KEY) return null
 export async function perguntarIA(conversa, { modelo = MODELO_PADRAO, api = clienteAnthropic() } = {}) {
   if (!api) return { falhou: true, motivo: 'Sem chave da IA configurada.' };
   try {
-    const r = await api.messages.create({ model: modelo, max_tokens: 300, system: PROMPT, messages: [{ role: 'user', content: conversa }] });
-    const bruto = (r.content || []).map((b) => b.text || '').join('');
+    const r = await api.messages.create({ model: modelo, max_tokens: 4000, system: PROMPT, messages: [{ role: 'user', content: conversa }] });
+    const bruto = (r.content || []).filter((b) => typeof b.text === 'string').map((b) => b.text).join('');
+    if (!bruto.includes('{')) return { falhou: true, motivo: `IA sem resposta em texto (parou por ${r.stop_reason})` };
     const j = JSON.parse(bruto.slice(bruto.indexOf('{'), bruto.lastIndexOf('}') + 1));
     if (!MAPA[j.categoria]) return { falhou: true, motivo: `categoria inesperada: ${String(j.categoria).slice(0, 30)}` };
     const confianca = ['alta', 'media', 'baixa'].includes(j.confianca) ? j.confianca : 'baixa';
@@ -185,6 +186,7 @@ export async function rodar({ gravar: grava = false, modelo = MODELO_PADRAO, api
   for (const c of cands) {
     if (linhas.length >= limite) break;
     if (!todos && !precisaAvaliar(c)) continue;
+    if (linhas.length && linhas.length % 25 === 0) log(`… ${linhas.length} tickets avaliados`);
     const d = await decidir(c, { modelo, api });
     if (d.falhou) { log(`ticket ${c.caso_id}: ${d.motivo}`); linhas.push({ c, falhou: true, motivo: d.motivo }); continue; }
     const mudou = c.tipo_resolucao !== d.status || c.reembolso_plat_origem !== d.origem;
