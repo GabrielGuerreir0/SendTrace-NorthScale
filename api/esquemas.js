@@ -312,6 +312,7 @@ export const RastreioPedido = {
     produto: texto(300),
     plataforma: texto(60),
     provedor: { type: ['string', 'null'], description: "'redrock' ou 'fullstack' quando encontrado; nulo enquanto não achado em nenhum provedor." },
+    transferido_redrock_em: { type: ['string', 'null'], format: 'date-time', description: 'Quando o pedido passou da RedRock para a FullStack (117); nulo = nunca transferido.' },
     status_interno: {
       type: 'string',
       enum: ['pendente_consulta', 'nao_encontrado', 'pending', 'shipped', 'delivered', 'cancelled', 'exception', 'desconhecido'],

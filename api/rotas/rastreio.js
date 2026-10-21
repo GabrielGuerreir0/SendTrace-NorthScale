@@ -49,6 +49,7 @@ function filtroCompra(qs, colunaData = 'd.criado_em') {
   // sem isto, provedor=nenhum (drill-down daquela linha) não bateria com
   // nada (a coluna é NULL, nunca a string 'nenhum').
   if (qs.provedor) { condicoes.push(`coalesce(r.provedor, 'nenhum') = $${i}`); valores.push(String(qs.provedor)); i += 1; }
+  if (qs.transferido === '1') condicoes.push('r.transferido_redrock_em IS NOT NULL');   // 117: só os que passaram da RedRock para a FullStack
   condicaoPeriodo(qs, colunaData, condicoes, valores, i);
   return { sql: condicoes.length ? condicoes.join(' AND ') : '1=1', valores };
 }
@@ -57,7 +58,7 @@ const COLUNAS_LISTA = `r.transacao_id, d.nome, d.produto, d.plataforma, r.proved
   r.status_interno, r.status_bruto, r.order_number, r.order_created_at, r.total,
   r.currency, r.fully_fulfilled, r.fully_fulfilled_at, r.tracking_number,
   r.carrier_code, r.tracking_url, r.tracking_status, r.shipped_at, r.delivered_at,
-  r.ultima_consulta_em, r.ultimo_erro, r.criado_em, r.atualizado_em`;
+  r.ultima_consulta_em, r.ultimo_erro, r.criado_em, r.atualizado_em, r.transferido_redrock_em`;
 
 /**
  * A Red Rock só dá 4 status simples (pending/shipped/delivered/cancelled) —
@@ -301,6 +302,7 @@ export default async function rotasRastreio(app) {
               + '"já encontrado num status (pending/shipped/delivered/cancelled) mas ainda sem tracking_number".',
           },
           provedor: { type: 'string' },
+          transferido: { type: 'string', description: "'1' = só pedidos transferidos da RedRock para a FullStack (117)." },
           produto: { type: 'string' },
           plataforma: { type: 'string' },
           search: { type: 'string', description: 'Procura em: transacao_id, nome, tracking_number.' },
@@ -320,6 +322,7 @@ export default async function rotasRastreio(app) {
       valores.push(req.query.status); partes.push(`r.status_interno = $${valores.length}`);
     }
     if (req.query.provedor) { valores.push(req.query.provedor); partes.push(`r.provedor = $${valores.length}`); }
+    if (req.query.transferido === '1') partes.push('r.transferido_redrock_em IS NOT NULL');
     if (req.query.produto) { valores.push(req.query.produto); partes.push(`d.produto = $${valores.length}`); }
     if (req.query.plataforma) { valores.push(req.query.plataforma); partes.push(`btrim(d.plataforma) = $${valores.length}`); }
     if (req.query.search) {
@@ -398,6 +401,7 @@ export default async function rotasRastreio(app) {
         properties: {
           produto: { type: 'string' }, plataforma: { type: 'string' },
           provedor: { type: 'string', description: "'redrock', 'fullstack' ou 'nenhum' (sem provedor ainda) — sub-aba ativa da aba Rastreio." },
+          transferido: { type: 'string' },
           ...PERIODO_QS,
         },
       },
@@ -410,6 +414,7 @@ export default async function rotasRastreio(app) {
       valores.push(req.query.provedor);
       condicoes.push(`coalesce(r.provedor, 'nenhum') = $${valores.length}`);
     }
+    if (req.query.transferido === '1') condicoes.push('r.transferido_redrock_em IS NOT NULL');
     condicaoPeriodo(req.query, 'd.criado_em', condicoes, valores, valores.length + 1);
     const filtroPeriodo = condicoes.length ? `AND ${condicoes.join(' AND ')}` : '';
     const { rows } = await query(
@@ -450,6 +455,7 @@ export default async function rotasRastreio(app) {
         properties: {
           produto: { type: 'string' }, plataforma: { type: 'string' },
           provedor: { type: 'string', description: "'redrock', 'fullstack' ou 'nenhum' — sub-aba ativa da aba Rastreio." },
+          transferido: { type: 'string' },
           ...PERIODO_QS,
         },
       },

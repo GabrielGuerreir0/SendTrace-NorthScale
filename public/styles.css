@@ -3251,3 +3251,9 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .esc-pedido-num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; word-break: break-all; }
 .esc-pedido-valor { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .esc-pedido-total td { font-weight: 700; border-bottom: 0; }
+
+/* 117: pedidos transferidos da RedRock para a FullStack — etiqueta e sub-aba em destaque */
+.selo-transferido{display:inline-block;margin:3px 0 0;padding:3px 9px;border-radius:6px;background:#d6336c;color:#fff;font-size:11px;font-weight:800;letter-spacing:.04em;white-space:nowrap;box-shadow:0 0 0 2px rgba(214,51,108,.25)}
+.cel-forte + .selo-transferido{display:block;width:max-content}
+.subaba-transferidos{border:2px solid #d6336c;color:#d6336c;font-weight:800}
+.subaba-transferidos[aria-selected="true"]{background:#d6336c;color:#fff}

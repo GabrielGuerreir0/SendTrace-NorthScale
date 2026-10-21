@@ -47,7 +47,7 @@ const COR_PLATAFORMA = { JVZoo: 0, BuyGoods: 1, DigiStore24: 2 };
 
 const POR_PAGINA = 25;
 const estado = {
-  busca: '', status: '', produto: '', plataforma: '', provedor: '', pagina: 1,
+  busca: '', status: '', produto: '', plataforma: '', provedor: '', transferido: false, pagina: 1,
   periodo: '', dataDe: '', dataAte: '',
 };
 
@@ -74,6 +74,8 @@ const DIC = {
   },
   atualizarAgora: { en: 'Refresh now', pt: 'Atualizar agora' },
   subabaTodos: { en: 'All', pt: 'Todos' },
+  subabaTransferidos: { en: '🔁 Transferred RedRock → FullStack', pt: '🔁 Transferidos RedRock → FullStack' },
+  seloTransferido: { en: 'TRANSFERRED REDROCK → FULLSTACK', pt: 'TRANSFERIDO REDROCK → FULLSTACK' },
   abaFulfillments: { en: 'Fulfillments', pt: 'Fulfillments' },
   abaSppl: { en: 'SPPL', pt: 'SPPL' },
   filtroFulfillment: { en: 'Filter by fulfillment', pt: 'Filtrar por fulfillment' },
@@ -312,6 +314,7 @@ function paramsFiltro() {
   if (estado.produto) p.set('produto', estado.produto);
   if (estado.plataforma) p.set('plataforma', estado.plataforma);
   if (estado.provedor) p.set('provedor', estado.provedor);
+  if (estado.transferido) p.set('transferido', '1');   // 117: só os que passaram da RedRock para a FullStack
   if (estado.periodo) {
     p.set('dias', estado.periodo);
   } else {
@@ -382,12 +385,22 @@ function renderKpis(r) {
 
 /* ═══════════════════════════════════  tabela  ══════════════════════════════ */
 
+/* 117: etiqueta bem visível nos pedidos que a RedRock deixou pendentes e foram levados para a FullStack. */
+function seloTransferido(p) {
+  const s = document.createElement('span');
+  s.className = 'selo-transferido';
+  s.textContent = '🔁 ' + t('seloTransferido');
+  s.title = p.transferido_redrock_em ? dataHora(p.transferido_redrock_em) : '';
+  return s;
+}
+
 function celPedido(p) {
   const div = document.createElement('div');
   const forte = document.createElement('span');
   forte.className = 'cel-forte cel-mono';
   forte.textContent = p.transacao_id;
   div.append(forte);
+  if (p.transferido_redrock_em) div.append(seloTransferido(p));
   if (p.nome) {
     const sub = document.createElement('span');
     sub.className = 'cel-sub';
@@ -582,7 +595,7 @@ function renderTabelaPedidos(pedidos) {
     { render: (p) => p.produto || '—' },
     { render: (p) => rotularPlataforma(p.plataforma) },
     { render: (p) => chipRastreio(p.status_interno) },
-    { render: (p) => seloProvedor(p.provedor) },
+    { render: (p) => { const c = document.createElement('span'); c.append(seloProvedor(p.provedor)); if (p.transferido_redrock_em) c.append(' ', seloTransferido(p)); return c; } },
     { render: (p) => p.carrier_code || '—' },
     { classe: 'cel-mono', render: (p) => p.tracking_number || '—' },
     { classe: 'cel-mono', render: (p) => (p.atualizado_em ? dataHora(p.atualizado_em) : '—') },
@@ -1001,7 +1014,7 @@ $('rst-sel-plataforma').addEventListener('change', (e) => {
  * confuso. Lembra a última escolha por navegador, mesmo padrão das subabas
  * do Suporte Escalado (ver emailSuporteEscalado.js).
  */
-const SUBABAS_PROVEDOR = { todos: '', redrock: 'redrock', fullstack: 'fullstack', jetstream: 'jetstream' };
+const SUBABAS_PROVEDOR = { todos: '', redrock: 'redrock', fullstack: 'fullstack', jetstream: 'jetstream', transferidos: 'fullstack' };   // 'transferidos' = FullStack + marca de transferência (117)
 
 function aplicarVisibilidadeProvedor() {
   const combinado = estado.provedor === '';
@@ -1013,6 +1026,7 @@ function aplicarVisibilidadeProvedor() {
 
 function mudarSubabaProvedor(nome) {
   estado.provedor = SUBABAS_PROVEDOR[nome];
+  estado.transferido = nome === 'transferidos';
   for (const chave of Object.keys(SUBABAS_PROVEDOR)) {
     $(`rst-subaba-btn-${chave}`)?.setAttribute('aria-selected', String(chave === nome));
   }
@@ -1029,6 +1043,7 @@ for (const nome of Object.keys(SUBABAS_PROVEDOR)) {
   const salva = localStorage.getItem('rstSubabaProvedor');
   const inicial = SUBABAS_PROVEDOR[salva] !== undefined ? salva : 'todos';
   estado.provedor = SUBABAS_PROVEDOR[inicial];
+  estado.transferido = inicial === 'transferidos';
   for (const chave of Object.keys(SUBABAS_PROVEDOR)) {
     $(`rst-subaba-btn-${chave}`)?.setAttribute('aria-selected', String(chave === inicial));
   }
