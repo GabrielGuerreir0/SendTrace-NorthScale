@@ -2407,7 +2407,18 @@ const servidor = http.createServer(async (req, res) => {
      * MCP do SendTrace (api/rotas/mcp.js) — o Claude Desktop e o claude.ai (navegador) conectam em https://…/mcp/<chave str_ro_…>.
      * A chave é o próprio endereço, então NADA aqui a registra. Só POST/GET/DELETE em /mcp/<chave>; a chave é conferida na API. ANTES da guarda de sessão.
      */
-    if (/^\/mcp\/str_ro_[\w-]{43}\/?$/.test(url.pathname) && ['POST', 'GET', 'DELETE'].includes(req.method)) {
+    if (/^\/mcp\/[^/]+\/?$/.test(url.pathname)) {
+      // O claude.ai pode verificar o endereço pelo navegador (preflight CORS). Sem isto, o OPTIONS cairia na guarda de sessão e voltaria 403.
+      const cors = {
+        'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, GET, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Accept, Authorization, Mcp-Protocol-Version, Mcp-Session-Id, Last-Event-ID',
+        'Access-Control-Expose-Headers': 'Mcp-Session-Id', 'Access-Control-Max-Age': '86400',
+      };
+      if (req.method === 'OPTIONS') { res.writeHead(204, cors); return res.end(); }
+      // chave com formato errado (colada pela metade, com espaço): a API responde 401 claro em vez do 403 genérico da guarda de sessão
+      Object.entries(cors).forEach(([k, v]) => res.setHeader(k, v));
+    }
+    if (/^\/mcp\/[^/]+\/?$/.test(url.pathname) && ['POST', 'GET', 'DELETE', 'HEAD'].includes(req.method)) {
       try {
         let corpoMcp;
         if (req.method === 'POST') {
@@ -2416,7 +2427,7 @@ const servidor = http.createServer(async (req, res) => {
           corpoMcp = Buffer.concat(partes);
         }
         const alvo = await fetch(`${enderecoApi}${url.pathname.replace(/\/$/, '')}`, {
-          method: req.method,
+          method: req.method === 'HEAD' ? 'GET' : req.method,
           signal: AbortSignal.timeout(90000),
           headers: {
             Accept: 'application/json',
@@ -2427,7 +2438,7 @@ const servidor = http.createServer(async (req, res) => {
         });
         const dados = Buffer.from(await alvo.arrayBuffer());
         res.writeHead(alvo.status, { 'Content-Type': alvo.headers.get('content-type') ?? 'application/json', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });
-        return res.end(dados);
+        return res.end(req.method === 'HEAD' ? undefined : dados);
       } catch {
         return json(res, 502, { erro: 'sem conexão com o servidor' });
       }
