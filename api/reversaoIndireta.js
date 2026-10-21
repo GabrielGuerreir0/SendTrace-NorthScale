@@ -74,15 +74,17 @@ async function ultimaMensagemAgente(casoId, agenteEm, db = { query }) {
   return rows[0] ? { assunto: rows[0].assunto || '', corpo: rows[0].corpo_texto || '' } : null;
 }
 
+/* Versão do prompt: entra na chave da decisão guardada. Mudou o prompt = a IA reavalia (as decisões antigas ficam no banco, mas não são reaproveitadas). v2 (21/10): a simulação mostrou a IA tratando "use o produto por mais dias" como aviso. */
+export const VERSAO_PROMPT = 'v2';
 const SISTEMA = `Você classifica UM e-mail enviado por um agente de suporte (a loja é de suplementos) a um cliente que pediu reembolso ou abriu disputa.
-Pergunta: essa mensagem ESPERAVA UMA RESPOSTA do cliente para o caso avançar?
+Pergunta: depois dessa mensagem, o agente estava ESPERANDO UMA RESPOSTA ou uma atitude do cliente para o caso avançar?
 
-Marque "espera_resposta" quando o agente:
- a) orienta o cliente a usar o produto por no mínimo 30 dias antes de decidir;
- b) pede informação ou dado (foto, número do pedido, motivo, confirmação de dados);
- c) faz outra pergunta ou proposta que precisa de resposta (ex.: aceita uma oferta? quer manter o pedido?).
-Marque "nao_espera" quando a mensagem é só encerramento, agradecimento ou aviso (reembolso feito, caso resolvido, confirmação de envio), sem pedir nada.
-Marque "duvida" se você não tem certeza. Na dúvida, SEMPRE "duvida" — nunca chute.
+Marque "espera_resposta" quando a mensagem:
+ a) orienta, convida ou pede ao cliente que USE, TESTE ou continue usando o produto por um período (ex.: 30 dias, mais algumas semanas) antes de decidir — mesmo que NÃO termine com uma pergunta; é o caso mais comum, e conta como esperar resposta;
+ b) pede informação ou dado (foto, número do pedido, motivo, confirmação de dados, endereço);
+ c) faz outra pergunta ou proposta (oferta, desconto, troca, manter o pedido) que precisa de aceite ou resposta.
+Marque "nao_espera" SÓ quando a mensagem é claramente um encerramento, agradecimento ou aviso puro: reembolso ou reenvio já feito, confirmação de recebimento, código de rastreio informado, "caso resolvido". Se a mensagem apenas informa e NÃO pede nem convida o cliente a nada, é "nao_espera".
+Marque "duvida" se não tiver certeza ou se a mensagem mistura informação com um convite que você não sabe se pede resposta. Na dúvida, SEMPRE "duvida" — nunca chute. Convidar o cliente a testar o produto NÃO é dúvida: é "espera_resposta".
 
 O e-mail pode estar em inglês ou português. Responda SOMENTE com JSON: {"decisao":"espera_resposta|nao_espera|duvida","motivo":"uma frase curta em português"}`;
 
@@ -90,7 +92,8 @@ let cliente;
 const clienteAnthropic = () => { if (!process.env.ANTHROPIC_API_KEY) return null; cliente ??= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }); return cliente; };
 
 /** Pergunta à IA. Qualquer problema (sem chave, erro, JSON ruim) vira "duvida" — o ticket vai para revisão, nunca é classificado no chute. */
-export async function perguntarIA({ assunto, corpo }, { modelo = 'claude-haiku-4-5', api = clienteAnthropic() } = {}) {
+const MODELO_PADRAO = 'claude-haiku-4-5';
+export async function perguntarIA({ assunto, corpo }, { modelo = MODELO_PADRAO, api = clienteAnthropic() } = {}) {
   if (!api) return { decisao: 'duvida', motivo: 'Sem chave da IA configurada.', modelo: null, falhou: true };
   const texto = `Assunto: ${assunto}\n\n${String(corpo).slice(0, 4000)}`;
   try {
@@ -106,13 +109,14 @@ export async function perguntarIA({ assunto, corpo }, { modelo = 'claude-haiku-4
 
 /** Decisão já guardada para este ticket e esta mensagem do agente, ou pergunta à IA e guarda. Mensagem vazia = dúvida. */
 async function decisaoDe(c, { db = { query }, modelo, api, gravar = true } = {}) {
-  const { rows } = await db.query('SELECT decisao, motivo FROM email_ia.reversao_indireta_avaliacoes WHERE caso_id = $1 AND agente_em = $2', [c.caso_id, c.agente_em]);
+  const chaveModelo = `${modelo || MODELO_PADRAO}|${VERSAO_PROMPT}`;
+  const { rows } = await db.query('SELECT decisao, motivo FROM email_ia.reversao_indireta_avaliacoes WHERE caso_id = $1 AND agente_em = $2 AND modelo = $3', [c.caso_id, c.agente_em, chaveModelo]);
   if (rows[0]) return { ...rows[0], reaproveitada: true };
   const msg = await ultimaMensagemAgente(c.caso_id, c.agente_em, db);
   const d = !msg || !msg.corpo.trim() ? { decisao: 'duvida', motivo: 'Não encontrei o texto da mensagem do agente.', modelo: null } : await perguntarIA(msg, { modelo, api });
   if (gravar && !d.falhou) {   // falha de IA não é guardada: na próxima rodada tenta de novo
-    await db.query(`INSERT INTO email_ia.reversao_indireta_avaliacoes (caso_id, agente_em, decisao, motivo, modelo) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (caso_id, agente_em) DO NOTHING`,
-      [c.caso_id, c.agente_em, d.decisao, d.motivo, d.modelo]);
+    await db.query(`INSERT INTO email_ia.reversao_indireta_avaliacoes (caso_id, agente_em, decisao, motivo, modelo) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (caso_id, agente_em) DO UPDATE SET decisao = EXCLUDED.decisao, motivo = EXCLUDED.motivo, modelo = EXCLUDED.modelo, avaliado_em = now()`,
+      [c.caso_id, c.agente_em, d.decisao, d.motivo, chaveModelo]);
   }
   return { decisao: d.decisao, motivo: d.motivo, trecho: msg ? msg.corpo.replace(/\s+/g, ' ').slice(0, 240) : '', falhou: d.falhou };
 }
