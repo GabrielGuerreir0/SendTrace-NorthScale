@@ -42,6 +42,8 @@ export const OPCOES = {
     // 21/10 (116, pedido da Késsia): gravados pela rotina de reversão indireta (api/reversaoIndireta.js); a pessoa também pode escolher
     'Reversão indireta - 10D', 'Reversão indireta - 30D', 'Reversão indireta - 60D', 'Reversão indireta concluída - superior a 60D',
     'Analisar - Possível caso de reversão indireta',
+    // 21/10 (118, pedido da Késsia/Rodrigo): gravados pela classificação automática de "Reembolsado pela plataforma" (api/reembolsoPlataforma.js)
+    'Reembolsado pela plataforma - Sem atendimento', 'Reembolsado pela plataforma - Evasão provável', 'Reembolsado pela plataforma - Outros',
   ],   // 'Link para compra enviado' saiu em 16/10 (nenhum ticket usava)
   // Aparece ao lado quando o tipo de resolução é "Reembolso parcial" (5% a 90%, de 5 em 5; 5% e 10% entraram no 4º momento da Késsia).
   percentual_reembolso: Array.from({ length: 18 }, (_, i) => 5 + i * 5),

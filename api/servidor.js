@@ -55,6 +55,7 @@ import rotasRastreio from './rotas/rastreio.js';
 import rotasRecoverly from './rotas/recoverly.js';
 import rotasTrack17 from './rotas/track17.js';
 import { rodadaDiaria as rodadaDiariaReversaoIndireta } from './reversaoIndireta.js';
+import { rodadaPeriodica as rodadaReembolsoPlataforma } from './reembolsoPlataforma.js';
 import rotasSpplRegras from './rotas/spplRegras.js';
 import rotasSpplOcorrencias from './rotas/spplOcorrencias.js';
 import rotasSpplNaoEncontrados from './rotas/spplNaoEncontrados.js';
@@ -552,6 +553,11 @@ const intervaloReversaoIndireta = setInterval(async () => {
   try { await rodadaDiariaReversaoIndireta((m) => app.log.info(m)); } catch (err) { app.log.error(err, 'falha na rotina de reversão indireta'); }
 }, 60 * 60 * 1000);
 
+/* Reembolso pela plataforma (migração 118, pedido da Késsia): reavalia a cada 30 min só o que mudou (e-mail novo, resposta nova, datas). Nasce DESLIGADA (`reembolso_plataforma_ativo = 'false'`). */
+const intervaloReembolsoPlataforma = setInterval(async () => {
+  try { await rodadaReembolsoPlataforma((m) => app.log.info(m)); } catch (err) { app.log.error(err, 'falha na classificação de reembolso pela plataforma'); }
+}, 30 * 60 * 1000);
+
 /* Indicadores gerenciais (migração 110): Reembolso total / Chargeback após o 1º e-mail, preenchidos sozinhos (só campos vazios), a cada 30 min. */
 const INDICADORES_INTERVALO_MS = 30 * 60 * 1000;
 const atualizarIndicadoresGerenciais = async () => {
@@ -580,6 +586,7 @@ for (const sinal of ['SIGINT', 'SIGTERM']) {
     clearInterval(intervaloAlertas);
     clearInterval(intervaloRisco);
     clearInterval(intervaloReversaoIndireta);
+    clearInterval(intervaloReembolsoPlataforma);
     clearInterval(intervaloFechamento);
     clearInterval(intervaloIndicadores);
     clearInterval(intervaloRegistro17Track);

@@ -46,7 +46,7 @@ export const SITUACAO_FILA_SQL = `(CASE WHEN NOT ${ABERTO_SQL} THEN 'Fora da fil
 /* Por que está fora (só quando está fora): serve para a Késsia conferir se só as regras combinadas deixam ticket fora da fila. */
 export const MOTIVO_FORA_FILA_SQL = `(CASE WHEN ${ABERTO_SQL} THEN NULL
   WHEN fi.detalhamento_motivo = 'Sem informação - Higienização' THEN 'Higienização'
-  WHEN s.status = 'reembolsado' OR fi.tipo_resolucao = 'Reembolsado pela plataforma' OR fi.detalhamento_motivo = 'Sem informação - Reembolsado pela plataforma' THEN 'Reembolso direto pela plataforma'
+  WHEN s.status = 'reembolsado' OR fi.tipo_resolucao LIKE 'Reembolsado pela plataforma%' OR fi.detalhamento_motivo = 'Sem informação - Reembolsado pela plataforma' THEN 'Reembolso direto pela plataforma'
   WHEN coalesce(fi.status_ticket, '') IN ('Resolvido', 'Fechado') THEN 'Fechado/resolvido pelo agente'
   WHEN s.status IN ('formulario', 'formulario_nao_respondeu_a_tempo') THEN 'Formulário - sem regra definida (conferir)'
   WHEN s.status = 'finalizado' THEN 'Finalizado - sem regra definida (conferir)'

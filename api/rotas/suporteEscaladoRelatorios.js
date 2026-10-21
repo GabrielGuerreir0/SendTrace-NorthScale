@@ -166,7 +166,7 @@ export default async function rotasSuporteEscaladoRelatorios(app) {
     ['nao_revertido', 'Não revertido', ['Não revertido']],
     ['parcial', 'Reembolso parcial', ['Reembolso parcial']],
     ['chargeback', 'Virou chargeback', ['Virou chargeback']],
-    ['plataforma', 'Reembolsado pela plataforma', ['Reembolsado pela plataforma']],
+    ['plataforma', 'Reembolsado pela plataforma', ['Reembolsado pela plataforma', 'Reembolsado pela plataforma - Sem atendimento', 'Reembolsado pela plataforma - Evasão provável', 'Reembolsado pela plataforma - Outros']],   // 118: a classificação automática não muda o painel
   ];
   const SEM_DEFINITIVO = ['Verificando - Ag. Cliente', 'Cliente não retornou', 'Não respondido - Autorizado pelo líder'];
   app.get('/api/suporte-escalado/efetividade', {
