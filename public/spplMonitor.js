@@ -154,7 +154,7 @@ function montar() {
   const b = campoTexto('Buscar', { tipo: 'search', max: 80, placeholder: 'Pedido, cliente, e-mail ou código de rastreio', cresce: true });
   let t0; b.input.addEventListener('input', () => { clearTimeout(t0); t0 = setTimeout(() => { estado.busca = b.input.value.trim(); estado.pagina = 1; carregarLista(); }, 350); });
   const plat = campoSelect('Plataforma', [['', 'Todas'], ['jvzoo', 'JVZoo'], ['buygoods', 'BuyGoods'], ['digistore24', 'Digistore24']], '', (v) => { estado.plataforma = v; estado.pagina = 1; carregarLista(); });
-  const ful = campoSelect('Fulfillment', [['', 'Todas'], ['redrock', 'Red Rock'], ['fullstack', 'FullStack'], ['jetstream', 'JetStream']], '', (v) => { estado.fulfillment = v; estado.pagina = 1; carregarLista(); });
+  const ful = campoSelect('Fulfillment', [['', 'Todas'], ['redrock', 'Red Rock'], ['fullstack', 'FullStack'], ['jetstream', 'Jetpack']], '', (v) => { estado.fulfillment = v; estado.pagina = 1; carregarLista(); });
   const sa = campoSelect('Suporte Ativo', [['nao', 'Ainda não selecionados'], ['', 'Todos'], ['sim', 'Já no Suporte Ativo']], 'nao', (v) => { estado.suporte_ativo = v; estado.pagina = 1; carregarLista(); });
   filtros.append(b.rotulo, plat.rotulo, ful.rotulo, sa.rotulo); raiz.append(filtros);
 
