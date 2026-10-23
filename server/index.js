@@ -2245,6 +2245,17 @@ const servidor = http.createServer(async (req, res) => {
     }
 
     /*
+     * Link curto do SMS do código de rastreio (23/10/2026): /r/<pedido> → /rastreio?pedido=<pedido>. Mais curto que o link da página (56 × 70
+     * caracteres), para o SMS caber em 1 segmento. Pública (o lead não tem sessão), ANTES da guarda de sessão; só redireciona, nunca consulta nada.
+     */
+    if (url.pathname.startsWith('/r/') && (req.method === 'GET' || req.method === 'HEAD')) {
+      let id = '';
+      try { id = decodeURIComponent(url.pathname.slice(3)); } catch { /* link quebrado: cai na página sem pedido */ }
+      res.writeHead(302, { Location: /^[\w.\-]{3,80}$/.test(id) ? '/rastreio?pedido=' + encodeURIComponent(id) : '/rastreio', 'Cache-Control': 'no-store' });
+      return res.end();
+    }
+
+    /*
      * Rastreio público de pedido — o lead consulta o próprio pedido sem
      * login. Mesma rota pública da API (api/rotas/rastreio.js), só
      * repassada por aqui para sair com HTTPS/domínio de verdade e para o
