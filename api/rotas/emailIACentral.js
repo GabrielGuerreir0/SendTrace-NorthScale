@@ -1867,16 +1867,19 @@ export default async function rotasEmailIACentral(app) {
     if (!(await podeLerCaso(req, board, req.params.id))) throw new ErroHttp(403, 'Este caso não é de um board seu.');
 
     const { rows: casoRows } = await query(
-      'SELECT remetente_email, nome, email_id, data_entrega, tag_motivo, prioridade_nivel FROM email_ia.suporte_escalado WHERE id = $1',
+      `SELECT remetente_email, nome, email_id, data_entrega, tag_motivo, prioridade_nivel,
+              email_compra, compra_vinculada_por, compra_vinculada_em, compra_vinculada_busca
+         FROM email_ia.suporte_escalado WHERE id = $1`,
       [req.params.id],
     );
     const caso = casoRows[0];
+    const emailCompra = caso.email_compra || caso.remetente_email;   // 121: compra vinculada pelo agente vale no lugar do remetente
 
     const [principalRes, pedidosRes, ticketRes] = await Promise.all([
       // O pedido que a IA já vinculou a ESTE e-mail específico (mesma lógica
       // de match — número do pedido citado, e-mail, telefone ou nome — usada
       // em toda a Central de E-mail IA), quando o caso tem um email_id.
-      caso.email_id
+      caso.email_id && !caso.email_compra
         ? query(
           `SELECT transacao_id, produto, plataforma, status_pedido, pedido_em
            FROM email_ia.mv_emails_x_pedidos WHERE email_id = $1`,
@@ -1900,7 +1903,7 @@ export default async function rotasEmailIACentral(app) {
          FROM disparos_pos_venda d
          LEFT JOIN rastreio_pedidos r ON r.transacao_id = d.transacao_id
          WHERE lower(d.email) = lower($1) ORDER BY d.criado_em DESC`,
-        [caso.remetente_email],
+        [emailCompra],
       ),
       query(
         'SELECT primeiro_email_em FROM email_ia.tickets WHERE lower(remetente_email) = lower($1)',
@@ -1916,7 +1919,96 @@ export default async function rotasEmailIACentral(app) {
       primeiro_email_em: ticketRes.rows[0]?.primeiro_email_em ?? null,
       pedido_principal: principalRes.rows[0] ?? null,
       pedidos: pedidosRes.rows,
+      vinculo: caso.email_compra ? { email_compra: caso.email_compra, por: caso.compra_vinculada_por, em: caso.compra_vinculada_em, busca: caso.compra_vinculada_busca } : null,
     };
+  });
+
+  /* ═══════════  Vincular a compra certa ao ticket (121, pedido do Lucas 23/10/2026)  ═══════════
+     O agente descobre o e-mail da compra (ou o nº do pedido / código de rastreio) e vincula; o card passa a puxar as compras desse e-mail.
+     GET  .../vinculo-compra?busca=…   prévia: acha o e-mail (por e-mail, nº do pedido de front/upsell/downsell ou código de rastreio) e lista as compras. NÃO grava.
+     PUT  .../vinculo-compra {busca}   grava o vínculo, recalcula valor/tier do ticket e deixa uma nota interna (auditoria).
+     DELETE .../vinculo-compra         desfaz (volta a valer o remetente). Só quem gerencia o board do caso. */
+
+  const RE_EMAIL_COMPRA = /^[^@\s,;]{1,120}@[^@\s,;]{1,120}\.[^@\s,;]{2,20}$/;
+  const LISTA_COMPRAS = `SELECT d.transacao_id, d.produto, d.plataforma, d.criado_em AS pedido_em, d.status AS status_pedido
+                           FROM disparos_pos_venda d WHERE lower(d.email) = lower($1) AND btrim(d.plataforma) NOT IN ('', 'teste') ORDER BY d.criado_em DESC LIMIT 20`;
+
+  /** Resolve o que o agente digitou. Devolve {tipo, email, pedidos} ou lança ErroHttp (422/409). */
+  async function resolverCompra(busca) {
+    const b = String(busca ?? '').trim();
+    if (b.length < 3 || b.length > 120) throw new ErroHttp(422, 'Digite o e-mail da compra ou o nº do pedido.');
+    let email = null, tipo;
+    if (RE_EMAIL_COMPRA.test(b)) { email = b.toLowerCase(); tipo = 'email'; }
+    else {
+      tipo = 'pedido';
+      const { rows } = await query(
+        `SELECT DISTINCT em FROM (
+           SELECT lower(d.email) AS em FROM disparos_pos_venda d WHERE upper(d.transacao_id) = upper($1) OR upper(d.id_rastreio) = upper($1)
+           UNION SELECT lower(u.email) FROM compras_upsell_downsell u WHERE upper(u.transacao_id) = upper($1)
+           UNION SELECT lower(d.email) FROM rastreio_pedidos r JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+                  WHERE upper(r.tracking_number) = upper($1) OR upper(coalesce(r.order_number, '')) = upper($1)
+         ) x WHERE em IS NOT NULL AND em <> ''`, [b]).catch(() => ({ rows: [] }));
+      if (rows.length === 0) throw new ErroHttp(422, 'Não achei nenhuma compra com esse número. Confira o nº do pedido, ou digite o e-mail da compra.');
+      if (rows.length > 1) throw new ErroHttp(409, 'Esse número aparece em mais de um e-mail. Digite o e-mail da compra.');
+      email = rows[0].em;
+    }
+    const { rows: pedidos } = await query(LISTA_COMPRAS, [email]);
+    if (pedidos.length === 0) throw new ErroHttp(422, 'Não achei compras para o e-mail ' + email + '.');
+    return { tipo, email, pedidos };
+  }
+
+  async function casoParaVinculo(req) {
+    const board = await boardDoCaso(req.params.id);
+    if (!board) throw new ErroHttp(404, 'Caso escalado não encontrado.');
+    if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este caso não é de um board seu.');
+    const { rows } = await query('SELECT id, remetente_email, email_compra FROM email_ia.suporte_escalado WHERE id = $1', [req.params.id]);
+    return rows[0];
+  }
+
+  const ROTA_VINCULO = { onRequest: [app.exigirSessao], schema: { tags: ['Central de E-mail IA'], security: [{ bearerAuth: [] }], params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } } } };
+
+  app.get('/api/suporte-escalado/:id/vinculo-compra', {
+    ...ROTA_VINCULO, schema: { ...ROTA_VINCULO.schema, summary: 'Prévia do vínculo de compra (acha o e-mail e lista as compras; não grava)', querystring: { type: 'object', required: ['busca'], properties: { busca: { type: 'string', maxLength: 120 } } } },
+  }, async (req) => {
+    const caso = await casoParaVinculo(req);
+    const r = await resolverCompra(req.query.busca);
+    return { ...r, mesmo_do_remetente: r.email === String(caso.remetente_email).toLowerCase(), ja_vinculado: r.email === (caso.email_compra || '').toLowerCase() };
+  });
+
+  app.put('/api/suporte-escalado/:id/vinculo-compra', {
+    ...ROTA_VINCULO, schema: { ...ROTA_VINCULO.schema, summary: 'Vincula a compra (e-mail ou nº do pedido) ao ticket', body: { type: 'object', required: ['busca'], additionalProperties: false, properties: { busca: { type: 'string', minLength: 3, maxLength: 120 } } } },
+  }, async (req) => {
+    const caso = await casoParaVinculo(req);
+    const r = await resolverCompra(req.body.busca);
+    if (r.email === String(caso.remetente_email).toLowerCase()) throw new ErroHttp(422, 'Esse já é o e-mail do ticket — não precisa vincular.');
+    const quem = req.usuario.email ?? req.usuario.nome ?? null;
+    await query(
+      `UPDATE email_ia.suporte_escalado
+          SET email_compra = $2, compra_vinculada_por = $3, compra_vinculada_em = now(), compra_vinculada_busca = $4,
+              valor_pedido_usd = email_ia.valor_pedido_do_cliente($2, now()),
+              primeiro_toque_humano_em = coalesce(primeiro_toque_humano_em, now()), atualizado_em = now()
+        WHERE id = $1`, [caso.id, r.email, quem, String(req.body.busca).trim()]);
+    await query(
+      `INSERT INTO email_ia.suporte_escalado_notas (suporte_escalado_id, autor, nota) VALUES ($1, $2, $3)`,
+      [caso.id, req.usuario.nome || req.usuario.email || null,
+        `🔗 Compra vinculada ao ticket: ${r.email} (${r.pedidos.length} pedido(s); busca: "${String(req.body.busca).trim()}"). O card passa a mostrar as compras desse e-mail.`]);
+    return { ok: true, email_compra: r.email, pedidos: r.pedidos.length };
+  });
+
+  app.delete('/api/suporte-escalado/:id/vinculo-compra', {
+    ...ROTA_VINCULO, schema: { ...ROTA_VINCULO.schema, summary: 'Desfaz o vínculo de compra (volta a valer o e-mail do remetente)' },
+  }, async (req) => {
+    const caso = await casoParaVinculo(req);
+    if (!caso.email_compra) return { ok: true, desfeito: false };
+    await query(
+      `UPDATE email_ia.suporte_escalado
+          SET email_compra = NULL, compra_vinculada_por = NULL, compra_vinculada_em = NULL, compra_vinculada_busca = NULL,
+              valor_pedido_usd = email_ia.valor_pedido_do_cliente(remetente_email, now()), atualizado_em = now()
+        WHERE id = $1`, [caso.id]);
+    await query(
+      `INSERT INTO email_ia.suporte_escalado_notas (suporte_escalado_id, autor, nota) VALUES ($1, $2, $3)`,
+      [caso.id, req.usuario.nome || req.usuario.email || null, `🔗 Vínculo de compra desfeito (era ${caso.email_compra}). Volta a valer o e-mail do ticket.`]);
+    return { ok: true, desfeito: true };
   });
 
   /* ═══════════════════  PUT /api/suporte-escalado/:id/data-entrega  ═══════════ */
@@ -1963,7 +2055,7 @@ export default async function rotasEmailIACentral(app) {
     const board = await boardDoCaso(req.params.id);
     if (!board) throw new ErroHttp(404, 'Caso escalado não encontrado.');
     if (!podeGerenciarBoard(req, board)) throw new ErroHttp(403, 'Este caso não é de um board seu.');
-    const { rows } = await query('SELECT id, remetente_email FROM email_ia.suporte_escalado WHERE id = $1', [req.params.id]);
+    const { rows } = await query('SELECT id, remetente_email, email_compra FROM email_ia.suporte_escalado WHERE id = $1', [req.params.id]);
     if (!rows.length) throw new ErroHttp(404, 'Caso escalado não encontrado.');
     return rows[0];
   }
@@ -1988,7 +2080,7 @@ export default async function rotasEmailIACentral(app) {
   }, async (req) => {
     const caso = await casoParaRetencao(req);
     const [pedido, ofertas] = await Promise.all([
-      pedidoDoCliente(caso.remetente_email),
+      pedidoDoCliente(caso.email_compra || caso.remetente_email),
       query(`SELECT id, transacao_id, plataforma, degrau_oferecido, degrau_aceito, status, valor_preservado_usd,
                     valor_concedido_usd, protecao, ocorrido_em, criado_por
              FROM retencao_ofertas WHERE lower(email) = lower($1) ORDER BY ocorrido_em DESC LIMIT 20`, [caso.remetente_email]),
@@ -2008,7 +2100,7 @@ export default async function rotasEmailIACentral(app) {
     },
   }, async (req, resposta) => {
     const caso = await casoParaRetencao(req);
-    const pedido = await pedidoDoCliente(caso.remetente_email);
+    const pedido = await pedidoDoCliente(caso.email_compra || caso.remetente_email);
     if (!pedido) throw new ErroHttp(422, 'Não achei um pedido deste cliente para ligar a oferta. Registre pelo pedido, se souber o número.');
     const b = req.body;
     const status = b.status ?? 'oferecido';

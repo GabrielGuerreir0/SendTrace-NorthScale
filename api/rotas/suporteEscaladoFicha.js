@@ -106,9 +106,9 @@ const texto = (max) => ({ type: ['string', 'null'], maxLength: max });
  * Sem pedido do cliente ligado ao dash não há o que gravar.
  */
 async function sincronizarRetencao(casoId, ficha) {
-  const { rows: [caso] } = await query('SELECT remetente_email FROM email_ia.suporte_escalado WHERE id = $1', [casoId]);
+  const { rows: [caso] } = await query('SELECT remetente_email, email_compra FROM email_ia.suporte_escalado WHERE id = $1', [casoId]);
   if (!caso?.remetente_email) return;
-  const pedido = await pedidoDoCliente(caso.remetente_email);
+  const pedido = await pedidoDoCliente(caso.email_compra || caso.remetente_email);   // 121: compra vinculada vale no lugar do remetente
   if (!pedido) return;
   const tipo = ficha.tipo_resolucao;
   const valorCompra = Number(ficha.valor_compra_usd ?? pedido.valor_usd ?? 0) || null;
@@ -258,8 +258,8 @@ export default async function rotasSuporteEscaladoFicha(app) {
         WHERE caso_id = $1 AND campo = 'comissao' ORDER BY ocorrido_em DESC, id DESC LIMIT 30`, [req.params.id],
     );
     // Pedido do cliente: sugere o valor da compra e acusa chargeback já registrado no dash (item 11).
-    const { rows: [c] } = await query('SELECT remetente_email FROM email_ia.suporte_escalado WHERE id = $1', [req.params.id]);
-    const pedido = c?.remetente_email ? await pedidoDoCliente(c.remetente_email) : null;
+    const { rows: [c] } = await query('SELECT remetente_email, email_compra FROM email_ia.suporte_escalado WHERE id = $1', [req.params.id]);
+    const pedido = c?.remetente_email ? await pedidoDoCliente(c.email_compra || c.remetente_email) : null;
     return {
       pode_editar: ehDono(req, caso),
       pode_editar_gestao: !!(req.usuario.admin || req.usuario.gestorHumano),   // Comissão e indicadores (5º momento)

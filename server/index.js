@@ -1600,6 +1600,23 @@ async function atender(req, res, url, sessao) {
     }
   }
 
+  /* ── vincular a compra certa ao ticket (121, 23/10/2026): prévia (GET), vincular (PUT) e desfazer (DELETE) ── */
+  const rotaVinculo = /^\/api\/suporte-escalado\/(\d+)\/vinculo-compra$/.exec(url.pathname);
+  if (rotaVinculo) {
+    const base = `/api/suporte-escalado/${rotaVinculo[1]}/vinculo-compra`;
+    const tratar = (err) => {
+      if (err instanceof ErroApi && err.status === 404) return json(res, 404, { erro: 'Caso escalado não encontrado.' });
+      if (err instanceof ErroApi && err.status === 403) return json(res, 403, { erro: 'Este caso não é de um board seu.' });
+      if (err instanceof ErroApi) return json(res, err.status || 400, { erro: detalharErroApi(err, 'Não consegui vincular a compra.') });
+      throw err;
+    };
+    try {
+      if (req.method === 'GET') return json(res, 200, await obterApi(`${base}?busca=${encodeURIComponent(String(url.searchParams.get('busca') ?? '').slice(0, 120))}`));
+      if (req.method === 'PUT') { const corpo = await lerJson(req); return json(res, 200, await substituirApi(base, { busca: String(corpo.busca ?? '').slice(0, 120) })); }
+      if (req.method === 'DELETE') { await apagarApi(base); return json(res, 200, { ok: true }); }
+    } catch (err) { return tratar(err); }
+  }
+
   /* ── retenção (P10): oferta feita pelo CS registrada no caso ── */
   const rotaRetencao = /^\/api\/suporte-escalado\/(\d+)\/retencao(?:\/([\w-]+))?$/.exec(url.pathname);
   if (rotaRetencao) {

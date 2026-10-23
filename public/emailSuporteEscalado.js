@@ -1131,6 +1131,7 @@ function renderContexto(item, container, ctx) {
 
   const cliente = ctx.cliente ?? {};
   linha('Cliente', `${cliente.nome || item.nome || '(sem nome)'} · ${cliente.email || item.remetente_email || '—'}`);
+  linha('Compra vinculada', criarCampoVinculo(item, ctx, container));   // 121: e-mail/nº do pedido da compra quando o ticket veio de outro e-mail
 
   const pedidos = ctx.pedidos ?? [];
   const principal = ctx.pedido_principal ?? pedidos[0] ?? null;
@@ -1158,6 +1159,82 @@ function renderContexto(item, container, ctx) {
   linha('Data de entrega', criarCampoDataEntrega(item.id, ctx.data_entrega));
 
   container.append(lista);
+}
+
+/** Vincular a compra certa ao ticket (121, 23/10/2026): o ticket veio de um e-mail diferente do usado na compra. O agente digita o e-mail da compra
+ *  ou o nº do pedido (ou o código de rastreio), vê a prévia das compras achadas e confirma; o card passa a puxar as compras desse e-mail. */
+function criarCampoVinculo(item, ctx, container) {
+  const env = document.createElement('div');
+  env.className = 'esc-vinculo';
+  const recarregar = () => carregarContexto(item, container);
+  const botao = (txt, cls, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.textContent = txt; b.addEventListener('click', fn); return b; };
+
+  const topo = document.createElement('div');
+  topo.className = 'esc-vinculo-topo';
+  const form = document.createElement('div');
+  form.className = 'esc-vinculo-form';
+  form.hidden = true;
+
+  const v = ctx.vinculo;
+  const txt = document.createElement('span');
+  const abrir = botao(v ? 'Trocar' : '🔗 Vincular compra', 'btn', () => { form.hidden = !form.hidden; if (!form.hidden) entrada.focus(); });
+  if (v) {
+    txt.textContent = `${v.email_compra} · por ${v.por || '—'}${v.em ? ' em ' + dataHora(v.em) : ''}`;
+    topo.append(txt, abrir, botao('Desvincular', 'btn', async () => {
+      if (!window.confirm(`Desvincular a compra (${v.email_compra})? O card volta a usar o e-mail do ticket.`)) return;
+      const { ok, dados } = await api(`/api/suporte-escalado/${item.id}/vinculo-compra`, { metodo: 'DELETE' });
+      if (!ok) { window.alert(dados?.erro ?? 'Não consegui desvincular.'); return; }
+      recarregar();
+    }));
+  } else {
+    txt.textContent = 'Nenhuma — as compras vêm do e-mail do ticket.';
+    topo.append(txt, abrir);
+  }
+
+  const entrada = document.createElement('input');
+  entrada.type = 'text';
+  entrada.placeholder = 'E-mail da compra ou nº do pedido';
+  entrada.setAttribute('aria-label', 'E-mail da compra ou número do pedido');
+  entrada.maxLength = 120;
+  const msg = document.createElement('div');
+  msg.className = 'esc-vinculo-msg';
+  const previa = document.createElement('div');
+  previa.className = 'esc-vinculo-previa';
+  const confirmar = botao('Vincular', 'btn btn-forte', async () => {
+    confirmar.disabled = true;
+    const { ok, dados } = await api(`/api/suporte-escalado/${item.id}/vinculo-compra`, { metodo: 'PUT', corpo: { busca: entrada.value.trim() } });
+    if (!ok) { confirmar.disabled = false; msg.textContent = dados?.erro ?? 'Não consegui vincular.'; return; }
+    recarregar();
+  });
+  confirmar.hidden = true;
+  const buscar = botao('Buscar', 'btn', async () => {
+    msg.textContent = ''; previa.replaceChildren(); confirmar.hidden = true;
+    const q = entrada.value.trim();
+    if (q.length < 3) { msg.textContent = 'Digite o e-mail da compra ou o nº do pedido.'; return; }
+    buscar.disabled = true;
+    const { ok, dados } = await api(`/api/suporte-escalado/${item.id}/vinculo-compra?busca=${encodeURIComponent(q)}`);
+    buscar.disabled = false;
+    if (!ok) { msg.textContent = dados?.erro ?? 'Não consegui buscar.'; return; }
+    if (dados.mesmo_do_remetente) { msg.textContent = 'Esse é o e-mail do próprio ticket — não precisa vincular.'; return; }
+    msg.textContent = `${dados.tipo === 'pedido' ? 'Pedido encontrado no e-mail ' : 'Compras de '}${dados.email}${dados.ja_vinculado ? ' (já vinculado)' : ''}:`;
+    const ul = document.createElement('ul');
+    for (const p of dados.pedidos.slice(0, 6)) {
+      const li = document.createElement('li');
+      li.textContent = `${p.transacao_id} · ${p.produto || '—'} · ${p.plataforma ? rotularPlataforma(p.plataforma) : '—'} · ${p.pedido_em ? dataHora(p.pedido_em) : '—'}`;
+      ul.append(li);
+    }
+    if (dados.pedidos.length > 6) { const li = document.createElement('li'); li.textContent = `… e mais ${dados.pedidos.length - 6}`; ul.append(li); }
+    previa.append(ul);
+    confirmar.hidden = dados.ja_vinculado;
+  });
+  entrada.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); buscar.click(); } });
+  const linhaForm = document.createElement('div');
+  linhaForm.className = 'esc-vinculo-linha';
+  linhaForm.append(entrada, buscar, confirmar);
+  form.append(linhaForm, msg, previa);
+
+  env.append(topo, form);
+  return env;
 }
 
 /** "Data de entrega" é o único campo desta ficha SEM fonte automática no

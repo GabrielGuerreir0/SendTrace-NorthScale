@@ -2078,6 +2078,12 @@ body[data-menu="fechado"] .menu-separador .menu-rotulo { display: none; }
   margin: 0; font-size: 13px; line-height: 1.4; color: var(--tinta);
 }
 .esc-contexto-entrega { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* vincular compra ao ticket (121) */
+.esc-vinculo-topo, .esc-vinculo-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.esc-vinculo-form { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.esc-vinculo-linha input { flex: 1 1 240px; min-width: 200px; }
+.esc-vinculo-msg { font-size: 13px; opacity: .85; }
+.esc-vinculo-previa ul { margin: 0; padding-left: 18px; font-size: 13px; }
 .esc-contexto-lista dd { min-width: 0; overflow-wrap: anywhere; }
 @media (max-width: 640px) { .esc-contexto-lista { grid-template-columns: 1fr; } .esc-contexto-lista dt { margin-top: 6px; } }
 
