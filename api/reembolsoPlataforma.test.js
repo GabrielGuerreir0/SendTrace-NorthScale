@@ -19,6 +19,12 @@ test('gatilho: resolução nova sempre avalia; classificado por pessoa nunca mex
   assert.equal(precisaAvaliar(T({ tipo_resolucao: EVA, reembolso_plat_origem: 'IA', propriedades_atualizado_por: 'Késsia', reembolso_plat_assinatura: '2|1||' })), false);   // pessoa mudou à mão
   assert.equal(precisaAvaliar(T({ tipo_resolucao: EVA, reembolso_plat_origem: null })), false);                                                                              // escolhido por pessoa, sem marca do sistema
 });
+test('gatilho: marcação de pessoa vencida pelo reembolso da plataforma (reaberto) reavalia; sem a marca continua intocada', () => {
+  const r = { tipo_resolucao: 'Reversão total do reembolso', propriedades_atualizado_por: 'Thalison', dr: '2026-10-17', reaberto: true };
+  assert.equal(precisaAvaliar(T(r)), true);
+  assert.equal(precisaAvaliar(T({ ...r, reaberto: false })), false);
+  assert.equal(precisaAvaliar(T({ ...r, reembolso_plat_assinatura: assinatura(T(r)) })), false, 'já avaliado com a mesma assinatura');
+});
 test('gatilho: ticket classificado pela IA só reavalia com e-mail novo ou resposta nova; pela camada 1, com qualquer mudança', () => {
   const ia = T({ tipo_resolucao: EVA, reembolso_plat_origem: 'IA', propriedades_atualizado_por: 'Sistema (IA)', reembolso_plat_assinatura: '2|1||' });
   assert.equal(precisaAvaliar(ia), false);

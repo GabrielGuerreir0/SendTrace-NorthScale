@@ -7,7 +7,9 @@
  *
  * Gatilho (reavaliar): enquanto a resolução for "Reembolsado pela plataforma" (ou um dos 3 tipos acima, classificado pelo sistema) e a ASSINATURA da conversa
  * mudou — e-mail novo do cliente, resposta nova do agente, data do reembolso ou do chargeback. Ticket já classificado pela IA só é reprocessado com e-mail
- * novo ou resposta nova (evita custo e oscilação). Resolução mudada à mão por uma pessoa nunca é sobrescrita.
+ * novo ou resposta nova (evita custo e oscilação). Resolução mudada à mão por uma pessoa nunca é sobrescrita, EXCETO quando o reembolso da plataforma saiu
+ * depois da marcação dela (data do reembolso > dia da última edição das propriedades), a resolução é uma das RESOLUCOES_REABRIVEIS e o cliente não tem compra ativa:
+ * aí a marcação ficou desatualizada e o ticket é reclassificado (o log guarda o tipo anterior para desfazer).
  * A rotina nasce DESLIGADA (config_disparos.reembolso_plataforma_ativo); o backfill/simulação rodam pelo terminal (api/reembolsoPlataformaCli.js).
  */
 import Anthropic from '@anthropic-ai/sdk';
@@ -18,6 +20,8 @@ export const SEM = `${BASE} - Sem atendimento`;
 export const EVA = `${BASE} - Evasão provável`;
 export const OUT = `${BASE} - Outros`;
 export const TIPOS = [BASE, SEM, EVA, OUT];
+/** Resoluções que uma pessoa marca e que o reembolso da plataforma, saído DEPOIS da marcação, torna desatualizadas (#10238, Késsia 23/10). */
+export const RESOLUCOES_REABRIVEIS = ['Reversão total do reembolso', 'Reembolso parcial', 'Não envolve reembolso', 'Cliente não retornou', 'Não revertido'];
 const MAPA = { SEM_ATENDIMENTO: SEM, EVASAO_PROVAVEL: EVA, OUTROS: OUT };
 const AUTORES_SISTEMA = ['Sistema', 'Sistema (IA)'];
 export const VERSAO_PROMPT = 'v1';
@@ -35,6 +39,7 @@ export function camada1({ pResp, dr }) {
 /* ───────── gatilho: precisa reavaliar? ───────── */
 export const assinatura = (c) => `${c.n_emails}|${c.n_resp}|${c.dr ? String(c.dr).slice(0, 10) : ''}|${c.dcb ? String(c.dcb).slice(0, 10) : ''}`;
 export function precisaAvaliar(c) {
+  if (c.reaberto) return c.reembolso_plat_assinatura !== assinatura(c);               // marcação de pessoa vencida pelo reembolso: reavalia uma vez (depois vira tipo da família)
   if (c.tipo_resolucao === BASE) return true;                                          // acabou de receber a resolução
   if (!TIPOS.includes(c.tipo_resolucao)) return false;
   if (c.reembolso_plat_origem === null || c.reembolso_plat_origem === undefined) return false;   // classificado por uma pessoa: não mexe
@@ -57,17 +62,27 @@ export async function candidatos() {
                 f.reembolso_plat_origem, f.reembolso_plat_assinatura
            FROM email_ia.suporte_escalado s JOIN email_ia.suporte_escalado_ficha f ON f.suporte_escalado_id = s.id
           WHERE s.ticket_mae_id IS NULL AND f.tipo_resolucao = ANY($1::text[])
+       ), reab AS (   -- marcação de pessoa que o reembolso da plataforma (data posterior à edição) tornou desatualizada
+         SELECT s.id AS caso_id, lower(s.remetente_email) AS em, f.tipo_resolucao, to_char(f.data_reembolso_total, 'YYYY-MM-DD') AS dr, to_char(f.data_chargeback, 'YYYY-MM-DD') AS dcb, f.propriedades_atualizado_por,
+                f.reembolso_plat_origem, f.reembolso_plat_assinatura, true AS reaberto
+           FROM email_ia.suporte_escalado s JOIN email_ia.suporte_escalado_ficha f ON f.suporte_escalado_id = s.id
+          WHERE s.ticket_mae_id IS NULL AND f.tipo_resolucao = ANY($2::text[]) AND f.data_reembolso_total IS NOT NULL
+            AND f.propriedades_atualizado_em IS NOT NULL AND f.propriedades_atualizado_por IS NOT NULL
+            AND f.data_reembolso_total > (f.propriedades_atualizado_em AT TIME ZONE 'America/Sao_Paulo')::date
+            AND NOT email_ia.cliente_tem_compra_ativa(lower(s.remetente_email))
+       ), todos AS (
+         SELECT *, false AS reaberto FROM fam UNION ALL SELECT * FROM reab
        ), ag AS (
          SELECT coalesce(s.ticket_mae_id, s.id) AS caso_id, min(r.enviado_em) AS p_resp, count(*)::int AS n_resp
            FROM email_ia.respostas_agente r JOIN email_ia.suporte_escalado s ON s.id = r.caso_id
-          WHERE coalesce(s.ticket_mae_id, s.id) IN (SELECT caso_id FROM fam) GROUP BY 1
+          WHERE coalesce(s.ticket_mae_id, s.id) IN (SELECT caso_id FROM todos) GROUP BY 1
        ), em AS (
          SELECT lower(e.remetente_email) AS em, count(*)::int AS n_emails
-           FROM email_ia.emails e WHERE lower(e.remetente_email) IN (SELECT em FROM fam) GROUP BY 1
+           FROM email_ia.emails e WHERE lower(e.remetente_email) IN (SELECT em FROM todos) GROUP BY 1
        )
-       SELECT fam.*, ag.p_resp, coalesce(ag.n_resp, 0) AS n_resp, coalesce(em.n_emails, 0) AS n_emails
-         FROM fam LEFT JOIN ag ON ag.caso_id = fam.caso_id LEFT JOIN em ON em.em = fam.em
-        ORDER BY fam.caso_id`, [TIPOS]);
+       SELECT todos.*, ag.p_resp, coalesce(ag.n_resp, 0) AS n_resp, coalesce(em.n_emails, 0) AS n_emails
+         FROM todos LEFT JOIN ag ON ag.caso_id = todos.caso_id LEFT JOIN em ON em.em = todos.em
+        ORDER BY todos.caso_id`, [TIPOS, RESOLUCOES_REABRIVEIS]);
     await cli.query('COMMIT');
     return rows;
   } catch (e) { await cli.query('ROLLBACK').catch(() => {}); throw e; } finally { cli.release(); }
@@ -172,7 +187,7 @@ export async function gravar(c, d) {
               reembolso_plat_avaliado_em = now(), reembolso_plat_assinatura = $7,
               propriedades_atualizado_por = $8, propriedades_atualizado_em = now(), atualizado_por = $8, atualizado_em = now()
         WHERE suporte_escalado_id = $1 AND tipo_resolucao = $9 AND coalesce(propriedades_atualizado_por, 'Sistema') = ANY($10::text[])`,
-      [c.caso_id, d.status, d.origem, d.confianca, d.motivo, d.revisar, assinatura(c), autor, c.tipo_resolucao, c.tipo_resolucao === BASE ? [...AUTORES_SISTEMA, c.propriedades_atualizado_por ?? 'Sistema'] : AUTORES_SISTEMA]);
+      [c.caso_id, d.status, d.origem, d.confianca, d.motivo, d.revisar, assinatura(c), autor, c.tipo_resolucao, c.reaberto ? [c.propriedades_atualizado_por] : c.tipo_resolucao === BASE ? [...AUTORES_SISTEMA, c.propriedades_atualizado_por ?? 'Sistema'] : AUTORES_SISTEMA]);
     if (rowCount) await cli.query(`INSERT INTO email_ia.reembolso_plataforma_log (caso_id, tipo_antes, tipo_depois, origem, confianca, motivo, revisar) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
       [c.caso_id, c.tipo_resolucao, d.status, d.origem, d.confianca, d.motivo, d.revisar]);
     await cli.query('COMMIT');
