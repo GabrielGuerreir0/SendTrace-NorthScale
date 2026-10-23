@@ -744,7 +744,7 @@ export default async function rotasRastreio(app) {
   app.get('/rastrear/:transacao_id', {
     schema: {
       tags: ['Rastreio'],
-      summary: 'Rastreio público de um pedido (sem login)',
+      summary: 'Rastreio público de um pedido (sem login) — pelo código do pedido ou pelo código de rastreio',
       description: 'Pro lead consultar o próprio pedido pelo transacao_id. Nunca devolve '
         + 'endereço, e-mail ou telefone. `encontrado: false` cobre 3 situações diferentes '
         + '(pedido inexistente, ainda não consultado, ou não encontrado em nenhuma plataforma, '
@@ -764,22 +764,24 @@ export default async function rotasRastreio(app) {
     const { rows } = await query(
       `SELECT r.status_interno, r.carrier_code, r.tracking_number, r.tracking_url,
               r.tracking_status, r.order_created_at, r.shipped_at, r.delivered_at,
-              r.tracking, r.atualizado_em, d.produto
+              r.tracking, r.atualizado_em, d.produto, r.transacao_id
        FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
-       WHERE r.transacao_id = $1`,
+       WHERE r.transacao_id = $1 OR r.tracking_number = $1
+       ORDER BY (r.transacao_id = $1) DESC LIMIT 1`,
       [req.params.transacao_id],
-    );
+    );   // aceita também o código de rastreio: o e-mail do código manda esse número (23/10/2026)
     const MOSTRAVEL = new Set(['pending', 'shipped', 'delivered', 'cancelled']);
     if (!rows[0] || !MOSTRAVEL.has(rows[0].status_interno)) {
       return { encontrado: false };
     }
 
+    const r = rows[0];
+    const tid = r.transacao_id;   // a consulta pode ter vindo pelo código de rastreio: daqui em diante vale o id do pedido
     const eventos = await query(
       `SELECT status_novo, detectado_em FROM rastreio_eventos
        WHERE transacao_id = $1 ORDER BY detectado_em DESC LIMIT 20`,
-      [req.params.transacao_id],
+      [tid],
     );
-    const r = rows[0];
     return {
       encontrado: true,
       produto: r.produto,
@@ -795,7 +797,7 @@ export default async function rotasRastreio(app) {
       marcos: { criado_em: r.order_created_at, enviado_em: r.shipped_at, entregue_em: r.delivered_at },
       checkpoints_transportadora: checkpointsTransportadora(r.tracking),
       ...montarParado(r.status_interno, r.atualizado_em),
-      ...(await historicoPublico(req.params.transacao_id)),
+      ...(await historicoPublico(tid)),
     };
   });
 }
