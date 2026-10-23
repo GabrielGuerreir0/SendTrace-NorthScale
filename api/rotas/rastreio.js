@@ -649,6 +649,7 @@ export default async function rotasRastreio(app) {
           status_novo: { type: 'string', description: 'Obrigatório quando metrica=transicao.' },
           status_interno: { type: 'string', description: 'Filtro extra pra metrica=lista (ex.: linha de funil_por_plataforma ou sem_codigo_rastreio).' },
           provedor: { type: 'string', description: "'redrock', 'fullstack' ou 'nenhum' — sub-aba ativa da aba Rastreio (vale pra qualquer metrica, não só lista)." },
+          transferido: { type: 'string', description: "'1' = só pedidos transferidos da RedRock para a FullStack (117)." },
           sem_codigo: { type: 'string', enum: ['1'], description: "Filtro extra pra metrica=lista (linha de sem_codigo_rastreio) — restringe a 'provedor IS NOT NULL AND tracking_number IS NULL'." },
           dia: {
             type: 'string',
@@ -703,6 +704,7 @@ export default async function rotasRastreio(app) {
           produto: { type: 'string' },
           plataforma: { type: 'string' },
           provedor: { type: 'string', description: "'redrock', 'fullstack' ou 'nenhum' — sub-aba ativa da aba Rastreio." },
+          transferido: { type: 'string', description: "'1' = só pedidos transferidos da RedRock para a FullStack (117)." },
           metrica: { type: 'string', enum: ['deteccao', 'transporte', 'total', 'transicao'] },
           status_anterior: { type: 'string', description: 'Obrigatório quando metrica=transicao (vazio representa null, primeiro evento).' },
           status_novo: { type: 'string', description: 'Obrigatório quando metrica=transicao.' },

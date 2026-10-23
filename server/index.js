@@ -2024,6 +2024,7 @@ async function atender(req, res, url, sessao) {
     return json(res, 200, await rastreioLista({
       status: textoOuNulo(q.get('status')),
       provedor: textoOuNulo(q.get('provedor')),
+      transferido: textoOuNulo(q.get('transferido')),   // 117: sub-aba "Transferidos RedRock → FullStack"
       produto: textoOuNulo(q.get('produto')),
       plataforma: textoOuNulo(q.get('plataforma')),
       search: textoOuNulo(q.get('search')),
@@ -2051,6 +2052,7 @@ async function atender(req, res, url, sessao) {
       produto: textoOuNulo(q.get('produto')),
       plataforma: textoOuNulo(q.get('plataforma')),
       provedor: textoOuNulo(q.get('provedor')),
+      transferido: textoOuNulo(q.get('transferido')),   // 117: sub-aba "Transferidos RedRock → FullStack"
       dias: q.get('dias'), data_de: q.get('data_de'), data_ate: q.get('data_ate'),
     }));
   }
@@ -2061,6 +2063,7 @@ async function atender(req, res, url, sessao) {
       produto: textoOuNulo(q.get('produto')),
       plataforma: textoOuNulo(q.get('plataforma')),
       provedor: textoOuNulo(q.get('provedor')),
+      transferido: textoOuNulo(q.get('transferido')),   // 117: sub-aba "Transferidos RedRock → FullStack"
       dias: q.get('dias'), data_de: q.get('data_de'), data_ate: q.get('data_ate'),
     }));
   }
@@ -2078,6 +2081,7 @@ async function atender(req, res, url, sessao) {
       duracao_dias_min: q.get('duracao_dias_min'), duracao_dias_max: q.get('duracao_dias_max'),
       status_anterior: q.get('status_anterior'), status_novo: q.get('status_novo'),
       status_interno: q.get('status_interno'), provedor: q.get('provedor'),
+      transferido: textoOuNulo(q.get('transferido')),   // 117
       sem_codigo: q.get('sem_codigo'),
       page: q.get('page') ?? undefined, page_size: q.get('page_size') ?? undefined,
     }));
@@ -2089,6 +2093,7 @@ async function atender(req, res, url, sessao) {
       produto: textoOuNulo(q.get('produto')),
       plataforma: textoOuNulo(q.get('plataforma')),
       provedor: textoOuNulo(q.get('provedor')),
+      transferido: textoOuNulo(q.get('transferido')),   // 117: sub-aba "Transferidos RedRock → FullStack"
       dias: q.get('dias'), data_de: q.get('data_de'), data_ate: q.get('data_ate'),
       metrica: q.get('metrica'),
       status_anterior: q.get('status_anterior'), status_novo: q.get('status_novo'),
