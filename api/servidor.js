@@ -177,13 +177,15 @@ app.decorate('exigirSessao', async (req) => {
     const chave = await validarChave(bruto);
     if (!chave) throw new ErroHttp(401, 'Chave de leitura inválida ou revogada.');
     const caminho = req.url.split('?')[0].replace(/\/+$/, '');
-    if (req.method !== 'GET' && !(req.method === 'POST' && caminho === '/api/leitura/sql')) {
+    // Única exceção de escrita (migração 122): chave marcada `edita_propriedades` pode PUT na ficha do ticket; a rota confere que só vão campos de Propriedades.
+    const ehEdicaoPropriedades = req.method === 'PUT' && chave.edita_propriedades && /^\/api\/suporte-escalado\/\d+\/ficha$/.test(caminho);
+    if (req.method !== 'GET' && !(req.method === 'POST' && caminho === '/api/leitura/sql') && !ehEdicaoPropriedades) {
       throw new ErroHttp(403, 'Esta chave é somente de leitura.');
     }
     if (!dentroDoLimite(chave.id)) throw new ErroHttp(429, 'Muitas consultas por minuto (limite 120). Espere um pouco.');
     req.usuario = {
       user_id: null, email: `leitura-${chave.id}@api`, nome: chave.dono, admin: true, gestorEscalado: true, gestorHumano: true, tipo: 'access',
-      leitura: true, chaveId: chave.id, mascararPii: chave.mascarar_pii,
+      leitura: true, chaveId: chave.id, mascararPii: chave.mascarar_pii, editaPropriedades: Boolean(chave.edita_propriedades),
     };
     req.auditoria = {};
     return;

@@ -204,7 +204,7 @@ export default async function rotasSuporteEscaladoFicha(app) {
     return caso;
   }
 
-  const nomeDe = (req) => req.usuario.nome || req.usuario.email || null;
+  const nomeDe = (req) => (req.usuario.leitura ? `${req.usuario.nome || 'Chave de leitura'} (Claude)` : (req.usuario.nome || req.usuario.email || null));   // 122: edição pela chave fica marcada
 
   // Anexos nas respostas (4º momento, item 2): PDF e imagem, até 10 MB por resposta (somando os arquivos) e no máximo 5 arquivos.
   const TIPOS_ANEXO = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp']);
@@ -581,6 +581,13 @@ export default async function rotasSuporteEscaladoFicha(app) {
       },
     },
   }, async (req) => {
+    // 122: chave de leitura com permissão só edita PROPRIEDADES (nunca Logística, Ajuda, Comissão, indicadores nem responsável).
+    if (req.usuario.leitura) {
+      if (!req.usuario.editaPropriedades) throw new ErroHttp(403, 'Esta chave é somente de leitura.');
+      const fora = Object.keys(req.body).filter((c) => !BLOCO_PROPRIEDADES.includes(c));
+      if (fora.length) throw new ErroHttp(403, `Esta chave só edita Propriedades. Campos não permitidos: ${fora.join(', ')}.`);
+      req.auditoria = { ...req.auditoria, sql: `PUT ficha (Propriedades) ${JSON.stringify(req.body).slice(0, 1500)}` };
+    }
     const casoPut = await casoComBoard(req.params.id);
     if (!casoPut) throw new ErroHttp(404, 'Caso escalado não encontrado.');
     if (!ehDono(req, casoPut)) {

@@ -16,13 +16,13 @@ export const ehTokenLeitura = (bruto) => typeof bruto === 'string' && bruto.star
 const hashDe = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
 /** Cria a chave e devolve `{ id, token }` — o token não é recuperável depois. */
-export async function criarChave({ dono, descricao = null, mascararPii = false, criadaPor = null }) {
+export async function criarChave({ dono, descricao = null, mascararPii = false, criadaPor = null, editaPropriedades = false }) {
   if (!String(dono ?? '').trim()) throw new Error('Informe o dono da chave.');
   const token = PREFIXO_TOKEN + crypto.randomBytes(32).toString('base64url');
   const { rows } = await query(
-    `INSERT INTO chaves_leitura (dono, descricao, prefixo, hash, mascarar_pii, criada_por)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-    [String(dono).trim(), descricao, token.slice(0, PREFIXO_TOKEN.length + 6), hashDe(token), Boolean(mascararPii), criadaPor],
+    `INSERT INTO chaves_leitura (dono, descricao, prefixo, hash, mascarar_pii, criada_por, edita_propriedades)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+    [String(dono).trim(), descricao, token.slice(0, PREFIXO_TOKEN.length + 6), hashDe(token), Boolean(mascararPii), criadaPor, Boolean(editaPropriedades)],
   );
   return { id: rows[0].id, token };
 }
@@ -31,16 +31,22 @@ export async function criarChave({ dono, descricao = null, mascararPii = false, 
 export async function validarChave(token, { contar = true } = {}) {
   if (!RE_TOKEN.test(token ?? '')) return null;
   if (!contar) {
-    const { rows } = await query('SELECT id, dono, mascarar_pii FROM chaves_leitura WHERE hash = $1 AND revogada_em IS NULL', [hashDe(token)]);
+    const { rows } = await query('SELECT id, dono, mascarar_pii, edita_propriedades FROM chaves_leitura WHERE hash = $1 AND revogada_em IS NULL', [hashDe(token)]);
     return rows[0] ?? null;
   }
   const { rows } = await query(
     `UPDATE chaves_leitura SET ultimo_uso_em = now(), usos = usos + 1
       WHERE hash = $1 AND revogada_em IS NULL
-  RETURNING id, dono, mascarar_pii`,
+  RETURNING id, dono, mascarar_pii, edita_propriedades`,
     [hashDe(token)],
   );
   return rows[0] ?? null;
+}
+
+/** Liga/desliga (122) a exceção que deixa a chave editar as Propriedades dos tickets. Devolve true se achou uma chave ativa. */
+export async function definirEditaPropriedades(id, valor) {
+  const { rowCount } = await query('UPDATE chaves_leitura SET edita_propriedades = $2 WHERE id = $1 AND revogada_em IS NULL', [id, Boolean(valor)]);
+  return rowCount > 0;
 }
 
 export async function revogarChave(id) {
@@ -50,7 +56,7 @@ export async function revogarChave(id) {
 
 export async function listarChaves() {
   const { rows } = await query(
-    `SELECT id, dono, descricao, prefixo, mascarar_pii, criada_em, criada_por, revogada_em, ultimo_uso_em, usos
+    `SELECT id, dono, descricao, prefixo, mascarar_pii, edita_propriedades, criada_em, criada_por, revogada_em, ultimo_uso_em, usos
        FROM chaves_leitura ORDER BY id`,
   );
   return rows;

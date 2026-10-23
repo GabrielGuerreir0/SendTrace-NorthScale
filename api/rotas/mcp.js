@@ -42,6 +42,29 @@ const FERRAMENTAS = [
   },
 ];
 
+/** Só aparece (e só funciona) para chave marcada `edita_propriedades` (migração 122). A regra de verdade está na API; aqui é só o atalho. */
+const FERRAMENTA_EDITAR = {
+  name: 'sendtrace_atualizar_propriedades',
+  description: 'ESCREVE (único tipo de escrita permitido): altera as PROPRIEDADES de UM ticket do Suporte Escalado, de qualquer agente — motivo_contato, detalhamento_motivo, tipo_resolucao, status_ticket, percentual_reembolso, valor_compra_usd, deducao_frascos_usd, chargeback_em. '
+    + 'Só os campos enviados mudam (null limpa). Os valores têm de ser os das listas fechadas: leia antes sendtrace_chamar_tela com /api/suporte-escalado/opcoes. '
+    + 'Propriedades não salva incompleto (motivo, detalhamento, tipo e status são obrigatórios) e "Reembolso parcial" exige percentual e valor da compra. '
+    + 'A alteração fica no nome da dona da chave com "(Claude)" e na auditoria. Um ticket por chamada; antes de alterar vários, mostre a lista e peça confirmação.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      caso_id: { type: 'integer', minimum: 1, description: 'Número do ticket (id em email_ia.suporte_escalado).' },
+      campos: {
+        type: 'object', additionalProperties: false, minProperties: 1,
+        properties: {
+          motivo_contato: { type: ['string', 'null'] }, detalhamento_motivo: { type: ['string', 'null'] }, tipo_resolucao: { type: ['string', 'null'] }, status_ticket: { type: ['string', 'null'] },
+          percentual_reembolso: { type: ['integer', 'null'] }, valor_compra_usd: { type: ['number', 'null'] }, deducao_frascos_usd: { type: ['number', 'null'] }, chargeback_em: { type: ['string', 'null'], description: 'AAAA-MM-DD' },
+        },
+      },
+    },
+    required: ['caso_id', 'campos'], additionalProperties: false,
+  },
+};
+
 const texto = (obj) => {
   let s = typeof obj === 'string' ? obj : JSON.stringify(obj);
   if (s.length > MAX_TEXTO) s = `${s.slice(0, MAX_TEXTO)}\n… [cortado em ${MAX_TEXTO} caracteres; peça menos linhas ou agregue no SQL]`;
@@ -64,7 +87,7 @@ export default async function rotasMcp(app) {
     return { status: r.statusCode, corpo: dado };
   };
 
-  const executar = async (req, chave, nome, a = {}) => {
+  const executar = async (req, chave, nome, a = {}, edita = false) => {
     let r;
     switch (nome) {
       case 'sendtrace_guia': {
@@ -95,12 +118,20 @@ export default async function rotasMcp(app) {
         r = await chamar(req, chave, 'GET', c);
         return r.status === 200 ? texto(r.corpo) : erro(`HTTP ${r.status}: ${r.corpo?.detail ?? JSON.stringify(r.corpo).slice(0, 300)}`);
       }
+      case 'sendtrace_atualizar_propriedades': {
+        if (!edita) return null;   // chave sem a permissão: a ferramenta nem existe para ela
+        const id = Number(a.caso_id);
+        if (!Number.isInteger(id) || id < 1) return erro('Informe o caso_id (número do ticket).');
+        if (!a.campos || typeof a.campos !== 'object' || !Object.keys(a.campos).length) return erro('Informe os campos a alterar.');
+        r = await chamar(req, chave, 'PUT', `/api/suporte-escalado/${id}/ficha`, a.campos);
+        return r.status === 200 ? texto({ ok: true, caso_id: id, ficha: r.corpo }) : erro(`HTTP ${r.status}: ${r.corpo?.detail ?? r.corpo?.erro ?? JSON.stringify(r.corpo).slice(0, 300)}`);
+      }
       default:
         return null;
     }
   };
 
-  const tratar = async (req, chave, m) => {
+  const tratar = async (req, chave, m, edita = false) => {
     const id = m.id;
     const ok = (result) => ({ jsonrpc: '2.0', id, result });
     const falha = (code, message) => ({ jsonrpc: '2.0', id, error: { code, message } });
@@ -112,14 +143,14 @@ export default async function rotasMcp(app) {
           protocolVersion: VERSOES.includes(pedida) ? pedida : VERSOES[0],
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: 'sendtrace-leitura', version: '1.0.0' },
-          instructions: 'SendTrace da The NorthScale (pós-venda, suporte, régua, rastreio). Acesso SOMENTE LEITURA. Comece com sendtrace_guia e sendtrace_listar_tabelas. Dados de clientes são pessoais: não repita e-mails, nomes ou endereços sem necessidade e prefira agregados.',
+          instructions: 'SendTrace da The NorthScale (pós-venda, suporte, régua, rastreio). Acesso SOMENTE LEITURA (exceção: se a sua chave tiver a ferramenta sendtrace_atualizar_propriedades, ela edita as Propriedades dos tickets). Comece com sendtrace_guia e sendtrace_listar_tabelas. Dados de clientes são pessoais: não repita e-mails, nomes ou endereços sem necessidade e prefira agregados.',
         });
       }
       case 'ping': return ok({});
-      case 'tools/list': return ok({ tools: FERRAMENTAS });
+      case 'tools/list': return ok({ tools: edita ? [...FERRAMENTAS, FERRAMENTA_EDITAR] : FERRAMENTAS });
       case 'tools/call': {
         try {
-          const r = await executar(req, chave, m.params?.name, m.params?.arguments);
+          const r = await executar(req, chave, m.params?.name, m.params?.arguments, edita);
           return r ? ok(r) : falha(-32602, `Ferramenta desconhecida: ${m.params?.name}`);
         } catch (err) {
           req.log.error({ err }, 'falha em ferramenta MCP');
@@ -132,19 +163,21 @@ export default async function rotasMcp(app) {
 
   const credencial = async (req, resposta) => {
     const chave = String(req.params.chave ?? '');
-    if (!(await validarChave(chave, { contar: false }))) { resposta.code(401).send({ detail: 'Chave inválida ou revogada.' }); return null; }
-    return chave;
+    const valida = await validarChave(chave, { contar: false });
+    if (!valida) { resposta.code(401).send({ detail: 'Chave inválida ou revogada.' }); return null; }
+    return { chave, edita: Boolean(valida.edita_propriedades) };
   };
 
   app.post('/mcp/:chave', { schema: { hide: true } }, async (req, resposta) => {
-    const chave = await credencial(req, resposta);
-    if (!chave) return resposta;
+    const cred = await credencial(req, resposta);
+    if (!cred) return resposta;
+    const { chave, edita } = cred;
     const corpo = req.body;
     if (Array.isArray(corpo)) {
-      const saidas = (await Promise.all(corpo.map((m) => tratar(req, chave, m)))).filter(Boolean);
+      const saidas = (await Promise.all(corpo.map((m) => tratar(req, chave, m, edita)))).filter(Boolean);
       return saidas.length ? saidas : resposta.code(202).send();
     }
-    const saida = await tratar(req, chave, corpo ?? {});
+    const saida = await tratar(req, chave, corpo ?? {}, edita);
     return saida ?? resposta.code(202).send();
   });
 
