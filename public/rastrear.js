@@ -296,3 +296,12 @@ $('r-nova-busca').addEventListener('click', () => {
   $('r-id').value = '';
   $('r-id').focus();
 });
+
+/* Link do e-mail do código de rastreio (23/10/2026): /rastreio?pedido=<id> já abre com o pedido preenchido e consulta sozinho. */
+{
+  const pedido = new URLSearchParams(location.search).get('pedido');
+  if (pedido && /^[\w.\-]{3,80}$/.test(pedido)) {
+    $('r-id').value = pedido;
+    $('form-buscar').requestSubmit();
+  }
+}
