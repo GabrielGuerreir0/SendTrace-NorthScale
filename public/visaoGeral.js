@@ -227,6 +227,9 @@ function renderAlertas(s) {
   const c = $('vg-alertas');
   if (!c) return;
   c.replaceChildren();
+  // 24/10/2026: faixa de alertas da Home desligada a pedido do Lucas (a rota ainda calcula `s.alertas`; só a tela não mostra).
+  return;
+  // eslint-disable-next-line no-unreachable
   const lista = [...(s.alertas ?? [])];
   // Sem 3 alertas de regra, completa com o insight mais grave das outras abas.
   const st = s.status;
