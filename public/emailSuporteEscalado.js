@@ -1088,23 +1088,37 @@ async function carregarContexto(item, container) {
   }
 }
 
-/** Tabela do pedido (5º momento, item 5): Tipo · Nº do pedido/transação · quantidade e produto · valor, com o TOTAL. */
+/** Número do pedido que o time reconhece na JVZoo (30/10): o Transaction ID (WP-… cartão, PT-… PayPal), que vem do aviso da JVZoo.
+ *  Sem ele (pedido antigo, sem aviso), cai no PreKey sem prefixo que o SendTrace usa como chave, marcado como "(PreKey)". */
+const idPedido = (it) => (it?.paykey ? it.paykey : it?.transacao_id ? `${it.transacao_id} (PreKey)` : '—');
 const ROTULO_TIPO_ITEM = { front: 'FRONT', upsell: 'UPSELL', downsell: 'DOWNSELL' };
+
+/** Situação do item quanto a reembolso e chargeback, com a data (30/10). Só afirma o que o SendTrace sabe. */
+function situacaoItem(it) {
+  const partes = [];
+  if (it?.chargeback_em) partes.push(`Chargeback em ${dataHora(it.chargeback_em)}`);
+  if (it?.reembolsado_em) partes.push(`Reembolso em ${dataHora(it.reembolsado_em)}`);
+  return partes;
+}
+
+/** Tabela do pedido (5º momento, item 5): Tipo · Transaction ID · quantidade e produto · valor · situação (reembolso/chargeback), com o TOTAL. */
 function tabelaPedido(itens) {
   const moeda = (m) => ((m || 'USD') === 'USD' ? 'US$' : m);
   const fmt = (v, m) => (v == null ? '—' : `${moeda(m)} ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
   const tab = document.createElement('table');
   tab.className = 'esc-pedido-tabela';
   const cab = tab.createTHead().insertRow();
-  for (const t of ['Tipo', 'Nº do pedido', 'Quantidade e produto', 'Valor']) { const th = document.createElement('th'); th.textContent = t; cab.append(th); }
+  for (const t of ['Tipo', 'Transaction ID', 'Quantidade e produto', 'Valor', 'Reembolso / chargeback']) { const th = document.createElement('th'); th.textContent = t; cab.append(th); }
   const corpo = tab.createTBody();
   let ups = 0, down = 0, total = 0, temValor = false;
   for (const it of itens) {
     const tr = corpo.insertRow();
     const tipo = it.tipo === 'upsell' ? `UP${++ups}` : it.tipo === 'downsell' ? `DOWN${++down}` : (ROTULO_TIPO_ITEM[it.tipo] || String(it.tipo || '').toUpperCase());
     const qtd = it.quantidade ? `${it.quantidade} ${it.quantidade === 1 ? 'frasco' : 'frascos'} — ` : '';
-    for (const [txt, cls] of [[tipo], [it.transacao_id || '—', 'esc-pedido-num'], [`${qtd}${it.produto || ''}`], [fmt(it.valor, it.moeda), 'esc-pedido-valor']]) {
+    const situacao = situacaoItem(it);
+    for (const [txt, cls] of [[tipo], [idPedido(it), 'esc-pedido-num'], [`${qtd}${it.produto || ''}`], [fmt(it.valor, it.moeda), 'esc-pedido-valor'], [situacao.length ? situacao.join(' · ') : '—']]) {
       const td = tr.insertCell(); td.textContent = txt; if (cls) td.className = cls;
+      if (cls === 'esc-pedido-num' && !it.paykey && it.transacao_id) td.title = 'Esta compra ainda não tem o Transaction ID da JVZoo no SendTrace; o número mostrado é o PreKey (sem o prefixo WR-).';
     }
     if (it.valor != null) { total += Number(it.valor); temValor = true; }
   }
@@ -1112,6 +1126,7 @@ function tabelaPedido(itens) {
   tr.className = 'esc-pedido-total';
   const t0 = tr.insertCell(); t0.textContent = 'TOTAL'; t0.colSpan = 3;
   const t1 = tr.insertCell(); t1.textContent = temValor ? fmt(total, itens[0]?.moeda) : '—'; t1.className = 'esc-pedido-valor';
+  tr.insertCell();
   return tab;
 }
 
@@ -1135,12 +1150,20 @@ function renderContexto(item, container, ctx) {
 
   const pedidos = ctx.pedidos ?? [];
   const principal = ctx.pedido_principal ?? pedidos[0] ?? null;
-  linha('Número do(s) pedido(s)', pedidos.length ? pedidos.map((p) => p.transacao_id).join(', ') : '—');
+  // 30/10: o número do pedido passa a ser o Transaction ID da JVZoo (WP-…); sem ele, o PreKey marcado "(PreKey)".
+  linha('Número do(s) pedido(s) — Transaction ID', pedidos.length ? pedidos.map((p) => idPedido(p.itens?.find((i) => i.tipo === 'front') ?? p)).join(', ') : '—');
   linha('Data de compra', principal?.pedido_em ? dataHora(principal.pedido_em) : '—');
   const produtos = [...new Set(pedidos.map((p) => p.produto).filter(Boolean))];
   linha('Produto', produtos.length ? produtos.join(', ') : (principal?.produto || '—'));
   linha('Plataforma', principal?.plataforma ? rotularPlataforma(principal.plataforma) : '—');
   linha('Status do pedido', principal?.status_pedido || '—');
+  // 30/10: reembolso e/ou chargeback de cada item (front, upsells, downsells) dos pedidos do cliente, com a data. Só mostra o que o SendTrace registrou.
+  const rotuloItem = (t) => (t === 'front' ? 'Front' : t === 'upsell' ? 'Upsell' : t === 'downsell' ? 'Downsell' : 'Item');
+  const linhasRC = pedidos.flatMap((p) => (p.itens ?? []).flatMap((it) => situacaoItem(it).map((s) => `${rotuloItem(it.tipo)}: ${s}`)));
+  const caixaRC = document.createElement('div');
+  if (!linhasRC.length) caixaRC.textContent = 'Nenhum registrado';
+  for (const t of linhasRC) { const d = document.createElement('div'); d.textContent = t; caixaRC.append(d); }
+  linha('Reembolso ou chargeback', caixaRC);
   const detalhe = pedidos.find((p) => p.transacao_id === principal?.transacao_id) ?? pedidos[0] ?? null;
   if (detalhe?.itens?.length) linha('Itens e valores do pedido', tabelaPedido(detalhe.itens));
   else linha('Valor do pedido', detalhe?.valor != null ? `${(detalhe.moeda || 'USD') === 'USD' ? 'US$' : detalhe.moeda} ${Number(detalhe.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—');

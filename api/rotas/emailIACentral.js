@@ -1891,8 +1891,20 @@ export default async function rotasEmailIACentral(app) {
       query(
         `SELECT d.id AS disparo_id, d.transacao_id, d.produto, d.plataforma, d.status AS status_pedido, d.criado_em AS pedido_em,
                 -- 5º momento, item 5: o pedido com todos os itens (front, upsells, downsells), cada um com o seu Nº de transação, produto, frascos e valor
+                -- 30/10: cada item traz também o Transaction ID da JVZoo (paykey WP-/PT-, vem do aviso da JVZoo) e a data do reembolso e do chargeback do item
                 (SELECT coalesce(json_agg(json_build_object('tipo', x.etapa_funil, 'transacao_id', x.transacao_id, 'produto', x.produto,
-                                                            'quantidade', x.quantidade, 'valor', x.valor, 'moeda', x.moeda)), '[]'::json)
+                                                            'quantidade', x.quantidade, 'valor', x.valor, 'moeda', x.moeda,
+                                                            'paykey', (SELECT e.payload->>'paykey' FROM eventos_plataforma e
+                                                                        WHERE e.transacao_id = x.transacao_id AND btrim(e.plataforma) = btrim(d.plataforma)
+                                                                          AND e.payload->>'paykey' ~ '^(WP|PT)-' ORDER BY e.recebido_em DESC LIMIT 1),
+                                                            'reembolsado_em', coalesce(
+                                                              CASE WHEN x.etapa_funil = 'front' THEN d.reembolsado_em
+                                                                   ELSE (SELECT u.reembolsado_em FROM compras_upsell_downsell u WHERE u.transacao_id = x.transacao_id AND btrim(u.plataforma) = btrim(d.plataforma) LIMIT 1) END,
+                                                              (SELECT min(e.recebido_em) FROM eventos_plataforma e
+                                                                WHERE e.transacao_id IN (x.transacao_id, 'BG-' || x.transacao_id) AND btrim(e.plataforma) = btrim(d.plataforma)
+                                                                  AND e.evento IN ('RFND', 'refund'))),
+                                                            'chargeback_em', CASE WHEN x.etapa_funil = 'front' THEN d.chargeback_em
+                                                                   ELSE (SELECT u.chargeback_em FROM compras_upsell_downsell u WHERE u.transacao_id = x.transacao_id AND btrim(u.plataforma) = btrim(d.plataforma) LIMIT 1) END)), '[]'::json)
                    FROM public.pedido_detalhado(d.id) x) AS itens,
                 coalesce((SELECT abs(e.valor) FROM eventos_plataforma e
                            WHERE e.transacao_id = d.transacao_id AND btrim(e.plataforma) = d.plataforma
@@ -1945,6 +1957,11 @@ export default async function rotasEmailIACentral(app) {
         `SELECT DISTINCT em FROM (
            SELECT lower(d.email) AS em FROM disparos_pos_venda d WHERE upper(d.transacao_id) = upper($1) OR upper(d.id_rastreio) = upper($1)
            UNION SELECT lower(u.email) FROM compras_upsell_downsell u WHERE upper(u.transacao_id) = upper($1)
+           -- 30/10: o card agora mostra o Transaction ID da JVZoo (WP-/PT-); a busca também aceita ele e o PreKey com prefixo (WR-), vindos do aviso da JVZoo
+           UNION SELECT lower(d.email) FROM eventos_plataforma e JOIN disparos_pos_venda d ON d.transacao_id = e.transacao_id
+                  WHERE $1 ~* '^(WP|PT|WR)-' AND (upper(e.payload->>'paykey') = upper($1) OR upper(e.payload->>'prekey') = upper($1))
+           UNION SELECT lower(u.email) FROM eventos_plataforma e JOIN compras_upsell_downsell u ON u.transacao_id = e.transacao_id
+                  WHERE $1 ~* '^(WP|PT|WR)-' AND (upper(e.payload->>'paykey') = upper($1) OR upper(e.payload->>'prekey') = upper($1))
            UNION SELECT lower(d.email) FROM rastreio_pedidos r JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
                   WHERE upper(r.tracking_number) = upper($1) OR upper(coalesce(r.order_number, '')) = upper($1)
          ) x WHERE em IS NOT NULL AND em <> ''`, [b]).catch(() => ({ rows: [] }));
