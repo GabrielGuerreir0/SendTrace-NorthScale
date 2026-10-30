@@ -1093,11 +1093,23 @@ async function carregarContexto(item, container) {
 const idPedido = (it) => (it?.paykey ? it.paykey : it?.transacao_id ? `${it.transacao_id} (PreKey)` : '—');
 const ROTULO_TIPO_ITEM = { front: 'FRONT', upsell: 'UPSELL', downsell: 'DOWNSELL' };
 
-/** Situação do item quanto a reembolso e chargeback, com a data (30/10). Só afirma o que o SendTrace sabe. */
+/** Situação do item quanto a reembolso e chargeback, com a data (30/10). Só afirma o que o SendTrace sabe.
+ *  Com a referência da JVZoo (tabela jvzoo_referencia, migração 123) diz o TIPO: REFUND = pedido do cliente · ALERT = alerta preventivo do banco
+ *  (a JVZoo devolveu antes da disputa) · DISPUTE = chargeback. Sem ela, mostra só "Reembolso"/"Chargeback" com a data que o SendTrace registrou. */
+const diaSemFuso = (s) => String(s).split('-').reverse().join('/');   // 'AAAA-MM-DD' -> 'DD/MM/AAAA', sem converter fuso
 function situacaoItem(it) {
   const partes = [];
+  const t = it?.tipo_reembolso;
+  if (t === 'DISPUTE') {   // a disputa tira o dinheiro pelo banco: não mostramos como "reembolso"
+    const quando = it.disputa_dia ? ` em ${diaSemFuso(it.disputa_dia)}` : it.chargeback_em ? ` em ${dataHora(it.chargeback_em)}` : '';
+    partes.push(`Chargeback (disputa)${quando}`);
+    return partes;
+  }
   if (it?.chargeback_em) partes.push(`Chargeback em ${dataHora(it.chargeback_em)}`);
-  if (it?.reembolsado_em) partes.push(`Reembolso em ${dataHora(it.reembolsado_em)}`);
+  if (it?.reembolsado_em) {
+    const rotulo = t === 'ALERT' ? 'Reembolso por alerta de chargeback' : t === 'REFUND' ? 'Reembolso (pedido do cliente)' : 'Reembolso';
+    partes.push(`${rotulo} em ${dataHora(it.reembolsado_em)}`);
+  }
   return partes;
 }
 

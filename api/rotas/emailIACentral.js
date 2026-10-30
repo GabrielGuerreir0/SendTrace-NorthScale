@@ -1894,10 +1894,15 @@ export default async function rotasEmailIACentral(app) {
                 -- 30/10: cada item traz também o Transaction ID da JVZoo (paykey WP-/PT-, vem do aviso da JVZoo) e a data do reembolso e do chargeback do item
                 (SELECT coalesce(json_agg(json_build_object('tipo', x.etapa_funil, 'transacao_id', x.transacao_id, 'produto', x.produto,
                                                             'quantidade', x.quantidade, 'valor', x.valor, 'moeda', x.moeda,
-                                                            'paykey', (SELECT e.payload->>'paykey' FROM eventos_plataforma e
+                                                            -- 123: public.jvzoo_referencia liga o pedido (transacao_id) ao Transaction ID (WP-/PT-) e ao tipo de reembolso (REFUND/ALERT/DISPUTE); sem linha ali, vale o aviso da JVZoo
+                                                            'paykey', coalesce((SELECT e.payload->>'paykey' FROM eventos_plataforma e
                                                                         WHERE e.transacao_id = x.transacao_id AND btrim(e.plataforma) = btrim(d.plataforma)
                                                                           AND e.payload->>'paykey' ~ '^(WP|PT)-' ORDER BY e.recebido_em DESC LIMIT 1),
+                                                                        (SELECT j.paykey FROM public.jvzoo_referencia j WHERE j.transacao_id = x.transacao_id)),
+                                                            'tipo_reembolso', (SELECT j.tipo_reembolso FROM public.jvzoo_referencia j WHERE j.transacao_id = x.transacao_id),
+                                                            'disputa_dia', (SELECT to_char(j.disputa_dia, 'YYYY-MM-DD') FROM public.jvzoo_referencia j WHERE j.transacao_id = x.transacao_id),
                                                             'reembolsado_em', coalesce(
+                                                              (SELECT j.reembolsado_em FROM public.jvzoo_referencia j WHERE j.transacao_id = x.transacao_id),
                                                               CASE WHEN x.etapa_funil = 'front' THEN d.reembolsado_em
                                                                    ELSE (SELECT u.reembolsado_em FROM compras_upsell_downsell u WHERE u.transacao_id = x.transacao_id AND btrim(u.plataforma) = btrim(d.plataforma) LIMIT 1) END,
                                                               (SELECT min(e.recebido_em) FROM eventos_plataforma e
