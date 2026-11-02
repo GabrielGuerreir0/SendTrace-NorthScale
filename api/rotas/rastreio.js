@@ -54,9 +54,10 @@ function filtroCompra(qs, colunaData = 'd.criado_em') {
   return { sql: condicoes.length ? condicoes.join(' AND ') : '1=1', valores };
 }
 
+// 124 (02/11/2026): `rastreio_pedido_d` = disparos_pos_venda + pedido de origem dos rastreios da FullStack sem front; o valor do dash entra só quando o rastreio não tem total.
 const COLUNAS_LISTA = `r.transacao_id, d.nome, d.produto, d.plataforma, r.provedor,
-  r.status_interno, r.status_bruto, r.order_number, r.order_created_at, r.total,
-  r.currency, r.fully_fulfilled, r.fully_fulfilled_at, r.tracking_number,
+  r.status_interno, r.status_bruto, r.order_number, r.order_created_at, coalesce(r.total, d.valor_origem) AS total,
+  coalesce(r.currency, d.moeda_origem) AS currency, r.fully_fulfilled, r.fully_fulfilled_at, r.tracking_number,
   r.carrier_code, r.tracking_url, r.tracking_status, r.shipped_at, r.delivered_at,
   r.ultima_consulta_em, r.ultimo_erro, r.criado_em, r.atualizado_em, r.transferido_redrock_em`;
 
@@ -150,7 +151,7 @@ function resolverMetricaTempo(req, f) {
   let i = valores.length + 1;
   const extra = [];
   let duracaoExpr;
-  let de = `FROM rastreio_pedidos r JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id`;
+  let de = `FROM rastreio_pedidos r JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id`;
 
   if (req.query.metrica === 'deteccao') {
     duracaoExpr = `extract(epoch FROM (pe.detectado_em - d.criado_em)) / 3600`;
@@ -159,7 +160,7 @@ function resolverMetricaTempo(req, f) {
             FROM rastreio_eventos WHERE status_anterior IS NULL
             ORDER BY transacao_id, detectado_em ASC
           ) pe
-          JOIN disparos_pos_venda d ON d.transacao_id = pe.transacao_id
+          JOIN rastreio_pedido_d d ON d.transacao_id = pe.transacao_id
           JOIN rastreio_pedidos r ON r.transacao_id = pe.transacao_id`;
     extra.push(`pe.fonte <> 'backfill-email'`);
   } else if (req.query.metrica === 'transporte') {
@@ -176,14 +177,14 @@ function resolverMetricaTempo(req, f) {
               LAG(detectado_em) OVER (PARTITION BY transacao_id ORDER BY detectado_em) AS entrou_em
             FROM rastreio_eventos WHERE fonte <> 'backfill-email'
           ) ev
-          JOIN disparos_pos_venda d ON d.transacao_id = ev.transacao_id
+          JOIN rastreio_pedido_d d ON d.transacao_id = ev.transacao_id
           JOIN rastreio_pedidos r ON r.transacao_id = ev.transacao_id`;
     extra.push(`ev.entrou_em IS NOT NULL`, `coalesce(ev.status_anterior, '') = $${i}`, `ev.status_novo = $${i + 1}`);
     valores.push(String(req.query.status_anterior ?? ''), String(req.query.status_novo));
     i += 2;
   } else {
     duracaoExpr = null;
-    de = `FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id`;
+    de = `FROM rastreio_pedidos r LEFT JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id`;
     if (req.query.status_interno) { extra.push(`r.status_interno = $${i}`); valores.push(String(req.query.status_interno)); i += 1; }
     // provedor já entra via f.sql (filtroCompra) — não repetir aqui.
     // Espelha o WHERE extra da linha "sem_codigo_rastreio" em /saude/ — sem
@@ -332,7 +333,7 @@ export default async function rotasRastreio(app) {
     }
     condicaoPeriodo(req.query, 'd.criado_em', partes, valores, valores.length + 1);
     const onde = `WHERE ${partes.join(' AND ')}`;
-    const base = `FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id ${onde}`;
+    const base = `FROM rastreio_pedidos r LEFT JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id ${onde}`;
 
     const cont = await query(`SELECT count(*)::int AS n ${base}`, valores);
     const { limit, offset, envelope } = fatiar(req, cont.rows[0].n);
@@ -357,7 +358,7 @@ export default async function rotasRastreio(app) {
   }, async (req) => {
     const { rows } = await query(
       `SELECT ${COLUNAS_LISTA}, r.tracking, r.cancellation, d.email, d.criado_em AS compra_criado_em
-       FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+       FROM rastreio_pedidos r LEFT JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
        WHERE r.transacao_id = $1`,
       [req.params.transacao_id],
     );
@@ -431,7 +432,7 @@ export default async function rotasRastreio(app) {
          count(*) FILTER (
            WHERE r.tracking_number IS NULL AND r.status_interno IN ('pending', 'shipped', 'delivered', 'cancelled')
          )::int AS sem_codigo_rastreio
-       FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+       FROM rastreio_pedidos r LEFT JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
        WHERE ${DO_PRODUTO(1, 'd.')} AND ${DA_PLATAFORMA(2, 'd.')} ${filtroPeriodo}`,
       [req.query.produto ?? null, req.query.plataforma ?? null, ...valores.slice(2)],
     );
@@ -483,7 +484,7 @@ export default async function rotasRastreio(app) {
             ORDER BY extract(epoch FROM (pe.detectado_em - d.criado_em)) / 3600
           )::numeric, 1)::float8 AS mediana_horas
         FROM primeiro_evento pe
-        JOIN disparos_pos_venda d ON d.transacao_id = pe.transacao_id
+        JOIN rastreio_pedido_d d ON d.transacao_id = pe.transacao_id
         JOIN rastreio_pedidos r ON r.transacao_id = pe.transacao_id
         WHERE pe.fonte <> 'backfill-email' AND ${f.sql}
         GROUP BY 1 ORDER BY amostras DESC
@@ -494,7 +495,7 @@ export default async function rotasRastreio(app) {
           round(avg(extract(epoch FROM (now() - d.criado_em)) / 86400)::numeric, 1)::float8 AS media_dias_desde_compra,
           min(d.criado_em) AS compra_mais_antiga,
           max(d.criado_em) AS compra_mais_recente
-        FROM rastreio_pedidos r JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+        FROM rastreio_pedidos r JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
         WHERE r.status_interno = 'nao_encontrado' AND ${f.sql}
         GROUP BY 1 ORDER BY total DESC
       `, f.valores),
@@ -510,14 +511,14 @@ export default async function rotasRastreio(app) {
           round(percentile_cont(0.5) WITHIN GROUP (
             ORDER BY extract(epoch FROM (detectado_em - entrou_em)) / 3600
           )::numeric, 1)::float8 AS mediana_horas
-        FROM eventos ev JOIN disparos_pos_venda d ON d.transacao_id = ev.transacao_id
+        FROM eventos ev JOIN rastreio_pedido_d d ON d.transacao_id = ev.transacao_id
         JOIN rastreio_pedidos r ON r.transacao_id = ev.transacao_id
         WHERE ev.entrou_em IS NOT NULL AND ${f.sql}
         GROUP BY 1, 2 ORDER BY amostras DESC
       `, f.valores),
       query(`
         SELECT r.status_interno, btrim(d.plataforma) AS plataforma, count(*)::int AS total
-        FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+        FROM rastreio_pedidos r LEFT JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
         WHERE r.provedor IS NOT NULL AND r.tracking_number IS NULL
           AND r.status_interno IN ('pending', 'shipped', 'delivered', 'cancelled')
           AND ${f.sql}
@@ -532,13 +533,13 @@ export default async function rotasRastreio(app) {
           count(*) FILTER (WHERE r.status_interno = 'shipped')::int AS shipped,
           count(*) FILTER (WHERE r.status_interno = 'delivered')::int AS delivered,
           count(*) FILTER (WHERE r.status_interno = 'cancelled')::int AS cancelled
-        FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+        FROM rastreio_pedidos r LEFT JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
         WHERE ${f.sql}
         GROUP BY 1 ORDER BY total DESC
       `, f.valores),
       query(`
         SELECT coalesce(r.provedor, 'nenhum') AS provedor, count(*)::int AS total
-        FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+        FROM rastreio_pedidos r LEFT JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
         WHERE ${f.sql}
         GROUP BY 1 ORDER BY total DESC
       `, f.valores),
@@ -556,7 +557,7 @@ export default async function rotasRastreio(app) {
           round(percentile_cont(0.5) WITHIN GROUP (
             ORDER BY extract(epoch FROM (r.delivered_at - r.shipped_at)) / 3600
           )::numeric, 1)::float8 AS mediana_horas
-        FROM rastreio_pedidos r JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+        FROM rastreio_pedidos r JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
         WHERE r.status_interno = 'delivered' AND r.shipped_at IS NOT NULL AND r.delivered_at IS NOT NULL AND ${f.sql}
         GROUP BY 1 ORDER BY amostras DESC
       `, f.valores),
@@ -567,7 +568,7 @@ export default async function rotasRastreio(app) {
           round(percentile_cont(0.5) WITHIN GROUP (
             ORDER BY extract(epoch FROM (r.delivered_at - d.criado_em)) / 3600
           )::numeric, 1)::float8 AS mediana_horas
-        FROM rastreio_pedidos r JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+        FROM rastreio_pedidos r JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
         WHERE r.status_interno = 'delivered' AND r.delivered_at IS NOT NULL AND ${f.sql}
         GROUP BY 1 ORDER BY amostras DESC
       `, f.valores),
@@ -603,7 +604,7 @@ export default async function rotasRastreio(app) {
             ELSE NULL
           END AS faixa_max_dias,
           count(*)::int AS total
-        FROM rastreio_pedidos r JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+        FROM rastreio_pedidos r JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
         WHERE r.status_interno = 'delivered' AND r.delivered_at IS NOT NULL AND ${f.sql}
         GROUP BY 1, 2, 3, 4, 5 ORDER BY 1, 2
       `, f.valores),
@@ -765,7 +766,7 @@ export default async function rotasRastreio(app) {
       `SELECT r.status_interno, r.carrier_code, r.tracking_number, r.tracking_url,
               r.tracking_status, r.order_created_at, r.shipped_at, r.delivered_at,
               r.tracking, r.atualizado_em, d.produto, r.transacao_id
-       FROM rastreio_pedidos r LEFT JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
+       FROM rastreio_pedidos r LEFT JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
        WHERE r.transacao_id = $1 OR r.tracking_number = $1
        ORDER BY (r.transacao_id = $1) DESC LIMIT 1`,
       [req.params.transacao_id],
