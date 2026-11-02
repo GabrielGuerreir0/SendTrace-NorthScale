@@ -18,7 +18,7 @@ import {
   etapasTempos, salvarTempoEtapa,
   produtosDaFila, plataformasDaFila, fonteDados, suporteResumo, suporteConversas,
   catalogoProdutos, reguaInsights, visaoGeralResumo,
-  rastreioResumo, rastreioLista, rastreioDetalhe, rastreioSaude, rastreioSaudeDetalhe, rastreioSaudeSerie,
+  rastreioResumo, rastreioLista, rastreioDetalhe, rastreioProdutos, rastreioSaude, rastreioSaudeDetalhe, rastreioSaudeSerie,
 } from './dados.js';
 import {
   apiConfigurada, enderecoApi, saude as saudeApi, ErroApi,
@@ -2043,6 +2043,7 @@ async function atender(req, res, url, sessao) {
       provedor: textoOuNulo(q.get('provedor')),
       transferido: textoOuNulo(q.get('transferido')),   // 117: sub-aba "Transferidos RedRock → FullStack"
       produto: textoOuNulo(q.get('produto')),
+      produto_grupo: textoOuNulo(q.get('produto_grupo')),
       plataforma: textoOuNulo(q.get('plataforma')),
       search: textoOuNulo(q.get('search')),
       ordering: textoOuNulo(q.get('ordering')),
@@ -2067,9 +2068,21 @@ async function atender(req, res, url, sessao) {
     // rota de rastreio na API, sempre conferir TODOS os `if`s aqui embaixo.
     return json(res, 200, await rastreioResumo({
       produto: textoOuNulo(q.get('produto')),
+      produto_grupo: textoOuNulo(q.get('produto_grupo')),
       plataforma: textoOuNulo(q.get('plataforma')),
       provedor: textoOuNulo(q.get('provedor')),
       transferido: textoOuNulo(q.get('transferido')),   // 117: sub-aba "Transferidos RedRock → FullStack"
+      dias: q.get('dias'), data_de: q.get('data_de'), data_ate: q.get('data_ate'),
+    }));
+  }
+
+  // Produtos agrupados do filtro da aba Rastreio (ver api/rotas/rastreio.js).
+  if (url.pathname === '/api/metricas/rastreio/produtos') {
+    const q = url.searchParams;
+    return json(res, 200, await rastreioProdutos({
+      plataforma: textoOuNulo(q.get('plataforma')),
+      provedor: textoOuNulo(q.get('provedor')),
+      transferido: textoOuNulo(q.get('transferido')),
       dias: q.get('dias'), data_de: q.get('data_de'), data_ate: q.get('data_ate'),
     }));
   }
@@ -2078,6 +2091,7 @@ async function atender(req, res, url, sessao) {
     const q = url.searchParams;
     return json(res, 200, await rastreioSaude({
       produto: textoOuNulo(q.get('produto')),
+      produto_grupo: textoOuNulo(q.get('produto_grupo')),
       plataforma: textoOuNulo(q.get('plataforma')),
       provedor: textoOuNulo(q.get('provedor')),
       transferido: textoOuNulo(q.get('transferido')),   // 117: sub-aba "Transferidos RedRock → FullStack"
@@ -2092,6 +2106,7 @@ async function atender(req, res, url, sessao) {
     const q = url.searchParams;
     return json(res, 200, await rastreioSaudeDetalhe({
       produto: textoOuNulo(q.get('produto')),
+      produto_grupo: textoOuNulo(q.get('produto_grupo')),
       plataforma: textoOuNulo(q.get('plataforma')),
       dias: q.get('dias'), data_de: q.get('data_de'), data_ate: q.get('data_ate'),
       metrica: q.get('metrica'), dia: q.get('dia'),
@@ -2108,6 +2123,7 @@ async function atender(req, res, url, sessao) {
     const q = url.searchParams;
     return json(res, 200, await rastreioSaudeSerie({
       produto: textoOuNulo(q.get('produto')),
+      produto_grupo: textoOuNulo(q.get('produto_grupo')),
       plataforma: textoOuNulo(q.get('plataforma')),
       provedor: textoOuNulo(q.get('provedor')),
       transferido: textoOuNulo(q.get('transferido')),   // 117: sub-aba "Transferidos RedRock → FullStack"

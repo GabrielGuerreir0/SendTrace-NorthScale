@@ -91,7 +91,7 @@ const DIC = {
   kpiNaoEncontradoNota: { en: 'not covered by Red Rock or FullStack yet — expected for some checkout/platform combinations', pt: 'ainda não coberto pela Red Rock nem pela FullStack — esperado pra algumas combinações de checkout/plataforma' },
   kpiConsultando: { en: 'Checking with provider', pt: 'Consultando fornecedor' },
   kpiConsultandoNota: { en: 'orders being checked with a provider for the first time right now', pt: 'pedidos sendo consultados com um provedor pela primeira vez agora' },
-  kpiRecebido: { en: 'Order received', pt: 'Pedido recebido' },
+  kpiRecebido: { en: 'Pending shipment', pt: 'Pendente de envio' },
   kpiRecebidoNota: { en: 'orders fulfillment received from the platforms and hasn\'t shipped yet', pt: 'pedidos que a fulfillment recebeu das plataformas e ainda não foi enviado' },
   kpiACaminho: { en: 'On its way', pt: 'A caminho' },
   kpiACaminhoNota: { en: 'orders that have shipped', pt: 'pedidos que foram enviados' },
@@ -198,7 +198,7 @@ const DIC = {
   statusTodos: { en: 'All', pt: 'Todos' },
   statusPendenteConsulta: { en: 'Checking with provider', pt: 'Consultando fornecedor' },
   statusNaoEncontrado: { en: 'Not found on either platform', pt: 'Não encontrado em nenhuma plataforma' },
-  statusPending: { en: 'Order received', pt: 'Pedido recebido' },
+  statusPending: { en: 'Pending shipment', pt: 'Pendente de envio' },
   statusShipped: { en: 'On its way', pt: 'A caminho' },
   statusDelivered: { en: 'Delivered', pt: 'Entregue' },
   statusCancelled: { en: 'Cancelled', pt: 'Cancelado' },
@@ -311,7 +311,7 @@ function aplicarTraducoesEstaticas() {
  */
 function paramsFiltro() {
   const p = new URLSearchParams();
-  if (estado.produto) p.set('produto', estado.produto);
+  if (estado.produto) p.set('produto_grupo', estado.produto);   // chave do produto sem embalagem (ver carregarProdutos)
   if (estado.plataforma) p.set('plataforma', estado.plataforma);
   if (estado.provedor) p.set('provedor', estado.provedor);
   if (estado.transferido) p.set('transferido', '1');   // 117: só os que passaram da RedRock para a FullStack
@@ -330,7 +330,6 @@ function paramsFiltro() {
  * catálogo do topo pode ainda não ter chegado na primeira carga desta aba. */
 function sincronizarSelects() {
   const pares = [
-    [$('sel-produto'), $('rst-sel-produto'), 'todosProdutos'],
     [$('sel-plataforma'), $('rst-sel-plataforma'), 'todasPlataformas'],
   ];
   for (const [origem, destino, chavePlaceholder] of pares) {
@@ -947,7 +946,30 @@ async function carregarResumo() {
   renderKpis(r);
 }
 
+/**
+ * Filtro de produto da aba: um item por PRODUTO (todas as embalagens/ofertas juntas), com a contagem de pedidos do recorte atual
+ * (sub-aba/fulfillment, plataforma e período). Escolher "Memovance Pro" filtra os pedidos de 2, 3, 6 e 12 potes de uma vez.
+ * O produto escolhido continua na lista mesmo que o recorte não tenha pedidos dele (senão o filtro ficaria invisível).
+ */
+let geracaoProdutos = 0;
+async function carregarProdutos() {
+  const meu = ++geracaoProdutos;
+  const params = paramsFiltro();
+  params.delete('produto_grupo');
+  const { ok, dados } = await api(`/api/metricas/rastreio/produtos?${params}`);
+  if (meu !== geracaoProdutos || !ok) return;
+  const sel = $('rst-sel-produto');
+  const lista = dados.produtos ?? [];
+  const opcoes = [['', t('todosProdutos')]];
+  for (const p of lista) opcoes.push([p.chave, `${p.nome} · ${n(p.total)}`]);
+  if (estado.produto && !lista.some((p) => p.chave === estado.produto)) opcoes.push([estado.produto, `${estado.produto} · 0`]);
+  if (document.activeElement === sel) return;   // não trocar a lista no meio da escolha
+  sel.replaceChildren(...opcoes.map(([value, textContent]) => Object.assign(document.createElement('option'), { value, textContent })));
+  sel.value = estado.produto;
+}
+
 function carregarTudo() {
+  carregarProdutos();
   carregarResumo();
   carregarSaude();
   carregarLista();

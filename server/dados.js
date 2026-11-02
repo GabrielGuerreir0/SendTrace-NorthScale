@@ -1485,6 +1485,11 @@ export async function rastreioDetalhe(transacaoId) {
   return obter(`/api/rastreio/${encodeURIComponent(transacaoId)}/`);
 }
 
+/** Produtos agrupados (sem embalagem) do filtro da aba Rastreio, com a contagem de pedidos no recorte. */
+export async function rastreioProdutos(params = {}) {
+  return obter('/api/metricas/rastreio/produtos/', params);
+}
+
 export async function rastreioSaude(params = {}) {
   return obter('/api/metricas/rastreio/saude/', params);
 }

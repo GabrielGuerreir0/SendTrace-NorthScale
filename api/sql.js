@@ -65,6 +65,30 @@ export const NOME_PRODUTO = (alias = '') => `coalesce(nullif(btrim(
         '[[:space:]]+', ' ', 'g')
     ), ''), btrim(${alias}produto))`;
 
+/**
+ * O produto SEM a embalagem: "Memovance Pro 12 Bottles", "MemoVance Pro 6 Bottles (Last Chance)" e "Memovance PRO 2 Bottles"
+ * viram o mesmo "Memovance Pro". Corta o código da oferta (NOME_PRODUTO) e tudo a partir de "N bottles/potes".
+ */
+export const BASE_PRODUTO = (alias = '') => `btrim(regexp_replace(${NOME_PRODUTO(alias)},
+      '[[:space:]]*[-:]?[[:space:]]*[0-9]+[[:space:]]*(bottles?|potes?|pots?|frascos?)([^[:alpha:]].*)?$', '', 'i'))`;
+
+/**
+ * Chave de agrupamento do produto na aba Rastreio: minúscula, sem espaço nem pontuação ("memovancepro"), sem os prefixos de oferta que
+ * o NOME_PRODUTO deixa passar ("M3 ", "UP1A ", "DS2.1 - ", "FE - ", "AFF - "). Kits com "+" caem em 'combos'; o que sobra sem nome vira
+ * 'outros'; pedido sem produto fica NULL. Vale para os pedidos de front e para os de origem da FullStack (rastreio_pedido_d), que não têm slug.
+ * Sem contrabarra em regex (template string do JS).
+ */
+export const CHAVE_PRODUTO = (alias = '') => `CASE
+      WHEN nullif(btrim(${alias}produto), '') IS NULL THEN NULL
+      WHEN ${alias}produto LIKE '%+%' THEN 'combos'
+      ELSE coalesce(nullif(regexp_replace(
+             regexp_replace(
+               regexp_replace(lower(${BASE_PRODUTO(alias)}),
+                 '^((m|up|ds|dn|dw)[0-9][0-9a-z.]*|fe|aff)([[:space:]]+-[[:space:]]+|[[:space:]]+)', ''),
+               '^((m|up|ds|dn|dw)[0-9][0-9a-z.]*|fe|aff)([[:space:]]+-[[:space:]]+|[[:space:]]+)', ''),
+             '[^a-z0-9]', '', 'g'), ''), 'outros')
+    END`;
+
 /** Recorte por produto: compara o NOME, para as ofertas caírem no mesmo número. */
 export const DO_PRODUTO = (n, alias = '') =>
   `($${n}::text IS NULL OR ${NOME_PRODUTO(alias)} = $${n}::text)`;

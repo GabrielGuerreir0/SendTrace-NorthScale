@@ -16,7 +16,7 @@
  */
 import { query } from '../../server/db.js';
 import { historicoInterno, historicoPublico, ocorrenciasDoPedido, tempoParado } from '../track17/historico.js';
-import { DO_PRODUTO, DA_PLATAFORMA } from '../sql.js';
+import { DO_PRODUTO, DA_PLATAFORMA, BASE_PRODUTO, CHAVE_PRODUTO } from '../sql.js';
 import { fatiar, montarOrdem, ErroHttp } from '../comum.js';
 import { paginado, paginacaoParams } from '../esquemas.js';
 import { condicaoPeriodo } from '../filtrosEmailIA.js';
@@ -44,6 +44,8 @@ function filtroCompra(qs, colunaData = 'd.criado_em') {
   const valores = [];
   let i = 1;
   if (qs.produto) { condicoes.push(`d.produto = $${i}`); valores.push(String(qs.produto)); i += 1; }
+  // grupo de produto (todas as embalagens/ofertas do mesmo produto) — o filtro da aba Rastreio
+  if (qs.produto_grupo) { condicoes.push(`${CHAVE_PRODUTO('d.')} = $${i}`); valores.push(String(qs.produto_grupo)); i += 1; }
   if (qs.plataforma) { condicoes.push(`btrim(d.plataforma) = $${i}`); valores.push(String(qs.plataforma)); i += 1; }
   // coalesce pro mesmo 'nenhum' que a tabela "Provedores" de /saude/ usa —
   // sem isto, provedor=nenhum (drill-down daquela linha) não bateria com
@@ -305,6 +307,7 @@ export default async function rotasRastreio(app) {
           provedor: { type: 'string' },
           transferido: { type: 'string', description: "'1' = só pedidos transferidos da RedRock para a FullStack (117)." },
           produto: { type: 'string' },
+          produto_grupo: { type: 'string' },
           plataforma: { type: 'string' },
           search: { type: 'string', description: 'Procura em: transacao_id, nome, tracking_number.' },
           ordering: { type: 'string', description: 'Aceita: atualizado_em, criado_em, order_created_at.' },
@@ -325,6 +328,7 @@ export default async function rotasRastreio(app) {
     if (req.query.provedor) { valores.push(req.query.provedor); partes.push(`r.provedor = $${valores.length}`); }
     if (req.query.transferido === '1') partes.push('r.transferido_redrock_em IS NOT NULL');
     if (req.query.produto) { valores.push(req.query.produto); partes.push(`d.produto = $${valores.length}`); }
+    if (req.query.produto_grupo) { valores.push(String(req.query.produto_grupo)); partes.push(`${CHAVE_PRODUTO('d.')} = $${valores.length}`); }
     if (req.query.plataforma) { valores.push(req.query.plataforma); partes.push(`btrim(d.plataforma) = $${valores.length}`); }
     if (req.query.search) {
       valores.push(`%${req.query.search}%`);
@@ -391,6 +395,49 @@ export default async function rotasRastreio(app) {
     return detalhe;
   });
 
+  /**
+   * Produtos do filtro da aba Rastreio, AGRUPADOS (todas as embalagens/ofertas do mesmo produto juntas), com a contagem de pedidos no
+   * recorte (provedor/plataforma/período). O valor `chave` é o que a aba manda de volta em `produto_grupo`.
+   */
+  app.get('/api/metricas/rastreio/produtos/', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Métricas'],
+      summary: 'Produtos agrupados para o filtro da aba Rastreio (contagem de pedidos por produto)',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          plataforma: { type: 'string' },
+          provedor: { type: 'string', description: "'redrock', 'fullstack' ou 'nenhum' — sub-aba ativa da aba Rastreio." },
+          transferido: { type: 'string' },
+          ...PERIODO_QS,
+        },
+      },
+    },
+  }, async (req) => {
+    const f = filtroCompra({ ...req.query, produto: undefined, produto_grupo: undefined });
+    const { rows } = await query(
+      `SELECT g.chave, g.total,
+              coalesce(
+                (SELECT p.nome FROM produtos p
+                  WHERE p.slug <> '*' AND regexp_replace(lower(p.nome), '[^a-z0-9]', '', 'g') IN (g.chave, g.chave || 'pro')
+                  ORDER BY length(p.nome) LIMIT 1),
+                g.rotulo) AS nome
+         FROM (
+           SELECT ${CHAVE_PRODUTO('d.')} AS chave, count(*)::int AS total,
+                  mode() WITHIN GROUP (ORDER BY ${BASE_PRODUTO('d.')}) AS rotulo
+             FROM rastreio_pedidos r JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
+            WHERE ${f.sql}
+            GROUP BY 1
+         ) g
+        WHERE g.chave IS NOT NULL
+        ORDER BY lower(coalesce(g.rotulo, g.chave))`,
+      f.valores,
+    );
+    return { produtos: rows.map((r) => ({ chave: r.chave, nome: r.chave === 'combos' ? 'Kits e combos' : r.chave === 'outros' ? 'Outros' : r.nome, total: r.total })) };
+  });
+
   app.get('/api/metricas/rastreio/', {
     onRequest: [app.exigirSessao],
     schema: {
@@ -400,7 +447,7 @@ export default async function rotasRastreio(app) {
       querystring: {
         type: 'object',
         properties: {
-          produto: { type: 'string' }, plataforma: { type: 'string' },
+          produto: { type: 'string' }, produto_grupo: { type: 'string', description: 'Chave do produto sem embalagem (ver /api/metricas/rastreio/produtos/).' }, plataforma: { type: 'string' },
           provedor: { type: 'string', description: "'redrock', 'fullstack' ou 'nenhum' (sem provedor ainda) — sub-aba ativa da aba Rastreio." },
           transferido: { type: 'string' },
           ...PERIODO_QS,
@@ -416,6 +463,10 @@ export default async function rotasRastreio(app) {
       condicoes.push(`coalesce(r.provedor, 'nenhum') = $${valores.length}`);
     }
     if (req.query.transferido === '1') condicoes.push('r.transferido_redrock_em IS NOT NULL');
+    if (req.query.produto_grupo) {
+      valores.push(String(req.query.produto_grupo));
+      condicoes.push(`${CHAVE_PRODUTO('d.')} = $${valores.length}`);
+    }
     condicaoPeriodo(req.query, 'd.criado_em', condicoes, valores, valores.length + 1);
     const filtroPeriodo = condicoes.length ? `AND ${condicoes.join(' AND ')}` : '';
     const { rows } = await query(
@@ -454,7 +505,7 @@ export default async function rotasRastreio(app) {
       querystring: {
         type: 'object',
         properties: {
-          produto: { type: 'string' }, plataforma: { type: 'string' },
+          produto: { type: 'string' }, produto_grupo: { type: 'string', description: 'Chave do produto sem embalagem (ver /api/metricas/rastreio/produtos/).' }, plataforma: { type: 'string' },
           provedor: { type: 'string', description: "'redrock', 'fullstack' ou 'nenhum' — sub-aba ativa da aba Rastreio." },
           transferido: { type: 'string' },
           ...PERIODO_QS,
@@ -644,6 +695,7 @@ export default async function rotasRastreio(app) {
         properties: {
           ...paginacaoParams,
           produto: { type: 'string' },
+          produto_grupo: { type: 'string' },
           plataforma: { type: 'string' },
           metrica: { type: 'string', enum: ['deteccao', 'transporte', 'total', 'transicao', 'lista'] },
           status_anterior: { type: 'string', description: 'Obrigatório quando metrica=transicao (vazio representa null, primeiro evento).' },
@@ -703,6 +755,7 @@ export default async function rotasRastreio(app) {
         required: ['metrica'],
         properties: {
           produto: { type: 'string' },
+          produto_grupo: { type: 'string' },
           plataforma: { type: 'string' },
           provedor: { type: 'string', description: "'redrock', 'fullstack' ou 'nenhum' — sub-aba ativa da aba Rastreio." },
           transferido: { type: 'string', description: "'1' = só pedidos transferidos da RedRock para a FullStack (117)." },

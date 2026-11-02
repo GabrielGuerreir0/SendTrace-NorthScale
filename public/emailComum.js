@@ -151,7 +151,7 @@ const LABEL_STATUS_RASTREIO_POR_IDIOMA = {
   en: {
     pendente_consulta: 'Checking with provider',
     nao_encontrado: 'Not found on either platform',
-    pending: 'Order received',
+    pending: 'Pending shipment',
     shipped: 'On its way',
     delivered: 'Delivered',
     cancelled: 'Cancelled',
@@ -161,7 +161,7 @@ const LABEL_STATUS_RASTREIO_POR_IDIOMA = {
   pt: {
     pendente_consulta: 'Consultando fornecedor',
     nao_encontrado: 'Não encontrado em nenhuma plataforma',
-    pending: 'Pedido recebido',
+    pending: 'Pendente de envio',
     shipped: 'A caminho',
     delivered: 'Entregue',
     cancelled: 'Cancelado',
