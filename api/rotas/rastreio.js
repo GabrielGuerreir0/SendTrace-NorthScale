@@ -442,7 +442,22 @@ export default async function rotasRastreio(app) {
         ORDER BY lower(coalesce(g.rotulo, g.chave))`,
       f.valores,
     );
-    return { produtos: rows.map((r) => ({ chave: r.chave, nome: r.chave === 'combos' ? 'Kits e combos' : r.chave === 'outros' ? 'Outros' : r.nome, total: r.total })) };
+    // Plataformas do filtro: todas as que já tiveram pedido, com a contagem no recorte (sub-aba/período) SEM o filtro de plataforma.
+    const fp = filtroCompra({ ...req.query, produto: undefined, produto_grupo: undefined, plataforma: undefined });
+    const { rows: plats } = await query(
+      `SELECT g.plataforma, coalesce(c.total, 0) AS total
+         FROM (SELECT DISTINCT btrim(plataforma) AS plataforma FROM rastreio_pedido_d
+                WHERE nullif(btrim(plataforma), '') IS NOT NULL AND lower(btrim(plataforma)) <> 'teste') g
+         LEFT JOIN (
+           SELECT btrim(d.plataforma) AS plataforma, count(*)::int AS total
+             FROM rastreio_pedidos r JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
+            WHERE ${fp.sql}
+            GROUP BY 1
+         ) c ON c.plataforma = g.plataforma
+        ORDER BY lower(g.plataforma)`,
+      fp.valores,
+    );
+    return { plataformas: plats, produtos: rows.map((r) => ({ chave: r.chave, nome: r.chave === 'combos' ? 'Kits e combos' : r.chave === 'outros' ? 'Outros' : r.nome, total: r.total })) };
   });
 
   app.get('/api/metricas/rastreio/', {

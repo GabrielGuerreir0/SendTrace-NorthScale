@@ -330,7 +330,7 @@ function paramsFiltro() {
  * catálogo do topo pode ainda não ter chegado na primeira carga desta aba. */
 function sincronizarSelects() {
   const pares = [
-    [$('sel-plataforma'), $('rst-sel-plataforma'), 'todasPlataformas'],
+    // (a plataforma não é mais clonada do topo: vem de carregarProdutos, com a contagem de pedidos do recorte)
   ];
   for (const [origem, destino, chavePlaceholder] of pares) {
     if (!origem || !destino) continue;
@@ -963,9 +963,18 @@ async function carregarProdutos() {
   const opcoes = [['', t('todosProdutos')]];
   for (const p of lista) opcoes.push([p.chave, `${p.nome} · ${n(p.total)}`]);
   if (estado.produto && !lista.some((p) => p.chave === estado.produto)) opcoes.push([estado.produto, `${estado.produto} · 0`]);
-  if (document.activeElement === sel) return;   // não trocar a lista no meio da escolha
-  sel.replaceChildren(...opcoes.map(([value, textContent]) => Object.assign(document.createElement('option'), { value, textContent })));
-  sel.value = estado.produto;
+  const selPlat = $('rst-sel-plataforma');
+  const plats = dados.plataformas ?? [];
+  const opcoesPlat = [['', t('todasPlataformas')]];
+  for (const p of plats) opcoesPlat.push([p.plataforma, `${p.plataforma} · ${n(p.total)}`]);
+  if (estado.plataforma && !plats.some((p) => p.plataforma === estado.plataforma)) opcoesPlat.push([estado.plataforma, `${estado.plataforma} · 0`]);
+  const montar = (el, ops, valor) => {
+    if (document.activeElement === el) return;   // não trocar a lista no meio da escolha
+    el.replaceChildren(...ops.map(([value, textContent]) => Object.assign(document.createElement('option'), { value, textContent })));
+    el.value = valor;
+  };
+  montar(sel, opcoes, estado.produto);
+  montar(selPlat, opcoesPlat, estado.plataforma);
 }
 
 function carregarTudo() {
