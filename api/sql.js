@@ -74,18 +74,21 @@ export const BASE_PRODUTO = (alias = '') => `btrim(regexp_replace(${NOME_PRODUTO
 
 /**
  * Chave de agrupamento do produto na aba Rastreio: minúscula, sem espaço nem pontuação ("memovancepro"), sem os prefixos de oferta que
- * o NOME_PRODUTO deixa passar ("M3 ", "UP1A ", "DS2.1 - ", "FE - ", "AFF - "). Kits com "+" caem em 'combos'; o que sobra sem nome vira
+ * o NOME_PRODUTO deixa passar ("M3 ", "UP1A ", "DS2.1 - ", "FE - ", "AFF - "). Kits com "+" (e "bundle"/"kit") caem em 'combos' (o "+ 2 Bottles FREE" de bônus não conta); "Produto - Outro Nome" fica só com o primeiro nome; o que sobra sem nome vira
  * 'outros'; pedido sem produto fica NULL. Vale para os pedidos de front e para os de origem da FullStack (rastreio_pedido_d), que não têm slug.
  * Sem contrabarra em regex (template string do JS).
  */
 export const CHAVE_PRODUTO = (alias = '') => `CASE
       WHEN nullif(btrim(${alias}produto), '') IS NULL THEN NULL
-      WHEN ${alias}produto LIKE '%+%' THEN 'combos'
+      WHEN ${BASE_PRODUTO(alias)} LIKE '%+%' THEN 'combos'
+      WHEN lower(${alias}produto) ~ '[[:<:]](bundle|kit)[[:>:]]' THEN 'combos'
       ELSE coalesce(nullif(regexp_replace(
              regexp_replace(
-               regexp_replace(lower(${BASE_PRODUTO(alias)}),
+               regexp_replace(
+                 regexp_replace(lower(${BASE_PRODUTO(alias)}),
+                   '^((m|up|ds|dn|dw)[0-9][0-9a-z.]*|fe|aff)([[:space:]]+-[[:space:]]+|[[:space:]]+)', ''),
                  '^((m|up|ds|dn|dw)[0-9][0-9a-z.]*|fe|aff)([[:space:]]+-[[:space:]]+|[[:space:]]+)', ''),
-               '^((m|up|ds|dn|dw)[0-9][0-9a-z.]*|fe|aff)([[:space:]]+-[[:space:]]+|[[:space:]]+)', ''),
+               '[[:space:]]+-[[:space:]]+.*$', ''),
              '[^a-z0-9]', '', 'g'), ''), 'outros')
     END`;
 
