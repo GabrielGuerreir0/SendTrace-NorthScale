@@ -324,6 +324,11 @@ painel_sessoes, authtoken_token, django_session. Essas tabelas são infraestrutu
 administrativo, não dados de negócio, e nunca devem ser expostas.`;
 }
 
+/** Teto do resultado de UMA consulta devolvido à IA (~35 mil tokens). Acima disso corta e avisa. */
+const LIMITE_RESULTADO = 120_000;
+/** Idas e vindas por pergunta (consulta → análise → nova consulta…). */
+const MAX_ITERACOES = 30;
+
 function validarSql(sqlBruto) {
   const sql = String(sqlBruto ?? '').trim().replace(/;+\s*$/, '');
   if (!/^(select|with)\b/i.test(sql)) {
@@ -343,7 +348,7 @@ async function executarConsultaSomenteLeitura(sqlBruto) {
 
   const executar = (async () => {
     await cliente.query('BEGIN TRANSACTION READ ONLY');
-    await cliente.query("SET LOCAL statement_timeout = '25s'");
+    await cliente.query("SET LOCAL statement_timeout = '55s'");
     const resultado = await cliente.query(sql);
     await cliente.query('ROLLBACK');
     return resultado;
@@ -353,15 +358,15 @@ async function executarConsultaSomenteLeitura(sqlBruto) {
   const cronometro = new Promise((_resolve, reject) => {
     setTimeout(() => {
       expirou = true;
-      reject(new Error('consulta excedeu o tempo limite de 40s'));
-    }, 40_000);
+      reject(new Error('consulta excedeu o tempo limite de 60s'));
+    }, 60_000);
   });
 
   try {
     const resultado = await Promise.race([executar, cronometro]);
     let textoResultado = JSON.stringify(resultado.rows);
-    if (textoResultado.length > 30_000) {
-      textoResultado = `${textoResultado.slice(0, 30_000)}\n… resultado truncado — refine a consulta ou use agregação.`;
+    if (textoResultado.length > LIMITE_RESULTADO) {
+      textoResultado = `${textoResultado.slice(0, LIMITE_RESULTADO)}\n… resultado truncado — refine a consulta ou use agregação.`;
     }
     return { linhas: resultado.rows.length, textoResultado };
   } finally {
@@ -370,9 +375,9 @@ async function executarConsultaSomenteLeitura(sqlBruto) {
 }
 
 async function executarChat({ anthropic, mensagens, modelo }) {
-  const historico = mensagens.slice(-30).map((m) => ({
+  const historico = mensagens.slice(-60).map((m) => ({
     role: m.role,
-    content: String(m.content ?? '').slice(0, 20_000),
+    content: String(m.content ?? '').slice(0, 60_000),
   }));
   // Cache do prompt (21/09/2026): o system prompt (~2.700 tokens, o schema do banco pra
   // ferramenta de consulta) é sempre o mesmo texto. Sem cache_control, cada iteração do loop de
@@ -384,10 +389,10 @@ async function executarChat({ anthropic, mensagens, modelo }) {
   const sistema = [{ type: 'text', text: montarSistemaChat(), cache_control: { type: 'ephemeral' } }];
   const consultas = [];
 
-  for (let iteracao = 0; iteracao < 12; iteracao += 1) {
+  for (let iteracao = 0; iteracao < MAX_ITERACOES; iteracao += 1) {
     const resposta = await anthropic.messages.create({
       model: modelo,
-      max_tokens: 4096,
+      max_tokens: 16_000,
       system: sistema,
       tools: [FERRAMENTA_CONSULTAR_BANCO],
       messages: historico,
@@ -490,7 +495,7 @@ export default async function rotasEmailIA(app) {
       tags: ['Central de E-mail IA'],
       summary: 'Chat com IA sobre o banco (somente leitura)',
       description: 'Loop agentic de tool-use: a IA pode chamar consultar_banco (SELECT/WITH, '
-        + 'transação read-only, até 12 iterações) antes de responder.',
+        + 'transação read-only, até 30 iterações) antes de responder.',
       security: [{ bearerAuth: [] }],
       body: {
         type: 'object',
@@ -511,7 +516,7 @@ export default async function rotasEmailIA(app) {
           modelo: {
             type: 'string',
             enum: ['claude-haiku-4-5', 'claude-sonnet-5'],
-            default: 'claude-haiku-4-5',
+            default: 'claude-sonnet-5',
           },
         },
       },
@@ -527,7 +532,7 @@ export default async function rotasEmailIA(app) {
       return await executarChat({
         anthropic: cliente,
         mensagens: req.body.mensagens,
-        modelo: req.body.modelo || 'claude-haiku-4-5',
+        modelo: req.body.modelo || 'claude-sonnet-5',
       });
     } catch (err) {
       req.log.error({ err }, 'falha no chat com IA');

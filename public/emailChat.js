@@ -140,7 +140,7 @@ async function enviar(textoBruto) {
 
 /* ═══════════════════════════════  controles  ══════════════════════════════ */
 
-$('ch-modelo').value = sessionStorage.getItem(CHAVE_MODELO) || 'claude-haiku-4-5';
+$('ch-modelo').value = sessionStorage.getItem(CHAVE_MODELO) || 'claude-sonnet-5';
 $('ch-modelo').addEventListener('change', () => {
   try { sessionStorage.setItem(CHAVE_MODELO, $('ch-modelo').value); } catch { /* ignora */ }
 });

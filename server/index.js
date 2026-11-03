@@ -1394,15 +1394,15 @@ async function atender(req, res, url, sessao) {
     }
   }
 
-  // O chat roda um loop de tool-use de até 12 idas e vindas ao Claude — bem
+  // O chat roda um loop de tool-use de até 30 idas e vindas ao Claude — bem
   // mais do que o corte padrão (API_TIMEOUT_MS) das outras chamadas à API.
   if (url.pathname === '/api/chat' && req.method === 'POST') {
-    const corpo = await lerJson(req, 64 * 1024);
+    const corpo = await lerJson(req, 1024 * 1024);
     if (!Array.isArray(corpo.mensagens) || !corpo.mensagens.length) {
       return json(res, 400, { erro: 'Envie ao menos uma mensagem.' });
     }
     try {
-      return json(res, 200, await criarApi('/api/chat', corpo, { timeoutMs: 120_000 }));
+      return json(res, 200, await criarApi('/api/chat', corpo, { timeoutMs: 280_000 }));
     } catch (err) {
       if (err instanceof ErroApi) {
         return json(res, 200, { erro: detalharErroApi(err, 'Não consegui falar com a IA agora.') });
