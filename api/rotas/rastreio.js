@@ -417,20 +417,27 @@ export default async function rotasRastreio(app) {
     },
   }, async (req) => {
     const f = filtroCompra({ ...req.query, produto: undefined, produto_grupo: undefined });
+    // A lista traz TODOS os produtos que já tiveram pedido (total 0 quando o recorte atual não tem nenhum), para o filtro não "perder" produto
+    // ao trocar de sub-aba/plataforma/período.
     const { rows } = await query(
-      `SELECT g.chave, g.total,
+      `SELECT g.chave, coalesce(c.total, 0) AS total,
               coalesce(
                 (SELECT p.nome FROM produtos p
                   WHERE p.slug <> '*' AND regexp_replace(lower(p.nome), '[^a-z0-9]', '', 'g') IN (g.chave, g.chave || 'pro')
                   ORDER BY length(p.nome) LIMIT 1),
                 g.rotulo) AS nome
          FROM (
-           SELECT ${CHAVE_PRODUTO('d.')} AS chave, count(*)::int AS total,
+           SELECT ${CHAVE_PRODUTO('d.')} AS chave,
                   mode() WITHIN GROUP (ORDER BY ${BASE_PRODUTO('d.')}) AS rotulo
+             FROM rastreio_pedido_d d
+            GROUP BY 1
+         ) g
+         LEFT JOIN (
+           SELECT ${CHAVE_PRODUTO('d.')} AS chave, count(*)::int AS total
              FROM rastreio_pedidos r JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
             WHERE ${f.sql}
             GROUP BY 1
-         ) g
+         ) c ON c.chave = g.chave
         WHERE g.chave IS NOT NULL
         ORDER BY lower(coalesce(g.rotulo, g.chave))`,
       f.valores,
