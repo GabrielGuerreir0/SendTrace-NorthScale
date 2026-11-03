@@ -178,6 +178,7 @@ export function montarPdf({ titulo, texto, campos = [], linhas = [] }) {
   const n = doc.bufferedPageRange().count;
   for (let i = 0; i < n; i += 1) {
     doc.switchToPage(i);
+    doc.page.margins.bottom = 0; // sem isso o rodapé, escrito abaixo da margem, cria uma página em branco
     doc.fillColor('#9CA3AF').font('Helvetica').fontSize(7).text(`${i + 1} / ${n}`, 40, doc.page.height - 28, { width: L, align: 'right', lineBreak: false });
   }
   doc.end();
