@@ -1396,6 +1396,26 @@ async function atender(req, res, url, sessao) {
 
   // O chat roda um loop de tool-use de até 30 idas e vindas ao Claude — bem
   // mais do que o corte padrão (API_TIMEOUT_MS) das outras chamadas à API.
+  // Arquivo (CSV/Excel/PDF/gráfico) que o chat gerou — vale por 2 h na API; aqui só repassa o download.
+  const rotaArquivoChat = /^\/api\/chat\/arquivo\/([0-9a-f]{32})$/.exec(url.pathname);
+  if (rotaArquivoChat && req.method === 'GET') {
+    try {
+      const { buffer, mimeType } = await obterBinario(`/api/chat/arquivo/${rotaArquivoChat[1]}`);
+      const nome = String(url.searchParams.get('nome') || 'arquivo').replace(/[^\w.\- ()]/g, '_').slice(0, 120);
+      res.writeHead(200, {
+        'Content-Type': mimeType,
+        'Content-Disposition': `attachment; filename="${nome}"`,
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'private, no-store',
+      });
+      res.end(buffer);
+      return ATENDIDO;
+    } catch (err) {
+      if (err instanceof ErroApi && err.status === 404) return json(res, 404, { erro: 'Arquivo expirado — peça de novo ao chat.' });
+      throw err;
+    }
+  }
+
   if (url.pathname === '/api/chat' && req.method === 'POST') {
     const corpo = await lerJson(req, 1024 * 1024);
     if (!Array.isArray(corpo.mensagens) || !corpo.mensagens.length) {

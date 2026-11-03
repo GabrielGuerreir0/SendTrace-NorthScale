@@ -73,6 +73,21 @@ function criarBalao(msg) {
   else corpo.textContent = msg.content;
   div.append(corpo);
 
+  if (msg.role === 'assistant' && msg.arquivos?.length) {
+    const caixa = document.createElement('div');
+    caixa.className = 'ch-arquivos';
+    for (const a of msg.arquivos) {
+      const link = document.createElement('a');
+      link.className = 'btn ch-arquivo';
+      link.href = `/api/chat/arquivo/${a.id}?nome=${encodeURIComponent(a.nome)}`;
+      link.download = a.nome;
+      const kb = a.bytes >= 1048576 ? `${(a.bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(a.bytes / 1024))} KB`;
+      link.textContent = `⬇ ${a.nome} · ${kb}`;
+      caixa.append(link);
+    }
+    div.append(caixa);
+  }
+
   if (msg.role === 'assistant' && msg.consultas?.length) {
     const det = document.createElement('details');
     det.className = 'ch-consultas';
@@ -125,7 +140,7 @@ async function enviar(textoBruto) {
     if (!ok || dados.erro) {
       historico.push({ role: 'assistant', content: `⚠ ${dados?.erro ?? 'Não consegui falar com a IA agora.'}` });
     } else {
-      historico.push({ role: 'assistant', content: dados.resposta ?? '', consultas: dados.consultas ?? [] });
+      historico.push({ role: 'assistant', content: dados.resposta ?? '', consultas: dados.consultas ?? [], arquivos: dados.arquivos ?? [] });
     }
   } catch (err) {
     historico.push({ role: 'assistant', content: `⚠ ${err.message}` });

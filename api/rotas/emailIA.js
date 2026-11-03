@@ -16,6 +16,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { query } from '../../server/db.js';
 import { pool } from '../../server/db.js';
 import { ErroHttp } from '../comum.js';
+import { LIMITE_LINHAS, guardar, mimeDe, montar, nomeSeguro, obter } from '../chatArquivos.js';
 
 /* ══════════════════════════════  cliente Claude  ═══════════════════════════ */
 
@@ -98,6 +99,67 @@ const FERRAMENTA_CONSULTAR_BANCO = {
   },
 };
 
+const FERRAMENTA_GERAR_ARQUIVO = {
+  name: 'gerar_arquivo',
+  description: 'Roda UMA consulta SQL somente leitura (SELECT ou WITH) e entrega o RESULTADO COMPLETO como arquivo '
+    + 'para download (csv, xlsx ou pdf), sem passar pelo texto da conversa — serve para listas e relatórios grandes '
+    + `(até ${LIMITE_LINHAS.toLocaleString('pt-BR')} linhas). Para PDF você pode mandar também um texto em markdown `
+    + '(# títulos, - listas) que vira o corpo do relatório, com a tabela da consulta embaixo (a tabela é opcional: '
+    + 'um PDF só de texto não precisa de sql). Depois de chamar, avise o operador que o botão de download está na resposta.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      formato: { type: 'string', enum: ['csv', 'xlsx', 'pdf'] },
+      nome: { type: 'string', description: 'Nome do arquivo sem extensão, curto e descritivo.' },
+      titulo: { type: 'string', description: 'Título do relatório (PDF) ou da aba (Excel).' },
+      sql: { type: 'string', description: 'SELECT/WITH cujo resultado completo vira o arquivo. Dê nomes claros às colunas (AS "Pedido").' },
+      texto: { type: 'string', description: 'Só PDF: texto do relatório em markdown simples.' },
+    },
+    required: ['formato', 'nome'],
+  },
+};
+
+/** Ambiente de código isolado da Anthropic (roda Python, gera gráfico/planilha/PDF). Desligue com CHAT_CODE_EXECUTION=0. */
+const CODIGO_LIGADO = process.env.CHAT_CODE_EXECUTION !== '0';
+const CODIGO_TIPO = process.env.CHAT_CODE_EXECUTION_TIPO || 'code_execution_20260521';
+/** Se a API recusar a ferramenta de código, o chat segue sem ela por alguns minutos (não derruba a conversa). */
+let codigoIndisponivelAte = 0;
+
+const MAX_ARQUIVOS_POR_RESPOSTA = 6;
+const MAX_BYTES_ARQUIVO_CODIGO = 25 * 1024 * 1024;
+
+/** Acha, em qualquer bloco de resultado do ambiente de código, as referências de arquivo criado (file_id). */
+function arquivosDoCodigo(blocos) {
+  const ids = [];
+  const visitar = (o) => {
+    if (!o || typeof o !== 'object') return;
+    if (Array.isArray(o)) { o.forEach(visitar); return; }
+    if (typeof o.file_id === 'string' && /output|file/i.test(String(o.type ?? ''))) ids.push(o.file_id);
+    for (const v of Object.values(o)) if (v && typeof v === 'object') visitar(v);
+  };
+  for (const b of blocos) if (b.type !== 'text' && b.type !== 'thinking' && b.type !== 'tool_use') visitar(b);
+  return [...new Set(ids)];
+}
+
+async function baixarArquivosDoCodigo(cliente, ids, jaGerados) {
+  const saida = [];
+  for (const id of ids) {
+    if (jaGerados.size + saida.length >= MAX_ARQUIVOS_POR_RESPOSTA || jaGerados.has(id)) continue;
+    try {
+      const meta = await cliente.beta.files.retrieveMetadata(id);
+      const nome = nomeSeguro(meta.filename, String(meta.filename ?? '').split('.').pop() || 'bin');
+      if (!mimeDe(nome)) continue; // só tipos de arquivo conhecidos e inofensivos
+      if (meta.size_bytes && meta.size_bytes > MAX_BYTES_ARQUIVO_CODIGO) continue;
+      const r = await cliente.beta.files.download(id);
+      const buffer = Buffer.from(await r.arrayBuffer());
+      saida.push({ origem: id, ...guardar(buffer, nome) });
+    } catch (err) {
+      console.warn('chat: não consegui baixar arquivo do ambiente de código:', err?.message);
+    }
+  }
+  return saida;
+}
+
 function montarSistemaChat() {
   const agora = new Date();
   const dataHoje = agora.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
@@ -109,6 +171,15 @@ Hoje é ${dataHoje}. O histórico de e-mails começa em 17/03/2026 — datas de 
 
 Nunca invente números: sempre consulte o banco de verdade pela ferramenta consultar_banco. Use \
 LIMIT em consultas exploratórias.
+
+── Arquivos e análises ──
+- Pediu lista, planilha, relatório ou "exporta"? Use gerar_arquivo (csv, xlsx ou pdf): o servidor roda a consulta \
+inteira e entrega um botão de download — NUNCA cole centenas de linhas na conversa. Dê nomes claros às colunas.
+- Relatório em PDF com análise: escreva o texto em markdown no campo texto e, se couber, a tabela via sql.
+- Se a ferramenta de código estiver disponível, use-a para cálculos, estatística, gráficos e arquivos que o SQL \
+não faz sozinho. Traga do banco só dados já AGREGADOS (poucas linhas) e passe-os no código. Salve gráficos/arquivos \
+em /tmp/outputs (png, xlsx, csv, pdf...) — o operador recebe como download.
+- Para o operador, fale do resultado em linguagem simples; não explique o código a menos que peçam.
 
 ── Tabelas ──
 
@@ -374,6 +445,45 @@ async function executarConsultaSomenteLeitura(sqlBruto) {
   }
 }
 
+/** Consulta completa para arquivo: devolve campos e TODAS as linhas (até LIMITE_LINHAS). Read-only, mesmo teto de tempo. */
+async function consultarParaArquivo(sqlBruto) {
+  const sql = validarSql(sqlBruto);
+  const cliente = await pool.connect();
+  let expirou = false;
+  const executar = (async () => {
+    await cliente.query('BEGIN TRANSACTION READ ONLY');
+    await cliente.query("SET LOCAL statement_timeout = '55s'");
+    const r = await cliente.query(`SELECT * FROM (${sql}) AS q LIMIT ${LIMITE_LINHAS + 1}`);
+    await cliente.query('ROLLBACK');
+    return r;
+  })();
+  executar.catch(() => {});
+  const cronometro = new Promise((_resolve, reject) => {
+    setTimeout(() => { expirou = true; reject(new Error('consulta excedeu o tempo limite de 60s')); }, 60_000);
+  });
+  try {
+    const r = await Promise.race([executar, cronometro]);
+    const truncado = r.rows.length > LIMITE_LINHAS;
+    return { campos: r.fields.map((f) => f.name), linhas: truncado ? r.rows.slice(0, LIMITE_LINHAS) : r.rows, truncado };
+  } finally {
+    cliente.release(expirou);
+  }
+}
+
+async function executarGerarArquivo(entrada, arquivos) {
+  const formato = String(entrada.formato ?? '');
+  let campos = []; let linhas = []; let truncado = false;
+  if (entrada.sql) ({ campos, linhas, truncado } = await consultarParaArquivo(entrada.sql));
+  else if (formato !== 'pdf' || !entrada.texto) throw new Error('informe a consulta (sql) — só PDF aceita apenas texto');
+  const { buffer, extensao } = await montar({ formato, titulo: entrada.titulo || entrada.nome, texto: entrada.texto, campos, linhas });
+  const arq = guardar(buffer, nomeSeguro(entrada.nome, extensao));
+  arquivos.push({ ...arq, linhas: linhas.length });
+  const kb = Math.max(1, Math.round(buffer.length / 1024));
+  return `Arquivo "${arq.nome}" gerado (${linhas.length} linha${linhas.length === 1 ? '' : 's'}, ${kb} KB)`
+    + `${truncado ? ` — a consulta passou de ${LIMITE_LINHAS} linhas e foi cortada nesse limite` : ''}. `
+    + 'O botão de download aparece para o operador junto da sua resposta; não repita o conteúdo do arquivo.';
+}
+
 async function executarChat({ anthropic, mensagens, modelo }) {
   const historico = mensagens.slice(-60).map((m) => ({
     role: m.role,
@@ -388,27 +498,62 @@ async function executarChat({ anthropic, mensagens, modelo }) {
   // loop acontecem em segundos).
   const sistema = [{ type: 'text', text: montarSistemaChat(), cache_control: { type: 'ephemeral' } }];
   const consultas = [];
+  const arquivos = [];
+  const arquivosCodigo = new Set();
+  let container;
 
   for (let iteracao = 0; iteracao < MAX_ITERACOES; iteracao += 1) {
-    const resposta = await anthropic.messages.create({
+    const comCodigo = CODIGO_LIGADO && Date.now() > codigoIndisponivelAte;
+    const pedido = {
       model: modelo,
       max_tokens: 16_000,
       system: sistema,
-      tools: [FERRAMENTA_CONSULTAR_BANCO],
+      tools: [FERRAMENTA_CONSULTAR_BANCO, FERRAMENTA_GERAR_ARQUIVO, ...(comCodigo ? [{ type: CODIGO_TIPO, name: 'code_execution' }] : [])],
       messages: historico,
-    });
+      ...(comCodigo && container ? { container } : {}),
+    };
+    let resposta;
+    try {
+      resposta = await anthropic.messages.create(pedido);
+    } catch (err) {
+      // A API recusou a ferramenta de código (tipo/versão/modelo não aceito): segue só com banco e arquivos.
+      if (comCodigo && err?.status === 400 && /code_execution|tool/i.test(String(err.message))) {
+        console.warn('chat: ferramenta de código recusada pela API, seguindo sem ela:', err.message);
+        codigoIndisponivelAte = Date.now() + 10 * 60_000;
+        container = undefined;
+        iteracao -= 1;
+        continue;
+      }
+      throw err;
+    }
+    if (resposta.container?.id) container = resposta.container.id;
 
     historico.push({ role: 'assistant', content: resposta.content });
 
+    for (const novo of await baixarArquivosDoCodigo(anthropic, arquivosDoCodigo(resposta.content), arquivosCodigo)) {
+      arquivosCodigo.add(novo.origem);
+      const { origem, ...resto } = novo;
+      arquivos.push(resto);
+    }
+
+    // Turno longo do ambiente de código: a API pede para continuar de onde parou (sem nova mensagem do usuário).
+    if (resposta.stop_reason === 'pause_turn') continue;
+
     const blocosFerramenta = resposta.content.filter((b) => b.type === 'tool_use');
     if (resposta.stop_reason !== 'tool_use' || blocosFerramenta.length === 0) {
-      return { resposta: extrairTexto(resposta.content), consultas, modelo };
+      return { resposta: extrairTexto(resposta.content), consultas, modelo, arquivos };
     }
 
     const resultadosFerramenta = [];
     for (const bloco of blocosFerramenta) {
       const sql = String(bloco.input?.sql ?? '');
       try {
+        if (bloco.name === 'gerar_arquivo') {
+          const aviso = await executarGerarArquivo(bloco.input ?? {}, arquivos);
+          if (sql) consultas.push({ sql, linhas: arquivos.at(-1)?.linhas ?? 0 });
+          resultadosFerramenta.push({ type: 'tool_result', tool_use_id: bloco.id, content: aviso });
+          continue;
+        }
         const { linhas, textoResultado } = await executarConsultaSomenteLeitura(sql);
         consultas.push({ sql, linhas });
         resultadosFerramenta.push({ type: 'tool_result', tool_use_id: bloco.id, content: textoResultado });
@@ -487,6 +632,26 @@ export default async function rotasEmailIA(app) {
       resposta.code(200);
       return { erro: `Falha ao gerar resposta: ${err.message}` };
     }
+  });
+
+  app.get('/api/chat/arquivo/:id', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Central de E-mail IA'],
+      summary: 'Baixa um arquivo gerado pelo Chat com IA (vale por 2 h)',
+      security: [{ bearerAuth: [] }],
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'string', pattern: '^[0-9a-f]{32}$' } } },
+    },
+  }, async (req, resposta) => {
+    const arq = obter(req.params.id);
+    if (!arq) throw new ErroHttp(404, 'Arquivo não encontrado ou expirado — peça de novo ao chat.');
+    const nome = arq.nome.replace(/[^\w.\- ()]/g, '_');
+    return resposta
+      .header('Content-Type', arq.mime)
+      .header('Content-Disposition', `attachment; filename="${nome}"`)
+      .header('X-Content-Type-Options', 'nosniff')
+      .header('Cache-Control', 'private, no-store')
+      .send(arq.buffer);
   });
 
   app.post('/api/chat', {
