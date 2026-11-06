@@ -1434,6 +1434,9 @@ function reagendar() {
   clearInterval(estado.timer);
   if (estado.intervalo > 0) {
     estado.timer = setInterval(() => {
+      // Aba em segundo plano não precisa de número fresco — e várias abas
+      // esquecidas abertas multiplicavam a carga sobre o banco.
+      if (document.hidden) return;
       carregarSnapshot({ silencioso: true });
       carregarPedidos();
       carregarSuporte();

@@ -36,28 +36,56 @@ import { LOCK_TIMEOUT_MIN } from './config.js';
  * recortar, este cache precisa passar a ser por credencial, senão alguém veria
  * a fatia de outro.
  */
-const JANELA_MS = Number(process.env.API_CACHE_MS) || 4000;
-let cache = { em: 0, valor: null, promessa: null };
+const JANELA_MS = Number(process.env.API_CACHE_MS) || 30_000;
 
-export async function fila() {
-  const agora = Date.now();
-  if (cache.valor && agora - cache.em < JANELA_MS) return cache.valor;
-  if (cache.promessa) return cache.promessa;
+/**
+ * Passada essa idade o dado velho NÃO é mais servido: quem pedir espera a
+ * varredura nova. Entre `JANELA_MS` e este limite vale "stale-while-revalidate":
+ * responde na hora com o que tem e atualiza por trás — a tela nunca espera a
+ * varredura de 64 mil linhas, e N abas abertas geram UMA varredura.
+ */
+const VALIDADE_MAX_MS = Math.max(JANELA_MS * 10, 5 * 60_000);
 
-  cache.promessa = listarTudo('/api/disparos/')
-    .then((r) => {
-      cache = { em: Date.now(), valor: r, promessa: null };
-      return r;
-    })
-    .catch((err) => {
-      cache.promessa = null;
-      throw err;
-    });
-  return cache.promessa;
+/** Cache de uma lista inteira, com revalidação em segundo plano. */
+function listaEmCache(carregar) {
+  let c = { em: 0, valor: null, promessa: null };
+
+  const revalidar = () => {
+    if (c.promessa) return c.promessa;
+    const p = carregar()
+      .then((valor) => {
+        c = { em: Date.now(), valor, promessa: null };
+        return valor;
+      })
+      .catch((err) => {
+        c.promessa = null;
+        throw err;
+      });
+    c.promessa = p;
+    return p;
+  };
+
+  return {
+    async obter() {
+      const idade = Date.now() - c.em;
+      if (c.valor && idade < JANELA_MS) return c.valor;
+      if (c.valor && idade < VALIDADE_MAX_MS) {
+        // Serve o velho agora; se a revalidação falhar, o próximo pedido tenta de novo.
+        revalidar().catch(() => {});
+        return c.valor;
+      }
+      return revalidar();
+    },
+    esquecer() { c = { em: 0, valor: null, promessa: null }; },
+  };
 }
 
+const filaEmCache = listaEmCache(() => listarTudo('/api/disparos/'));
+
+export const fila = () => filaEmCache.obter();
+
 /** Descarta o cache — usado depois de uma escrita que muda o que a tela mostra. */
-export const esquecerFila = () => { cache = { em: 0, valor: null, promessa: null }; };
+export const esquecerFila = () => filaEmCache.esquecer();
 
 /* ═══════════════════════  upsell/downsell, por e-mail  ══════════════════ */
 
@@ -67,31 +95,18 @@ export const esquecerFila = () => { cache = { em: 0, valor: null, promessa: null
  * por e-mail em minúsculas para casar com `disparos_pos_venda.email` sem se
  * importar com caixa.
  */
-let cacheUpsell = { em: 0, valor: null, promessa: null };
+const upsellEmCache = listaEmCache(() => listarTudo('/api/upsell-downsell/').then(({ itens }) => {
+  const porEmail = new Map();
+  for (const c of itens) {
+    if (!c.email) continue;
+    const chave = c.email.toLowerCase();
+    if (!porEmail.has(chave)) porEmail.set(chave, []);
+    porEmail.get(chave).push({ produto: c.produto, etapa_funil: c.etapa_funil, plataforma: c.plataforma });
+  }
+  return porEmail;
+}));
 
-async function upsellDownsellPorEmail() {
-  const agora = Date.now();
-  if (cacheUpsell.valor && agora - cacheUpsell.em < JANELA_MS) return cacheUpsell.valor;
-  if (cacheUpsell.promessa) return cacheUpsell.promessa;
-
-  cacheUpsell.promessa = listarTudo('/api/upsell-downsell/')
-    .then(({ itens }) => {
-      const porEmail = new Map();
-      for (const c of itens) {
-        if (!c.email) continue;
-        const chave = c.email.toLowerCase();
-        if (!porEmail.has(chave)) porEmail.set(chave, []);
-        porEmail.get(chave).push({ produto: c.produto, etapa_funil: c.etapa_funil, plataforma: c.plataforma });
-      }
-      cacheUpsell = { em: Date.now(), valor: porEmail, promessa: null };
-      return porEmail;
-    })
-    .catch((err) => {
-      cacheUpsell.promessa = null;
-      throw err;
-    });
-  return cacheUpsell.promessa;
-}
+const upsellDownsellPorEmail = () => upsellEmCache.obter();
 
 /** O que o painel precisa saber sobre a origem dos números. */
 export async function fonteDados() {

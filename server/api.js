@@ -250,7 +250,10 @@ export async function listarTudo(rota, params = {}, { max = FILA_MAX } = {}) {
   let pagina = 1;
 
   for (;;) {
-    const dados = await obter(rota, { ...params, page: pagina });
+    // Sem `page_size` a API devolve 100 por página (teto: 500). Com a fila em
+    // 64 mil linhas, isso eram ~640 chamadas por varredura, cada uma com um
+    // COUNT(*) e um OFFSET cada vez mais fundo — foi o que saturou o Postgres.
+    const dados = await obter(rota, { page_size: 500, ...params, page: pagina });
 
     // DRF devolve {count,next,results}; sem paginação, um array puro.
     if (Array.isArray(dados)) return { itens: dados, total: dados.length, truncado: false };

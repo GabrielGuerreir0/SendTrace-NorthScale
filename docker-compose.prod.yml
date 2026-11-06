@@ -115,7 +115,7 @@ services:
       # no .env só se quiser apontar para uma instância externa.
       API_URL: ${API_URL:-http://sendtrace-painel-api:4400}
       API_FILA_MAX: ${API_FILA_MAX:-20000}
-      API_CACHE_MS: ${API_CACHE_MS:-4000}
+      API_CACHE_MS: ${API_CACHE_MS:-30000}
       API_TIMEOUT_MS: ${API_TIMEOUT_MS:-20000}
 
       # O host é o NOME DO CONTAINER do banco, não 127.0.0.1.
