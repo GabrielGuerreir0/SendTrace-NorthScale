@@ -887,7 +887,45 @@ function montarAlertas({ bloco, b28, dias, base4sem }) {
 
 export { coletarVisaoGeral, periodoDaQuery, filtrosDaQuery };
 
+/* ═══════════════════════════  cache da rota  ═══════════════════════════════════
+   A coleta roda ~35 consultas (≈ 12 s com o servidor parado, ≈ 50 s de CPU somados) e a tela
+   recarrega sozinha a cada minuto em cada aba aberta. Sem isto, duas ou três pessoas com o
+   painel aberto já passam dos 20 s do painel e a Home mostra "Não consegui carregar".
+   · vale por combinação período + filtros; o resultado é o mesmo para todo usuário com acesso à página
+     (a autorização roda antes, no onRequest);
+   · passou da validade, devolve o dado velho NA HORA e recalcula por trás (no máximo uma coleta por
+     combinação ao mesmo tempo); só espera de verdade quando não há nada guardado;
+   · erro nunca é guardado, e o dado velho não passa de 15 min. */
+const VALIDADE_MS = Math.max(5, Number(process.env.VISAO_GERAL_CACHE_S) || 60) * 1000;
+const VELHO_MAX_MS = 15 * 60_000;
+const guardada = new Map();   // chave → { valor, em, andamento }
+
+function visaoGeralEmCache(p, comparar, filtros) {
+  const chave = JSON.stringify([p, comparar, filtros]);
+  const agora = Date.now();
+  const item = guardada.get(chave) ?? { valor: undefined, em: 0, andamento: null };
+  guardada.set(chave, item);
+
+  const recalcular = () => {
+    if (item.andamento) return item.andamento;
+    item.andamento = coletarVisaoGeral(p, comparar, filtros)
+      .then((valor) => { item.valor = valor; item.em = Date.now(); return valor; })
+      .finally(() => { item.andamento = null; });
+    return item.andamento;
+  };
+
+  if (item.valor !== undefined && agora - item.em < VALIDADE_MS) return Promise.resolve(item.valor);
+  if (item.valor !== undefined && agora - item.em < VELHO_MAX_MS) {
+    recalcular().catch(() => {});   // por trás; a próxima abertura tenta de novo
+    return Promise.resolve(item.valor);
+  }
+  return recalcular();
+}
+
 export default async function rotasVisaoGeral(app) {
+  // Aquece a visão padrão (30 dias, com comparação) logo após subir, para a primeira abertura não esperar a coleta inteira.
+  setTimeout(() => { visaoGeralEmCache(periodoDaQuery({}), true, filtrosDaQuery({})).catch(() => {}); }, 8000).unref();
+
   app.get('/api/visao-geral/', {
     onRequest: [app.exigirSessao],
     schema: {
@@ -913,5 +951,5 @@ export default async function rotasVisaoGeral(app) {
         },
       },
     },
-  }, async (req) => coletarVisaoGeral(periodoDaQuery(req.query), req.query.comparar !== 0, filtrosDaQuery(req.query)));
+  }, async (req) => visaoGeralEmCache(periodoDaQuery(req.query), req.query.comparar !== 0, filtrosDaQuery(req.query)));
 }
