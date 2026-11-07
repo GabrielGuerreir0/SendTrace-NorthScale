@@ -511,7 +511,101 @@ export default async function rotasRastreio(app) {
     );
     const t = rows[0];
     const base = t.shipped + t.delivered;
-    return { ...t, taxa_entrega: base > 0 ? Math.round((t.delivered / base) * 1000) / 10 : null };
+
+    // ── 06/11: cada card mostra DE ONDE vem o número (grupos que somam o total do card). Mesmos filtros da consulta acima. ──
+    // Se alguma tabela de apoio faltar (ex.: rastreio_busca_tentativas é criada pelo instalar.sh do VPS), devolve só os números de sempre.
+    try {
+    const parametros = [req.query.produto ?? null, req.query.plataforma ?? null, ...valores.slice(2)];
+    const origem = `FROM rastreio_pedidos r
+       LEFT JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
+       LEFT JOIN rastreio_17t_registros t17 ON t17.numero = r.tracking_number
+       LEFT JOIN rastreio_busca_tentativas bt ON bt.transacao_id = r.transacao_id
+       WHERE ${DO_PRODUTO(1, 'd.')} AND ${DA_PLATAFORMA(2, 'd.')} ${filtroPeriodo}`;
+    const idade7 = `coalesce(r.order_created_at, r.criado_em)`;
+    const [rA, rB, rC] = await Promise.all([
+      query(`SELECT
+         count(*) FILTER (WHERE r.provedor = 'redrock')::int   AS f_redrock,
+         count(*) FILTER (WHERE r.provedor = 'fullstack')::int AS f_fullstack,
+         count(*) FILTER (WHERE r.provedor = 'jetstream')::int AS f_jetstream,
+         count(*) FILTER (WHERE r.provedor IS NULL)::int       AS f_nenhum,
+         count(*) FILTER (WHERE r.status_interno = 'shipped' AND t17.ultimo_status = 'Delivered')::int AS entregue_17t,
+         count(*) FILTER (WHERE r.status_interno = 'shipped' AND t17.ultimo_status IN ('InTransit','InfoReceived','OutForDelivery','AvailableForPickup'))::int AS cam_transito,
+         count(*) FILTER (WHERE r.status_interno = 'shipped' AND t17.ultimo_status IN ('Exception','DeliveryFailure','NotFound','Expired'))::int AS cam_problema,
+         count(*) FILTER (WHERE r.status_interno = 'shipped' AND t17.ultimo_status IS NULL)::int AS cam_sem_17t,
+         count(*) FILTER (WHERE r.status_interno = 'pending' AND r.provedor = 'jetstream' AND ${idade7} >= now() - interval '7 days')::int AS pend_js_ate7,
+         count(*) FILTER (WHERE r.status_interno = 'pending' AND r.provedor = 'jetstream' AND ${idade7} <  now() - interval '7 days')::int AS pend_js_mais7,
+         count(*) FILTER (WHERE r.status_interno = 'pending' AND r.provedor = 'fullstack' AND ${idade7} >= now() - interval '7 days')::int AS pend_fs_ate7,
+         count(*) FILTER (WHERE r.status_interno = 'pending' AND r.provedor = 'fullstack' AND ${idade7} <  now() - interval '7 days')::int AS pend_fs_mais7,
+         count(*) FILTER (WHERE r.status_interno = 'pending' AND r.provedor = 'redrock'   AND ${idade7} >= now() - interval '7 days')::int AS pend_rr_ate7,
+         count(*) FILTER (WHERE r.status_interno = 'pending' AND r.provedor = 'redrock'   AND ${idade7} <  now() - interval '7 days')::int AS pend_rr_mais7,
+         count(*) FILTER (WHERE r.status_interno = 'cancelled' AND r.tracking_number IS NULL)::int AS canc_sem_codigo,
+         count(*) FILTER (WHERE r.status_interno = 'pending' AND r.tracking_number IS NULL AND r.provedor = 'jetstream')::int AS sc_pend_js,
+         count(*) FILTER (WHERE r.status_interno = 'pending' AND r.tracking_number IS NULL AND r.provedor = 'fullstack')::int AS sc_pend_fs,
+         count(*) FILTER (WHERE r.status_interno = 'pending' AND r.tracking_number IS NULL AND r.provedor = 'redrock')::int   AS sc_pend_rr,
+         count(*) FILTER (WHERE r.status_interno = 'pending' AND r.tracking_number IS NULL AND r.provedor = 'jetstream' AND ${idade7} < now() - interval '7 days')::int AS sc_pend_js_mais7,
+         count(*) FILTER (WHERE r.status_interno = 'pending' AND r.tracking_number IS NULL AND r.provedor = 'fullstack' AND ${idade7} < now() - interval '7 days')::int AS sc_pend_fs_mais7,
+         count(*) FILTER (WHERE r.status_interno = 'pending' AND r.tracking_number IS NULL AND r.provedor = 'redrock'   AND ${idade7} < now() - interval '7 days')::int AS sc_pend_rr_mais7,
+         count(*) FILTER (WHERE r.status_interno = 'nao_encontrado' AND bt.ultima_tentativa_em >= now() - interval '2 days')::int AS ne_buscado_48h
+       ${origem}`, parametros),
+      query(`SELECT coalesce(nullif(btrim(d.plataforma), ''), '') AS plataforma,
+               CASE WHEN bt.ultimo_resultado = 'ambiguo' THEN 'ambiguo'
+                    WHEN bt.ultimo_resultado LIKE 'nao_achado%' THEN 'nao_achado'
+                    WHEN bt.transacao_id IS NULL THEN 'nunca' ELSE 'outro' END AS grupo,
+               count(*)::int AS n
+             ${origem} AND r.status_interno = 'nao_encontrado'
+             GROUP BY 1, 2 ORDER BY 3 DESC`, parametros),
+      query(`SELECT x.chave, x.n,
+               coalesce((SELECT p.nome FROM produtos p
+                          WHERE p.slug <> '*' AND regexp_replace(lower(p.nome), '[^a-z0-9]', '', 'g') IN (x.chave, x.chave || 'pro')
+                          ORDER BY length(p.nome) LIMIT 1), x.rotulo) AS nome
+             FROM (SELECT ${CHAVE_PRODUTO('d.')} AS chave, mode() WITHIN GROUP (ORDER BY ${BASE_PRODUTO('d.')}) AS rotulo, count(*)::int AS n
+                     ${origem} AND r.status_interno = 'nao_encontrado' GROUP BY 1) x
+             ORDER BY x.n DESC`, parametros),
+    ]);
+    const a = rA.rows[0];
+    const soma = (...xs) => xs.reduce((s, x) => s + (x || 0), 0);
+    // "Outros" fecha a conta de cada card: o que não cai nos grupos conhecidos aparece, nunca some.
+    const comResto = (linhas, total) => {
+      const resto = total - soma(...linhas.map((l) => l.v));
+      return resto !== 0 ? [...linhas, { id: 'outros', v: resto }] : linhas;
+    };
+    const entregueAjust = t.delivered + a.entregue_17t;
+    const caminhoAjust = t.shipped - a.entregue_17t;
+    const scPend = soma(a.sc_pend_js, a.sc_pend_fs, a.sc_pend_rr);
+    const topProdutos = rC.rows.slice(0, 6).map((r) => ({ id: r.chave === null ? 'sem_produto' : r.chave === 'combos' ? 'kits' : r.chave === 'outros' ? 'outros_produtos' : 'produto', nome: r.nome ?? null, v: r.n }));
+    const restoProdutos = rC.rows.slice(6).reduce((s, r) => s + r.n, 0);
+    const quebras = {
+      total: comResto([{ id: 'forn_redrock', v: a.f_redrock }, { id: 'forn_fullstack', v: a.f_fullstack }, { id: 'forn_jetstream', v: a.f_jetstream }, { id: 'forn_nenhum', v: a.f_nenhum }], t.total),
+      taxa: [{ id: 'entregue_fornecedor', v: t.delivered }, { id: 'entregue_17t', v: a.entregue_17t }, { id: 'a_caminho', v: caminhoAjust }],
+      entregue: comResto([{ id: 'entregue_fornecedor', v: t.delivered }, { id: 'entregue_17t', v: a.entregue_17t }], entregueAjust),
+      a_caminho: comResto([{ id: 'cam_transito', v: a.cam_transito }, { id: 'cam_problema', v: a.cam_problema }, { id: 'cam_sem_17t', v: a.cam_sem_17t }], caminhoAjust),
+      pendente: comResto([
+        { id: 'pend_jetstream_ate7', v: a.pend_js_ate7 }, { id: 'pend_jetstream_mais7', v: a.pend_js_mais7 },
+        { id: 'pend_fullstack_ate7', v: a.pend_fs_ate7 }, { id: 'pend_fullstack_mais7', v: a.pend_fs_mais7 },
+        { id: 'pend_redrock_ate7', v: a.pend_rr_ate7 }, { id: 'pend_redrock_mais7', v: a.pend_rr_mais7 },
+      ], t.pending),
+      cancelado: comResto([{ id: 'canc_sem_codigo', v: a.canc_sem_codigo }], t.cancelled),
+      sem_codigo: comResto([
+        { id: 'sc_pend_jetstream', v: a.sc_pend_js, d: a.sc_pend_js_mais7 }, { id: 'sc_pend_fullstack', v: a.sc_pend_fs, d: a.sc_pend_fs_mais7 },
+        { id: 'sc_pend_redrock', v: a.sc_pend_rr, d: a.sc_pend_rr_mais7 }, { id: 'sc_cancelado', v: a.canc_sem_codigo },
+      ], t.sem_codigo_rastreio),
+      nao_encontrado: comResto(rB.rows.map((r) => ({ id: `ne_${r.grupo}`, plataforma: r.plataforma, v: r.n })), t.nao_encontrado),
+      nao_encontrado_buscado_48h: a.ne_buscado_48h,
+      nao_encontrado_produtos: comResto([...topProdutos, ...(restoProdutos > 0 ? [{ id: 'outros_produtos', nome: null, v: restoProdutos }] : [])], t.nao_encontrado),
+      sem_codigo_pendentes: scPend,
+    };
+    return {
+      ...t,
+      taxa_entrega: base > 0 ? Math.round((t.delivered / base) * 1000) / 10 : null,
+      delivered_ajustado: entregueAjust,
+      shipped_ajustado: caminhoAjust,
+      taxa_entrega_ajustada: base > 0 ? Math.round((entregueAjust / base) * 1000) / 10 : null,
+      quebras,
+    };
+    } catch (err) {
+      req.log.warn({ err }, 'rastreio: quebras por card indisponíveis; devolvendo só os totais');
+      return { ...t, taxa_entrega: base > 0 ? Math.round((t.delivered / base) * 1000) / 10 : null };
+    }
   });
 
   app.get('/api/metricas/rastreio/saude/', {

@@ -282,8 +282,13 @@ export function celCliente(nome, email) {
    Mesmo desenho do card de Suporte IA (kpi/kpi-topo/kpi-valor/kpi-nota),
    generalizado para as duas telas novas que também precisam de KPIs clicáveis. */
 
+/**
+ * `secoes` (opcional, 06/11): tabelas sob o número, mostrando DE ONDE ele vem. Cada seção:
+ *   { titulo?, linhas: [{ rotulo, valor, detalhe? }], totalRotulo?, total? }
+ * As linhas devem somar o `total` da seção (quem chama é quem garante); linha com valor 0 não aparece.
+ */
 export function kpiCard({
-  icone = '●', tom = 'neutro', rotulo, valor, nota = '', onClick = null, ativo = false,
+  icone = '●', tom = 'neutro', rotulo, valor, nota = '', onClick = null, ativo = false, secoes = [],
 }) {
   const el = document.createElement(onClick ? 'button' : 'div');
   el.className = onClick ? 'kpi kpi--clique' : 'kpi';
@@ -301,6 +306,40 @@ export function kpiCard({
   const val = document.createElement('div'); val.className = 'kpi-valor'; val.textContent = valor;
   const sub = document.createElement('div'); sub.className = 'kpi-nota'; sub.textContent = nota;
   el.append(topo, val, sub);
+  for (const sec of secoes) {
+    const linhas = (sec.linhas || []).filter((l) => l.valor);
+    if (!linhas.length) continue;
+    const bloco = document.createElement('div');
+    bloco.className = 'kpi-quebra';
+    if (sec.titulo) {
+      const h = document.createElement('div'); h.className = 'kpi-quebra-titulo'; h.textContent = sec.titulo;
+      bloco.append(h);
+    }
+    const tab = document.createElement('table');
+    tab.className = 'kpi-quebra-tab';
+    const corpo = document.createElement('tbody');
+    for (const l of linhas) {
+      const tr = document.createElement('tr');
+      const tdR = document.createElement('td'); tdR.className = 'q-rot'; tdR.textContent = l.rotulo;
+      if (l.detalhe) {
+        const d = document.createElement('span'); d.className = 'q-det'; d.textContent = l.detalhe;
+        tdR.append(d);
+      }
+      const tdV = document.createElement('td'); tdV.className = 'q-val'; tdV.textContent = l.valorTexto ?? String(l.valor);
+      tr.append(tdR, tdV);
+      corpo.append(tr);
+    }
+    tab.append(corpo);
+    if (sec.totalRotulo) {
+      const pe = document.createElement('tfoot');
+      const tr = document.createElement('tr'); tr.className = 'q-total';
+      const tdR = document.createElement('td'); tdR.textContent = sec.totalRotulo;
+      const tdV = document.createElement('td'); tdV.className = 'q-val'; tdV.textContent = sec.totalTexto ?? String(sec.total ?? '');
+      tr.append(tdR, tdV); pe.append(tr); tab.append(pe);
+    }
+    bloco.append(tab);
+    el.append(bloco);
+  }
   return el;
 }
 

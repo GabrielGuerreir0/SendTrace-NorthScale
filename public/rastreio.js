@@ -103,6 +103,48 @@ const DIC = {
   kpiStatusNaoMapeadoNota: { en: 'the provider returned a status we don\'t recognize yet', pt: 'o provedor devolveu um status que ainda não reconhecemos' },
   kpiSemCodigo: { en: 'Missing tracking code', pt: 'Sem código de rastreio' },
   kpiSemCodigoNota: { en: 'in fulfillment (received, shipped, delivered or cancelled) but still no tracking_number', pt: 'na fulfillment (recebido, a caminho, entregue ou cancelado) mas ainda sem tracking_number' },
+  // 06/11 · cards com tabela ("de onde vem o número")
+  qTotalRotulo: { en: 'Total', pt: 'Total' },
+  qBase: { en: 'Calculation base', pt: 'Base do cálculo' },
+  qMotivo: { en: 'Reason', pt: 'Motivo' },
+  qPorProduto: { en: 'By product', pt: 'Por produto' },
+  qOutros: { en: 'Others', pt: 'Outros' },
+  qForn_redrock: { en: 'Red Rock', pt: 'Red Rock' },
+  qForn_fullstack: { en: 'FullStack', pt: 'FullStack' },
+  qForn_jetstream: { en: 'JetStream', pt: 'JetStream' },
+  qForn_nenhum: { en: 'No provider (not found)', pt: 'Sem fornecedor (não encontrados)' },
+  qEntregueFornecedor: { en: 'Confirmed by the provider (Red Rock)', pt: 'Confirmado pelo fornecedor (Red Rock)' },
+  qEntregue17t: { en: 'Confirmed by 17TRACK (FullStack/JetStream)', pt: 'Confirmado pelo 17TRACK (FullStack/JetStream)' },
+  qEntregueFornecedorCurto: { en: 'Delivered (provider)', pt: 'Entregues (fornecedor)' },
+  qEntregue17tCurto: { en: 'Delivered (17TRACK)', pt: 'Entregues (17TRACK)' },
+  qACaminhoAinda: { en: 'Still on its way', pt: 'Ainda a caminho' },
+  qCamTransito: { en: 'In transit (17TRACK)', pt: 'Em trânsito (17TRACK)' },
+  qCamProblema: { en: 'With an issue (17TRACK: exception, failed delivery, not found)', pt: 'Com ocorrência (17TRACK: exceção, falha na entrega, não encontrado)' },
+  qCamSem17t: { en: 'Not registered at 17TRACK', pt: 'Sem registro no 17TRACK' },
+  qPendAte7: { en: 'up to 7 days', pt: 'até 7 dias' },
+  qPendMais7: { en: 'over 7 days', pt: 'mais de 7 dias' },
+  qCancSemCodigo: { en: 'Cancelled before getting a tracking code', pt: 'Cancelados antes de ter código de rastreio' },
+  qCancComCodigo: { en: 'Cancelled after getting a tracking code', pt: 'Cancelados depois de ter código' },
+  qScPendJetstream: { en: 'Pending at JetStream', pt: 'Pendentes JetStream' },
+  qScPendFullstack: { en: 'Pending at FullStack', pt: 'Pendentes FullStack' },
+  qScPendRedrock: { en: 'Pending at Red Rock', pt: 'Pendentes Red Rock' },
+  qScDetMais7: { en: 'of which over 7 days:', pt: 'dos quais há mais de 7 dias:' },
+  qScOutros: { en: 'Shipped/delivered without a code', pt: 'Enviados/entregues sem código' },
+  qNeNaoAchado: { en: 'searched, not found at any fulfillment', pt: 'buscado e não achado em nenhuma fulfillment' },
+  qNeAmbiguo: { en: 'ambiguous ID (repeated prefix) — cannot be matched to an order', pt: 'ID ambíguo (prefixo repetido) — não dá para ligar ao pedido' },
+  qNeNunca: { en: 'not searched yet', pt: 'ainda não buscado' },
+  qNeOutro: { en: 'other reason', pt: 'outro motivo' },
+  qNeSemPlataforma: { en: 'No platform', pt: 'Sem plataforma' },
+  qProdSem: { en: 'No product', pt: 'Sem produto' },
+  qProdKits: { en: 'Kits and combos', pt: 'Kits e combos' },
+  qProdOutros: { en: 'Other products', pt: 'Outros produtos' },
+  kpiTaxaEntregaNota2: { en: 'delivered ÷ (on its way + delivered), counting deliveries confirmed by 17TRACK', pt: 'entregues ÷ (a caminho + entregues), contando as entregas confirmadas pelo 17TRACK' },
+  kpiACaminhoNota2: { en: 'shipped and not delivered yet (deliveries confirmed by 17TRACK are no longer counted here)', pt: 'enviados e ainda não entregues (entregas já confirmadas pelo 17TRACK não contam mais aqui)' },
+  kpiEntregueNota2: { en: 'orders that already reached the customer (provider + 17TRACK)', pt: 'pedidos que já chegaram no cliente (fornecedor + 17TRACK)' },
+  kpiCanceladoNota2: { en: 'orders that were cancelled', pt: 'pedidos que foram cancelados' },
+  kpiSemCodigoNota2: { en: 'in fulfillment but still without a tracking_number — most are pending shipment or cancelled, which is expected', pt: 'na fulfillment mas ainda sem tracking_number — a maioria é pendente de envio ou cancelada, o que é esperado' },
+  kpiNaoEncontradoNota2: { en: 'not found at Red Rock, FullStack or JetStream; searched hourly (orders up to 14 days) or daily (older)', pt: 'não achados na Red Rock, FullStack nem JetStream; buscados de hora em hora (pedidos de até 14 dias) ou 1 vez por dia (mais antigos)' },
+  kpiNaoEncontradoBuscado: { en: 'searched in the last 48 h:', pt: 'buscados nas últimas 48 h:' },
 
   // Saúde do rastreio (seção)
   titSaude: { en: 'Tracking Health', pt: 'Saúde do rastreio' },
@@ -359,25 +401,79 @@ function tomTaxa(taxa) {
 }
 
 function renderKpis(r) {
+  const q = r.quebras || null;   // API antiga/sem tabela de apoio: cai nos números de sempre, sem tabelas
+  const entregue = r.delivered_ajustado ?? r.delivered;
+  const aCaminho = r.shipped_ajustado ?? r.shipped;
+  const taxa = r.taxa_entrega_ajustada ?? r.taxa_entrega;
+  const nOu0 = (v) => (v == null ? 0 : v);
+
+  // Linha de seção a partir de { id, v, d, plataforma, nome } — `rotulos` diz como nomear cada id.
+  const sec = (lista, rotulos, { titulo = '', totalRotulo = t('qTotalRotulo'), total } = {}) => {
+    if (!lista) return [];
+    const linhas = lista.map((l) => {
+      const rot = rotulos[l.id] ? rotulos[l.id](l) : (l.id === 'outros' ? t('qOutros') : l.id);
+      return { rotulo: rot, valor: l.v, valorTexto: n(l.v), detalhe: l.d ? `${t('qScDetMais7')} ${n(l.d)}` : '' };
+    });
+    return [{ titulo, linhas, totalRotulo, total, totalTexto: n(total) }];
+  };
+  const forn = { forn_redrock: () => t('qForn_redrock'), forn_fullstack: () => t('qForn_fullstack'), forn_jetstream: () => t('qForn_jetstream'), forn_nenhum: () => t('qForn_nenhum') };
+  const plat = (l) => (l.plataforma ? rotularPlataforma(l.plataforma) : t('qNeSemPlataforma'));
+  const pend = (nome, ate7) => () => `${nome} · ${t(ate7 ? 'qPendAte7' : 'qPendMais7')}`;
+
   $('rst-kpis').replaceChildren(
-    kpiCard({ icone: '◍', tom: 'neutro', rotulo: t('kpiTotal'), valor: n(r.total), nota: t('kpiTotalNota') }),
-    kpiCard({ icone: '✓', tom: tomTaxa(r.taxa_entrega), rotulo: t('kpiTaxaEntrega'), valor: pct(r.taxa_entrega), nota: t('kpiTaxaEntregaNota') }),
+    kpiCard({ icone: '◍', tom: 'neutro', rotulo: t('kpiTotal'), valor: n(r.total), nota: t('kpiTotalNota'), secoes: q ? sec(q.total, forn, { total: r.total }) : [] }),
+    kpiCard({
+      icone: '✓', tom: tomTaxa(taxa), rotulo: t('kpiTaxaEntrega'), valor: pct(taxa), nota: t('kpiTaxaEntregaNota2'),
+      secoes: q ? sec(q.taxa, { entregue_fornecedor: () => t('qEntregueFornecedorCurto'), entregue_17t: () => t('qEntregue17tCurto'), a_caminho: () => t('qACaminhoAinda') }, { totalRotulo: t('qBase'), total: nOu0(r.delivered) + nOu0(r.shipped) }) : [],
+    }),
     kpiCard({ icone: '⚠', tom: r.exception > 0 ? 'ruim' : 'neutro', rotulo: t('kpiErroConsulta'), valor: n(r.exception), nota: t('kpiErroConsultaNota') }),
     // Pedido "não encontrado" nunca tem provedor gravado — dentro de uma
     // sub-aba Red Rock/FullStack esse card ficaria sempre zerado, então some
     // fora da sub-aba "Todos" (ver aplicarVisibilidadeProvedor).
-    ...(estado.provedor ? [] : [kpiCard({ icone: '○', tom: 'neutro', rotulo: t('kpiNaoEncontrado'), valor: n(r.nao_encontrado), nota: t('kpiNaoEncontradoNota') })]),
+    ...(estado.provedor ? [] : [kpiCard({
+      icone: '○', tom: 'neutro', rotulo: t('kpiNaoEncontrado'), valor: n(r.nao_encontrado),
+      nota: q ? `${t('kpiNaoEncontradoNota2')} · ${t('kpiNaoEncontradoBuscado')} ${n(q.nao_encontrado_buscado_48h)} / ${n(r.nao_encontrado)}` : t('kpiNaoEncontradoNota'),
+      secoes: q ? [
+        ...sec(q.nao_encontrado, {
+          ne_nao_achado: (l) => `${plat(l)} · ${t('qNeNaoAchado')}`, ne_ambiguo: (l) => `${plat(l)} · ${t('qNeAmbiguo')}`,
+          ne_nunca: (l) => `${plat(l)} · ${t('qNeNunca')}`, ne_outro: (l) => `${plat(l)} · ${t('qNeOutro')}`,
+        }, { titulo: t('qMotivo'), total: r.nao_encontrado }),
+        ...sec(q.nao_encontrado_produtos, {
+          produto: (l) => l.nome || '—', sem_produto: () => t('qProdSem'), kits: () => t('qProdKits'), outros_produtos: () => t('qProdOutros'),
+        }, { titulo: t('qPorProduto'), total: r.nao_encontrado }),
+      ] : [],
+    })]),
   );
   $('rst-kpis-status').replaceChildren(
     kpiCard({ icone: '◐', tom: 'neutro', rotulo: t('kpiConsultando'), valor: n(r.pendente_consulta), nota: t('kpiConsultandoNota') }),
-    kpiCard({ icone: '●', tom: 'neutro', rotulo: t('kpiRecebido'), valor: n(r.pending), nota: t('kpiRecebidoNota') }),
-    kpiCard({ icone: '➤', tom: 'neutro', rotulo: t('kpiACaminho'), valor: n(r.shipped), nota: t('kpiACaminhoNota') }),
-    kpiCard({ icone: '✓', tom: 'bom', rotulo: t('kpiEntregue'), valor: n(r.delivered), nota: t('kpiEntregueNota') }),
-    kpiCard({ icone: '✕', tom: 'neutro', rotulo: t('kpiCancelado'), valor: n(r.cancelled), nota: t('kpiCanceladoNota') }),
+    kpiCard({
+      icone: '●', tom: 'neutro', rotulo: t('kpiRecebido'), valor: n(r.pending), nota: t('kpiRecebidoNota'),
+      secoes: q ? sec(q.pendente, {
+        pend_jetstream_ate7: pend(t('qForn_jetstream'), true), pend_jetstream_mais7: pend(t('qForn_jetstream'), false),
+        pend_fullstack_ate7: pend(t('qForn_fullstack'), true), pend_fullstack_mais7: pend(t('qForn_fullstack'), false),
+        pend_redrock_ate7: pend(t('qForn_redrock'), true), pend_redrock_mais7: pend(t('qForn_redrock'), false),
+      }, { total: r.pending }) : [],
+    }),
+    kpiCard({
+      icone: '➤', tom: 'neutro', rotulo: t('kpiACaminho'), valor: n(aCaminho), nota: t('kpiACaminhoNota2'),
+      secoes: q ? sec(q.a_caminho, { cam_transito: () => t('qCamTransito'), cam_problema: () => t('qCamProblema'), cam_sem_17t: () => t('qCamSem17t') }, { total: aCaminho }) : [],
+    }),
+    kpiCard({
+      icone: '✓', tom: 'bom', rotulo: t('kpiEntregue'), valor: n(entregue), nota: t('kpiEntregueNota2'),
+      secoes: q ? sec(q.entregue, { entregue_fornecedor: () => t('qEntregueFornecedor'), entregue_17t: () => t('qEntregue17t') }, { total: entregue }) : [],
+    }),
+    kpiCard({
+      icone: '✕', tom: 'neutro', rotulo: t('kpiCancelado'), valor: n(r.cancelled), nota: t('kpiCanceladoNota2'),
+      secoes: q ? sec(q.cancelado, { canc_sem_codigo: () => t('qCancSemCodigo'), outros: () => t('qCancComCodigo') }, { total: r.cancelled }) : [],
+    }),
     kpiCard({ icone: '?', tom: 'neutro', rotulo: t('kpiStatusNaoMapeado'), valor: n(r.desconhecido), nota: t('kpiStatusNaoMapeadoNota') }),
     kpiCard({
       icone: '▭', tom: r.sem_codigo_rastreio > 0 ? 'medio' : 'neutro', rotulo: t('kpiSemCodigo'),
-      valor: n(r.sem_codigo_rastreio), nota: t('kpiSemCodigoNota'),
+      valor: n(r.sem_codigo_rastreio), nota: t('kpiSemCodigoNota2'),
+      secoes: q ? sec(q.sem_codigo, {
+        sc_pend_jetstream: () => t('qScPendJetstream'), sc_pend_fullstack: () => t('qScPendFullstack'), sc_pend_redrock: () => t('qScPendRedrock'),
+        sc_cancelado: () => t('qCancSemCodigo'), outros: () => t('qScOutros'),
+      }, { total: r.sem_codigo_rastreio }) : [],
     }),
   );
 }

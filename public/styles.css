@@ -440,6 +440,19 @@ body[data-recarregando="sim"] .conteudo { opacity: .68; }
 }
 .kpi-nota { font-size: 11px; color: var(--tinta-fraca); }
 
+/* Tabela "de onde vem o número" sob o KPI (Rastreio, 06/11): grupos que somam o total do card. */
+.kpi-quebra { margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--borda); }
+.kpi-quebra + .kpi-quebra { margin-top: 10px; }
+.kpi-quebra-titulo { font: 600 9.5px/1.2 var(--fonte-mono); color: var(--tinta-fraca); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 4px; }
+.kpi-quebra-tab { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.kpi-quebra-tab td { padding: 3px 0; vertical-align: top; color: var(--tinta-2); }
+.kpi-quebra-tab .q-rot { padding-right: 10px; line-height: 1.3; }
+.kpi-quebra-tab .q-det { display: block; font-size: 10px; color: var(--tinta-fraca); }
+.kpi-quebra-tab .q-val { text-align: right; white-space: nowrap; font: 600 11.5px/1.3 var(--fonte-mono); font-variant-numeric: tabular-nums; color: var(--tinta); }
+.kpi-quebra-tab .q-total td { border-top: 1px solid var(--borda); padding-top: 5px; font-weight: 700; color: var(--tinta); }
+/* No Rastreio os cards com tabela precisam de largura; cada um ocupa só a altura do próprio conteúdo. */
+#rst-kpis, #rst-kpis-status { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); align-items: start; }
+
 .kpi[data-tom="em_dia"]      .kpi-rotulo, .kpi[data-tom="em_dia"]      .kpi-ico { color: var(--st-em-dia); }
 .kpi[data-tom="atrasado"]    .kpi-rotulo, .kpi[data-tom="atrasado"]    .kpi-ico { color: var(--st-atrasado); }
 .kpi[data-tom="processando"] .kpi-rotulo, .kpi[data-tom="processando"] .kpi-ico { color: var(--st-processando); }

@@ -478,6 +478,11 @@ export const ResumoRastreio = {
       description: 'Já encontrado num provedor (pending/shipped/delivered/cancelled) mas ainda sem tracking_number.',
     },
     taxa_entrega: { type: ['number', 'null'], description: 'delivered / (shipped + delivered), em %.' },
+    // 06/11: entrega confirmada também pelo 17TRACK (a FullStack e a JetStream nunca mandam "entregue"; só a RedRock). Os campos acima seguem como o provedor informa.
+    delivered_ajustado: { type: 'integer', description: 'delivered + pedidos "shipped" que o 17TRACK já marca como Delivered.' },
+    shipped_ajustado: { type: 'integer', description: 'shipped menos os que o 17TRACK já marca como Delivered.' },
+    taxa_entrega_ajustada: { type: ['number', 'null'], description: 'delivered_ajustado / (delivered + shipped), em %.' },
+    quebras: { type: 'object', additionalProperties: true, description: 'Por card: lista de grupos { id, v, d?, plataforma?, nome? } que somam o valor do card.' },
   },
 };
 
