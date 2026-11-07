@@ -420,32 +420,39 @@ function renderKpis(r) {
   const plat = (l) => (l.plataforma ? rotularPlataforma(l.plataforma) : t('qNeSemPlataforma'));
   const pend = (nome, ate7) => () => `${nome} · ${t(ate7 ? 'qPendAte7' : 'qPendMais7')}`;
 
+  // 07/11 — arrumado em linhas fixas de 3 colunas (cards da mesma linha com a mesma altura):
+  //   1 Visão geral      Total · Taxa de entrega · Entregue
+  //   2 Em andamento     Pendente de envio · A caminho · Sem código de rastreio
+  //   3 Atenção          Não encontrado (2 colunas, motivo | produto) · Cancelado
+  //   4 Saúde da consulta (cards pequenos, quase sempre 0)
+  const cardEntregue = kpiCard({
+    icone: '✓', tom: 'bom', rotulo: t('kpiEntregue'), valor: n(entregue), nota: t('kpiEntregueNota2'),
+    secoes: q ? sec(q.entregue, { entregue_fornecedor: () => t('qEntregueFornecedor'), entregue_17t: () => t('qEntregue17t') }, { total: entregue }) : [],
+  });
+  const cardNaoEncontrado = estado.provedor ? null : kpiCard({
+    icone: '○', tom: 'neutro', rotulo: t('kpiNaoEncontrado'), valor: n(r.nao_encontrado),
+    nota: q ? `${t('kpiNaoEncontradoNota2')} · ${t('kpiNaoEncontradoBuscado')} ${n(q.nao_encontrado_buscado_48h)} / ${n(r.nao_encontrado)}` : t('kpiNaoEncontradoNota'),
+    secoes: q ? [
+      ...sec(q.nao_encontrado, {
+        ne_nao_achado: (l) => `${plat(l)} · ${t('qNeNaoAchado')}`, ne_ambiguo: (l) => `${plat(l)} · ${t('qNeAmbiguo')}`,
+        ne_nunca: (l) => `${plat(l)} · ${t('qNeNunca')}`, ne_outro: (l) => `${plat(l)} · ${t('qNeOutro')}`,
+      }, { titulo: t('qMotivo'), total: r.nao_encontrado }),
+      ...sec(q.nao_encontrado_produtos, {
+        produto: (l) => l.nome || '—', sem_produto: () => t('qProdSem'), kits: () => t('qProdKits'), outros_produtos: () => t('qProdOutros'),
+      }, { titulo: t('qPorProduto'), total: r.nao_encontrado }),
+    ] : [],
+  });
+  // Pedido "não encontrado" nunca tem provedor gravado — dentro de uma sub-aba Red Rock/FullStack esse card
+  // ficaria sempre zerado, então some fora da sub-aba "Todos".
+  if (cardNaoEncontrado) cardNaoEncontrado.classList.add('kpi--largo');
+
   $('rst-kpis').replaceChildren(
     kpiCard({ icone: '◍', tom: 'neutro', rotulo: t('kpiTotal'), valor: n(r.total), nota: t('kpiTotalNota'), secoes: q ? sec(q.total, forn, { total: r.total }) : [] }),
     kpiCard({
       icone: '✓', tom: tomTaxa(taxa), rotulo: t('kpiTaxaEntrega'), valor: pct(taxa), nota: t('kpiTaxaEntregaNota2'),
       secoes: q ? sec(q.taxa, { entregue_fornecedor: () => t('qEntregueFornecedorCurto'), entregue_17t: () => t('qEntregue17tCurto'), a_caminho: () => t('qACaminhoAinda') }, { totalRotulo: t('qBase'), total: nOu0(r.delivered) + nOu0(r.shipped) }) : [],
     }),
-    kpiCard({ icone: '⚠', tom: r.exception > 0 ? 'ruim' : 'neutro', rotulo: t('kpiErroConsulta'), valor: n(r.exception), nota: t('kpiErroConsultaNota') }),
-    // Pedido "não encontrado" nunca tem provedor gravado — dentro de uma
-    // sub-aba Red Rock/FullStack esse card ficaria sempre zerado, então some
-    // fora da sub-aba "Todos" (ver aplicarVisibilidadeProvedor).
-    ...(estado.provedor ? [] : [kpiCard({
-      icone: '○', tom: 'neutro', rotulo: t('kpiNaoEncontrado'), valor: n(r.nao_encontrado),
-      nota: q ? `${t('kpiNaoEncontradoNota2')} · ${t('kpiNaoEncontradoBuscado')} ${n(q.nao_encontrado_buscado_48h)} / ${n(r.nao_encontrado)}` : t('kpiNaoEncontradoNota'),
-      secoes: q ? [
-        ...sec(q.nao_encontrado, {
-          ne_nao_achado: (l) => `${plat(l)} · ${t('qNeNaoAchado')}`, ne_ambiguo: (l) => `${plat(l)} · ${t('qNeAmbiguo')}`,
-          ne_nunca: (l) => `${plat(l)} · ${t('qNeNunca')}`, ne_outro: (l) => `${plat(l)} · ${t('qNeOutro')}`,
-        }, { titulo: t('qMotivo'), total: r.nao_encontrado }),
-        ...sec(q.nao_encontrado_produtos, {
-          produto: (l) => l.nome || '—', sem_produto: () => t('qProdSem'), kits: () => t('qProdKits'), outros_produtos: () => t('qProdOutros'),
-        }, { titulo: t('qPorProduto'), total: r.nao_encontrado }),
-      ] : [],
-    })]),
-  );
-  $('rst-kpis-status').replaceChildren(
-    kpiCard({ icone: '◐', tom: 'neutro', rotulo: t('kpiConsultando'), valor: n(r.pendente_consulta), nota: t('kpiConsultandoNota') }),
+    cardEntregue,
     kpiCard({
       icone: '●', tom: 'neutro', rotulo: t('kpiRecebido'), valor: n(r.pending), nota: t('kpiRecebidoNota'),
       secoes: q ? sec(q.pendente, {
@@ -459,15 +466,6 @@ function renderKpis(r) {
       secoes: q ? sec(q.a_caminho, { cam_transito: () => t('qCamTransito'), cam_problema: () => t('qCamProblema'), cam_sem_17t: () => t('qCamSem17t') }, { total: aCaminho }) : [],
     }),
     kpiCard({
-      icone: '✓', tom: 'bom', rotulo: t('kpiEntregue'), valor: n(entregue), nota: t('kpiEntregueNota2'),
-      secoes: q ? sec(q.entregue, { entregue_fornecedor: () => t('qEntregueFornecedor'), entregue_17t: () => t('qEntregue17t') }, { total: entregue }) : [],
-    }),
-    kpiCard({
-      icone: '✕', tom: 'neutro', rotulo: t('kpiCancelado'), valor: n(r.cancelled), nota: t('kpiCanceladoNota2'),
-      secoes: q ? sec(q.cancelado, { canc_sem_codigo: () => t('qCancSemCodigo'), outros: () => t('qCancComCodigo') }, { total: r.cancelled }) : [],
-    }),
-    kpiCard({ icone: '?', tom: 'neutro', rotulo: t('kpiStatusNaoMapeado'), valor: n(r.desconhecido), nota: t('kpiStatusNaoMapeadoNota') }),
-    kpiCard({
       icone: '▭', tom: r.sem_codigo_rastreio > 0 ? 'medio' : 'neutro', rotulo: t('kpiSemCodigo'),
       valor: n(r.sem_codigo_rastreio), nota: t('kpiSemCodigoNota2'),
       secoes: q ? sec(q.sem_codigo, {
@@ -475,6 +473,16 @@ function renderKpis(r) {
         sc_cancelado: () => t('qCancSemCodigo'), outros: () => t('qScOutros'),
       }, { total: r.sem_codigo_rastreio }) : [],
     }),
+    ...(cardNaoEncontrado ? [cardNaoEncontrado] : []),
+    kpiCard({
+      icone: '✕', tom: 'neutro', rotulo: t('kpiCancelado'), valor: n(r.cancelled), nota: t('kpiCanceladoNota2'),
+      secoes: q ? sec(q.cancelado, { canc_sem_codigo: () => t('qCancSemCodigo'), outros: () => t('qCancComCodigo') }, { total: r.cancelled }) : [],
+    }),
+  );
+  $('rst-kpis-status').replaceChildren(
+    kpiCard({ icone: '⚠', tom: r.exception > 0 ? 'ruim' : 'neutro', rotulo: t('kpiErroConsulta'), valor: n(r.exception), nota: t('kpiErroConsultaNota') }),
+    kpiCard({ icone: '◐', tom: 'neutro', rotulo: t('kpiConsultando'), valor: n(r.pendente_consulta), nota: t('kpiConsultandoNota') }),
+    kpiCard({ icone: '?', tom: 'neutro', rotulo: t('kpiStatusNaoMapeado'), valor: n(r.desconhecido), nota: t('kpiStatusNaoMapeadoNota') }),
   );
 }
 
