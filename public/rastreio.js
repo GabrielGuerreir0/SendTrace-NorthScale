@@ -135,8 +135,10 @@ const DIC = {
   qNeNunca: { en: 'not searched yet', pt: 'ainda não buscado' },
   qNeOutro: { en: 'other reason', pt: 'outro motivo' },
   qNeReembolsado: { en: 'refunded / chargeback', pt: 'reembolsado / chargeback' },
-  qNeForaDaConta: { en: 'Out of the count (refunded)', pt: 'Fora da conta (reembolsados)' },
-  qNeForaTotal: { en: 'Total refunded', pt: 'Total reembolsado' },
+  qNeForaDaConta: { en: 'Out of the count (not a problem right now)', pt: 'Fora da conta (não é problema agora)' },
+  qNeForaTotal: { en: 'Total out of the count', pt: 'Total fora da conta' },
+  qNeEnvioConjunto: { en: 'customer has another order shipped within 3 days (likely a joint shipment)', pt: 'cliente com outro pedido enviado em até 3 dias (provável envio conjunto)' },
+  qNeRecente: { en: 'recent order (under 2 business days)', pt: 'pedido recente (menos de 2 dias úteis)' },
   qNeSemPlataforma: { en: 'No platform', pt: 'Sem plataforma' },
   qProdSem: { en: 'No product', pt: 'Sem produto' },
   qProdKits: { en: 'Kits and combos', pt: 'Kits e combos' },
@@ -434,7 +436,7 @@ function renderKpis(r) {
   });
   // 07/11: o número do card é só o que NÃO tem reembolso/chargeback; os reembolsados aparecem à parte ("fora da conta").
   const neLivre = q && q.nao_encontrado_sem_reembolso != null ? q.nao_encontrado_sem_reembolso : r.nao_encontrado;
-  const neReemb = r.nao_encontrado - neLivre;
+  const neFora = r.nao_encontrado - neLivre;
   const cardNaoEncontrado = estado.provedor ? null : kpiCard({
     icone: '○', tom: 'neutro', rotulo: t('kpiNaoEncontrado'), valor: n(neLivre),
     nota: q ? `${t('kpiNaoEncontradoNota2')} · ${t('kpiNaoEncontradoBuscado')} ${n(q.nao_encontrado_buscado_48h)} / ${n(r.nao_encontrado)}` : t('kpiNaoEncontradoNota'),
@@ -446,8 +448,11 @@ function renderKpis(r) {
       ...sec(q.nao_encontrado_produtos, {
         produto: (l) => l.nome || '—', sem_produto: () => t('qProdSem'), kits: () => t('qProdKits'), outros_produtos: () => t('qProdOutros'),
       }, { titulo: t('qPorProduto'), total: neLivre }),
-      ...(neReemb > 0 ? sec(q.nao_encontrado_reembolsado, { ne_reembolsado: (l) => `${plat(l)} · ${t('qNeReembolsado')}` },
-        { titulo: t('qNeForaDaConta'), totalRotulo: t('qNeForaTotal'), total: neReemb }) : []),
+      ...(neFora > 0 ? sec(q.nao_encontrado_fora, {
+        ne_fora_reemb: (l) => `${plat(l)} · ${t('qNeReembolsado')}`,
+        ne_fora_envio_conjunto: (l) => `${plat(l)} · ${t('qNeEnvioConjunto')}`,
+        ne_fora_recente: (l) => `${plat(l)} · ${t('qNeRecente')}`,
+      }, { titulo: t('qNeForaDaConta'), totalRotulo: t('qNeForaTotal'), total: neFora }) : []),
     ] : [],
   });
   // Pedido "não encontrado" nunca tem provedor gravado — dentro de uma sub-aba Red Rock/FullStack esse card

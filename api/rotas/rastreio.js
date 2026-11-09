@@ -522,6 +522,16 @@ export default async function rotasRastreio(app) {
        LEFT JOIN rastreio_busca_tentativas bt ON bt.transacao_id = r.transacao_id
        WHERE ${DO_PRODUTO(1, 'd.')} AND ${DA_PLATAFORMA(2, 'd.')} ${filtroPeriodo}`;
     const idade7 = `coalesce(r.order_created_at, r.criado_em)`;
+    // 09/11: o "não encontrado" separa o que está FORA da conta: reembolso/chargeback; cliente com outro pedido já enviado em ±3 dias (provável envio
+    // conjunto do upsell/downsell: a regra do funil diz que o up/down vai na mesma fulfillment do front); e pedido novo (menos de 2 dias úteis).
+    // Só o que sobra ('risco') entra no número do card. As linhas "fora" continuam visíveis numa tabela própria.
+    const CLASSE_NE = `CASE
+         WHEN d.reembolsado_em IS NOT NULL OR d.chargeback_em IS NOT NULL THEN 'reemb'
+         WHEN d.email IS NOT NULL AND EXISTS (SELECT 1 FROM disparos_pos_venda d2 JOIN rastreio_pedidos r2 ON r2.transacao_id = d2.transacao_id
+                 WHERE lower(d2.email) = lower(d.email) AND d2.transacao_id <> d.transacao_id AND r2.status_interno IN ('shipped', 'delivered')
+                   AND d2.criado_em BETWEEN d.criado_em - interval '3 days' AND d.criado_em + interval '3 days') THEN 'envio_conjunto'
+         WHEN d.criado_em IS NOT NULL AND sppl_somar_dias_uteis(d.criado_em, 2) > now() THEN 'recente'
+         ELSE 'risco' END`;
     const [rA, rB, rC] = await Promise.all([
       query(`SELECT
          count(*) FILTER (WHERE r.provedor = 'redrock')::int   AS f_redrock,
@@ -548,7 +558,7 @@ export default async function rotasRastreio(app) {
          count(*) FILTER (WHERE r.status_interno = 'nao_encontrado' AND bt.ultima_tentativa_em >= now() - interval '2 days')::int AS ne_buscado_48h
        ${origem}`, parametros),
       query(`SELECT coalesce(nullif(btrim(d.plataforma), ''), '') AS plataforma,
-               (d.reembolsado_em IS NOT NULL OR d.chargeback_em IS NOT NULL) AS reemb,
+               ${CLASSE_NE} AS classe,
                CASE WHEN bt.ultimo_resultado = 'ambiguo' THEN 'ambiguo'
                     WHEN bt.ultimo_resultado LIKE 'nao_achado%' THEN 'nao_achado'
                     WHEN bt.transacao_id IS NULL THEN 'nunca' ELSE 'outro' END AS grupo,
@@ -560,7 +570,7 @@ export default async function rotasRastreio(app) {
                           WHERE p.slug <> '*' AND regexp_replace(lower(p.nome), '[^a-z0-9]', '', 'g') IN (x.chave, x.chave || 'pro')
                           ORDER BY length(p.nome) LIMIT 1), x.rotulo) AS nome
              FROM (SELECT ${CHAVE_PRODUTO('d.')} AS chave, mode() WITHIN GROUP (ORDER BY ${BASE_PRODUTO('d.')}) AS rotulo, count(*)::int AS n
-                     ${origem} AND r.status_interno = 'nao_encontrado' AND d.reembolsado_em IS NULL AND d.chargeback_em IS NULL GROUP BY 1) x
+                     ${origem} AND r.status_interno = 'nao_encontrado' AND ${CLASSE_NE} = 'risco' GROUP BY 1) x
              ORDER BY x.n DESC`, parametros),
     ]);
     const a = rA.rows[0];
@@ -573,8 +583,8 @@ export default async function rotasRastreio(app) {
     const entregueAjust = t.delivered + a.entregue_17t;
     const caminhoAjust = t.shipped - a.entregue_17t;
     const scPend = soma(a.sc_pend_js, a.sc_pend_fs, a.sc_pend_rr);
-    const neReemb = soma(...rB.rows.filter((r) => r.reemb).map((r) => r.n));
-    const neLivre = t.nao_encontrado - neReemb;
+    const neFora = soma(...rB.rows.filter((r) => r.classe !== 'risco').map((r) => r.n));
+    const neLivre = t.nao_encontrado - neFora;   // = só o que fica "a verificar" (classe risco)
     const topProdutos = rC.rows.slice(0, 6).map((r) => ({ id: r.chave === null ? 'sem_produto' : r.chave === 'combos' ? 'kits' : r.chave === 'outros' ? 'outros_produtos' : 'produto', nome: r.nome ?? null, v: r.n }));
     const restoProdutos = rC.rows.slice(6).reduce((s, r) => s + r.n, 0);
     const quebras = {
@@ -593,8 +603,8 @@ export default async function rotasRastreio(app) {
         { id: 'sc_pend_redrock', v: a.sc_pend_rr, d: a.sc_pend_rr_mais7 }, { id: 'sc_cancelado', v: a.canc_sem_codigo },
       ], t.sem_codigo_rastreio),
       // 07/11: reembolsado/chargeback saem da conta do "não encontrado" (a Késsia só considera pedidos sem reembolso) e viram uma tabela à parte.
-      nao_encontrado: comResto(rB.rows.filter((r) => !r.reemb).map((r) => ({ id: `ne_${r.grupo}`, plataforma: r.plataforma, v: r.n })), neLivre),
-      nao_encontrado_reembolsado: rB.rows.filter((r) => r.reemb).map((r) => ({ id: 'ne_reembolsado', plataforma: r.plataforma, v: r.n })),
+      nao_encontrado: comResto(rB.rows.filter((r) => r.classe === 'risco').map((r) => ({ id: `ne_${r.grupo}`, plataforma: r.plataforma, v: r.n })), neLivre),
+      nao_encontrado_fora: rB.rows.filter((r) => r.classe !== 'risco').map((r) => ({ id: `ne_fora_${r.classe}`, plataforma: r.plataforma, v: r.n })),
       nao_encontrado_sem_reembolso: neLivre,
       nao_encontrado_buscado_48h: a.ne_buscado_48h,
       nao_encontrado_produtos: comResto([...topProdutos, ...(restoProdutos > 0 ? [{ id: 'outros_produtos', nome: null, v: restoProdutos }] : [])], neLivre),
