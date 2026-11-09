@@ -1853,6 +1853,47 @@ export default async function rotasEmailIACentral(app) {
      sistema hoje (nem transportadora integrada) — é digitada à mão pelo
      atendente (ver PUT .../data-entrega logo abaixo). */
 
+  /* 09/11/2026 — compras ANTERIORES à base do SendTrace. `disparos_pos_venda` só começa em 31/07 (Digistore) e 03/08 (JVZoo/BuyGoods); o dash
+     (`dash_pedidos`) tem as vendas desde fevereiro/maio. Quando o e-mail não tem nada no painel, o card e o "Vincular compra" caem para o dash:
+     só leitura, sem rastreio (esses pedidos não passaram pelo coletor). O front é o pedido; upsell/downsell entram como itens do front pai. */
+  const PLATAFORMA_DASH = { buygoods: 'BuyGoods', digistore24: 'DigiStore24', jvzoo: 'JVZoo', clickbank: 'ClickBank', cartpanda: 'CartPanda', vupim: 'Vupim' };
+  const STATUS_DASH = { APPROVED: 'Aprovado', REFUNDED: 'Reembolsado', CHARGEBACK: 'Chargeback', CANCELED: 'Cancelado', PENDING: 'Pendente' };
+  async function comprasDoDash(email) {
+    if (!email) return [];
+    const { rows } = await query(
+      `SELECT plataforma, external_id, parent_external_id, status, product_type, product_name, bottles, gross, currency, ordered_at, refunded_at, chargeback_at
+         FROM dash_pedidos WHERE lower(btrim(customer_email)) = lower(btrim($1)) AND product_type IN ('FRONTEND', 'UPSELL', 'DOWNSELL')
+        ORDER BY ordered_at ASC`, [email]).catch(() => ({ rows: [] }));
+    const chave = (r, id) => `${r.plataforma}:${id}`;
+    const fronts = new Map();
+    for (const r of rows) if (r.product_type === 'FRONTEND') fronts.set(chave(r, r.external_id), { f: r, filhos: [] });
+    const avulsos = [];
+    for (const r of rows) {
+      if (r.product_type === 'FRONTEND') continue;
+      const pai = r.parent_external_id ? fronts.get(chave(r, r.parent_external_id)) : null;
+      if (pai) pai.filhos.push(r); else avulsos.push({ f: r, filhos: [] });
+    }
+    const item = (r, tipo) => ({
+      tipo, transacao_id: r.external_id, id_exibicao: r.external_id, produto: r.product_name,
+      quantidade: r.bottles != null ? Number(r.bottles) : null, valor: r.gross != null ? Number(r.gross) : null, moeda: r.currency || 'USD',
+      reembolsado_em: r.refunded_at, chargeback_em: r.chargeback_at,
+    });
+    return [...fronts.values(), ...avulsos]
+      .sort((a, b) => new Date(b.f.ordered_at) - new Date(a.f.ordered_at))
+      .map(({ f, filhos }) => {
+        const itens = [item(f, f.product_type === 'FRONTEND' ? 'front' : f.product_type.toLowerCase()),
+          ...filhos.map((r) => item(r, r.product_type.toLowerCase()))];
+        const ativos = itens.filter((i) => i.valor != null);
+        return {
+          fonte: 'dash', disparo_id: null, transacao_id: f.external_id, produto: f.product_name,
+          plataforma: PLATAFORMA_DASH[String(f.plataforma).toLowerCase()] ?? f.plataforma,
+          status_pedido: STATUS_DASH[f.status] ?? f.status, pedido_em: f.ordered_at, itens,
+          valor: ativos.length ? ativos.reduce((s, i) => s + i.valor, 0) : null, moeda: f.currency || 'USD',
+          rastreio_status: null, carrier_code: null, tracking_number: null, tracking_url: null,
+        };
+      });
+  }
+
   app.get('/api/suporte-escalado/:id/contexto', {
     onRequest: [app.exigirSessao],
     schema: {
@@ -1928,6 +1969,8 @@ export default async function rotasEmailIACentral(app) {
       ),
     ]);
 
+    // 09/11: sem nada no painel (compra anterior à base), mostra o que o dash tem desse e-mail
+    const doDash = pedidosRes.rows.length ? [] : await comprasDoDash(emailCompra);
     return {
       cliente: { nome: caso.nome, email: caso.remetente_email },
       data_entrega: caso.data_entrega,
@@ -1935,7 +1978,8 @@ export default async function rotasEmailIACentral(app) {
       prioridade_nivel: caso.prioridade_nivel,
       primeiro_email_em: ticketRes.rows[0]?.primeiro_email_em ?? null,
       pedido_principal: principalRes.rows[0] ?? null,
-      pedidos: pedidosRes.rows,
+      pedidos: doDash.length ? doDash : pedidosRes.rows,
+      pedidos_fonte: doDash.length ? 'dash' : 'painel',
       vinculo: caso.email_compra ? { email_compra: caso.email_compra, por: caso.compra_vinculada_por, em: caso.compra_vinculada_em, busca: caso.compra_vinculada_busca } : null,
     };
   });
@@ -1969,14 +2013,24 @@ export default async function rotasEmailIACentral(app) {
                   WHERE $1 ~* '^(WP|PT|WR)-' AND (upper(e.payload->>'paykey') = upper($1) OR upper(e.payload->>'prekey') = upper($1))
            UNION SELECT lower(d.email) FROM rastreio_pedidos r JOIN disparos_pos_venda d ON d.transacao_id = r.transacao_id
                   WHERE upper(r.tracking_number) = upper($1) OR upper(coalesce(r.order_number, '')) = upper($1)
+           -- 09/11: pedidos anteriores à base do SendTrace, só no dash (nº do pedido da BuyGoods/Digistore/JVZoo ou sessão)
+           UNION SELECT lower(btrim(p.customer_email)) FROM dash_pedidos p WHERE upper(p.external_id) = upper($1) OR upper(p.parent_external_id) = upper($1) OR upper(p.session_id::text) = upper($1)
          ) x WHERE em IS NOT NULL AND em <> ''`, [b]).catch(() => ({ rows: [] }));
       if (rows.length === 0) throw new ErroHttp(422, 'Não achei nenhuma compra com esse número. Confira o nº do pedido, ou digite o e-mail da compra.');
       if (rows.length > 1) throw new ErroHttp(409, 'Esse número aparece em mais de um e-mail. Digite o e-mail da compra.');
       email = rows[0].em;
     }
-    const { rows: pedidos } = await query(LISTA_COMPRAS, [email]);
-    if (pedidos.length === 0) throw new ErroHttp(422, 'Não achei compras para o e-mail ' + email + '.');
-    return { tipo, email, pedidos };
+    let { rows: pedidos } = await query(LISTA_COMPRAS, [email]);
+    let fonte = 'painel', valorDash = null;
+    if (pedidos.length === 0) {   // 09/11: compra anterior à base do SendTrace — procura no dash
+      const doDash = await comprasDoDash(email);
+      if (doDash.length) {
+        fonte = 'dash'; valorDash = doDash[0].valor;   // o pedido mais recente, igual à regra do valor do ticket
+        pedidos = doDash.map((p) => ({ transacao_id: p.transacao_id, produto: p.produto, plataforma: p.plataforma, pedido_em: p.pedido_em, status_pedido: p.status_pedido, fonte: 'dash' }));
+      }
+    }
+    if (pedidos.length === 0) throw new ErroHttp(422, 'Não achei compras para o e-mail ' + email + ' (nem no painel, nem no dash).');
+    return { tipo, email, pedidos, fonte, valorDash };
   }
 
   async function casoParaVinculo(req) {
@@ -1994,7 +2048,8 @@ export default async function rotasEmailIACentral(app) {
   }, async (req) => {
     const caso = await casoParaVinculo(req);
     const r = await resolverCompra(req.query.busca);
-    return { ...r, mesmo_do_remetente: r.email === String(caso.remetente_email).toLowerCase(), ja_vinculado: r.email === (caso.email_compra || '').toLowerCase() };
+    const { valorDash, ...previa } = r;
+    return { ...previa, mesmo_do_remetente: r.email === String(caso.remetente_email).toLowerCase(), ja_vinculado: r.email === (caso.email_compra || '').toLowerCase() };
   });
 
   app.put('/api/suporte-escalado/:id/vinculo-compra', {
@@ -2007,9 +2062,9 @@ export default async function rotasEmailIACentral(app) {
     await query(
       `UPDATE email_ia.suporte_escalado
           SET email_compra = $2, compra_vinculada_por = $3, compra_vinculada_em = now(), compra_vinculada_busca = $4,
-              valor_pedido_usd = email_ia.valor_pedido_do_cliente($2, now()),
+              valor_pedido_usd = coalesce(email_ia.valor_pedido_do_cliente($2, now()), $5::numeric),   -- 09/11: sem pedido no painel, vale o do dash
               primeiro_toque_humano_em = coalesce(primeiro_toque_humano_em, now()), atualizado_em = now()
-        WHERE id = $1`, [caso.id, r.email, quem, String(req.body.busca).trim()]);
+        WHERE id = $1`, [caso.id, r.email, quem, String(req.body.busca).trim(), r.valorDash]);
     await query(
       `INSERT INTO email_ia.suporte_escalado_notas (suporte_escalado_id, autor, nota) VALUES ($1, $2, $3)`,
       [caso.id, req.usuario.nome || req.usuario.email || null,

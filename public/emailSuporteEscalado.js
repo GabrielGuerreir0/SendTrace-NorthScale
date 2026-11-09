@@ -1090,7 +1090,7 @@ async function carregarContexto(item, container) {
 
 /** Número do pedido que o time reconhece na JVZoo (30/10): o Transaction ID (WP-… cartão, PT-… PayPal), que vem do aviso da JVZoo.
  *  Sem ele (pedido antigo, sem aviso), cai no PreKey sem prefixo que o SendTrace usa como chave, marcado como "(PreKey)". */
-const idPedido = (it) => (it?.paykey ? it.paykey : it?.transacao_id ? `${it.transacao_id} (PreKey)` : '—');
+const idPedido = (it) => (it?.id_exibicao ? it.id_exibicao : it?.paykey ? it.paykey : it?.transacao_id ? `${it.transacao_id} (PreKey)` : '—');   // id_exibicao (09/11): pedido vindo do dash, número da própria plataforma
 const ROTULO_TIPO_ITEM = { front: 'FRONT', upsell: 'UPSELL', downsell: 'DOWNSELL' };
 
 /** Situação do item quanto a reembolso e chargeback, com a data (30/10). Só afirma o que o SendTrace sabe.
@@ -1162,6 +1162,13 @@ function renderContexto(item, container, ctx) {
 
   const pedidos = ctx.pedidos ?? [];
   const principal = ctx.pedido_principal ?? pedidos[0] ?? null;
+  // 09/11: sem pedido no painel (compra anterior à base do SendTrace), o card mostra o que o dash tem desse e-mail — só leitura, sem rastreio
+  if (ctx.pedidos_fonte === 'dash') {
+    const aviso = document.createElement('div');
+    aviso.className = 'esc-vinculo-msg';
+    aviso.textContent = 'Compra anterior à base do SendTrace: dados vindos do dash (pedido, valor, reembolso). Não há rastreio nem entrega registrados aqui.';
+    linha('Fonte dos pedidos', aviso);
+  }
   // 30/10: o número do pedido passa a ser o Transaction ID da JVZoo (WP-…); sem ele, o PreKey marcado "(PreKey)".
   linha('Número do(s) pedido(s) — Transaction ID', pedidos.length ? pedidos.map((p) => idPedido(p.itens?.find((i) => i.tipo === 'front') ?? p)).join(', ') : '—');
   linha('Data de compra', principal?.pedido_em ? dataHora(principal.pedido_em) : '—');
@@ -1251,7 +1258,7 @@ function criarCampoVinculo(item, ctx, container) {
     buscar.disabled = false;
     if (!ok) { msg.textContent = dados?.erro ?? 'Não consegui buscar.'; return; }
     if (dados.mesmo_do_remetente) { msg.textContent = 'Esse é o e-mail do próprio ticket — não precisa vincular.'; return; }
-    msg.textContent = `${dados.tipo === 'pedido' ? 'Pedido encontrado no e-mail ' : 'Compras de '}${dados.email}${dados.ja_vinculado ? ' (já vinculado)' : ''}:`;
+    msg.textContent = `${dados.tipo === 'pedido' ? 'Pedido encontrado no e-mail ' : 'Compras de '}${dados.email}${dados.ja_vinculado ? ' (já vinculado)' : ''}${dados.fonte === 'dash' ? ' — compra anterior à base do SendTrace, vinda do dash (sem rastreio)' : ''}:`;
     const ul = document.createElement('ul');
     for (const p of dados.pedidos.slice(0, 6)) {
       const li = document.createElement('li');
