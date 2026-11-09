@@ -604,7 +604,14 @@ export default async function rotasRastreio(app) {
       ], t.sem_codigo_rastreio),
       // 07/11: reembolsado/chargeback saem da conta do "não encontrado" (a Késsia só considera pedidos sem reembolso) e viram uma tabela à parte.
       nao_encontrado: comResto(rB.rows.filter((r) => r.classe === 'risco').map((r) => ({ id: `ne_${r.grupo}`, plataforma: r.plataforma, v: r.n })), neLivre),
-      nao_encontrado_fora: rB.rows.filter((r) => r.classe !== 'risco').map((r) => ({ id: `ne_fora_${r.classe}`, plataforma: r.plataforma, v: r.n })),
+      nao_encontrado_fora: (() => {   // uma linha por plataforma + motivo (a consulta separa também pelo grupo de busca, que aqui não interessa)
+        const m = new Map();
+        for (const r of rB.rows.filter((x) => x.classe !== 'risco')) {
+          const k = `${r.plataforma}|${r.classe}`;
+          m.set(k, { id: `ne_fora_${r.classe}`, plataforma: r.plataforma, v: (m.get(k)?.v || 0) + r.n });
+        }
+        return [...m.values()].sort((a, b) => b.v - a.v);
+      })(),
       nao_encontrado_sem_reembolso: neLivre,
       nao_encontrado_buscado_48h: a.ne_buscado_48h,
       nao_encontrado_produtos: comResto([...topProdutos, ...(restoProdutos > 0 ? [{ id: 'outros_produtos', nome: null, v: restoProdutos }] : [])], neLivre),
