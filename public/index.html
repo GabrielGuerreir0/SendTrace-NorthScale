@@ -2208,6 +2208,37 @@
   <section class="kpis kpis--suporte" id="rst-kpis"></section>
   <section class="kpis kpis--suporte" id="rst-kpis-status"></section>
 
+  <!-- ═══════════════════  Pedidos por produto (todos os status lado a lado)  ═══════════════════ -->
+  <section class="cartao" id="rst-produtos-card">
+    <header class="cartao-cabeca">
+      <div>
+        <h2 data-t="titPorProduto">Orders by product</h2>
+        <p class="cartao-sub" data-t="subPorProduto">Every status per product, for the current filters. Click a number to filter the orders table below.</p>
+      </div>
+      <div class="tk-filtros">
+        <button class="btn btn-fantasma" id="rst-prod-exportar" type="button" data-t="exportarResumo">Export summary (CSV)</button>
+      </div>
+    </header>
+    <div class="tabela-envolve">
+      <table class="tabela tabela--num" id="rst-prod-tabela">
+        <thead>
+          <tr>
+            <th scope="col" data-t="colProduto">Product</th>
+            <th scope="col" data-t="colProdTotal">Orders</th>
+            <th scope="col" data-t="colProdPend">Pending shipment</th>
+            <th scope="col" data-t="colProdPend7">Pending &gt; 7 days</th>
+            <th scope="col" data-t="colProdCaminho">On its way</th>
+            <th scope="col" data-t="colProdEntregue">Delivered</th>
+            <th scope="col" data-t="colProdSemCodigo">No tracking code</th>
+            <th scope="col" data-t="colProdCancelado">Cancelled</th>
+            <th scope="col" data-t="colProdNaoEnc">Not found</th>
+          </tr>
+        </thead>
+        <tbody id="rst-prod-corpo"><tr><td colspan="9" class="vazio-suave" data-t="carregando">loading…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
   <!-- ═══════════════════  Saúde do rastreio (cruzamentos)  ═══════════════════ -->
   <section class="cartao">
     <header class="cartao-cabeca">
@@ -2419,6 +2450,11 @@
           <span class="sr" data-t="colAte">To</span>
           <input type="date" id="rst-data-ate" data-t-title="dataAteTitle" title="Orders purchased up to this date (inclusive)">
         </label>
+        <div class="rst-exportar" data-t-title="exportarTitulo" title="Exports every order that matches the filters above (not just this page)">
+          <button class="btn btn-fantasma" id="rst-exp-csv" type="button" data-t="exportarCsv">Export CSV</button>
+          <button class="btn btn-fantasma" id="rst-exp-xlsx" type="button" data-t="exportarXlsx">Export Excel</button>
+          <label class="rst-exp-cliente"><input type="checkbox" id="rst-exp-cliente"> <span data-t="exportarCliente">Include customer name and email</span></label>
+        </div>
       </div>
     </header>
     <div class="tabela-envolve">

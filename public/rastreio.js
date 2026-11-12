@@ -24,7 +24,7 @@
  * tabela, então trocar o idioma aqui nunca vaza pra outro lugar do painel.
  */
 import {
-  $, api, debounce, kpiCard, montarPaginacao, renderTabela, chipRastreio,
+  $, api, debounce, kpiCard, montarPaginacao, renderTabela, chipRastreio, baixarCsv,
   rotularStatusRastreio, rotularPlataforma, abrirFicha, seloProvedor, tooltip,
 } from './emailComum.js';
 import { n, dataHora, dia, duracaoH } from './format.js';
@@ -113,6 +113,7 @@ const DIC = {
   qForn_fullstack: { en: 'FullStack', pt: 'FullStack' },
   qForn_jetstream: { en: 'JetStream', pt: 'JetStream' },
   qForn_nenhum: { en: 'No provider (not found)', pt: 'Sem fornecedor (não encontrados)' },
+  qSemVenda: { en: 'no linked sale', pt: 'sem venda ligada' },
   qEntregueFornecedor: { en: 'Confirmed by the provider (Red Rock)', pt: 'Confirmado pelo fornecedor (Red Rock)' },
   qEntregue17t: { en: 'Confirmed by 17TRACK (FullStack/JetStream)', pt: 'Confirmado pelo 17TRACK (FullStack/JetStream)' },
   qEntregueFornecedorCurto: { en: 'Delivered (provider)', pt: 'Entregues (fornecedor)' },
@@ -143,6 +144,27 @@ const DIC = {
   qProdSem: { en: 'No product', pt: 'Sem produto' },
   qProdKits: { en: 'Kits and combos', pt: 'Kits e combos' },
   qProdOutros: { en: 'Other products', pt: 'Outros produtos' },
+  // 12/11: tabela "Pedidos por produto" e exportação
+  titPorProduto: { en: 'Orders by product', pt: 'Pedidos por produto' },
+  subPorProduto: { en: 'Every status per product, for the current filters. Click a number to filter the orders table below.', pt: 'Todos os status por produto, com os filtros atuais. Clique num número para filtrar a tabela de pedidos logo abaixo.' },
+  colProdTotal: { en: 'Orders', pt: 'Pedidos' },
+  colProdPend: { en: 'Pending shipment', pt: 'Pendente de envio' },
+  colProdPend7: { en: 'Pending > 7 days', pt: 'Pendente > 7 dias' },
+  colProdCaminho: { en: 'On its way', pt: 'A caminho' },
+  colProdEntregue: { en: 'Delivered', pt: 'Entregue' },
+  colProdSemCodigo: { en: 'No tracking code', pt: 'Sem código' },
+  colProdCancelado: { en: 'Cancelled', pt: 'Cancelado' },
+  colProdNaoEnc: { en: 'Not found', pt: 'Não encontrado' },
+  exportarResumo: { en: 'Export summary (CSV)', pt: 'Exportar resumo (CSV)' },
+  exportarCsv: { en: 'Export CSV', pt: 'Exportar CSV' },
+  exportarXlsx: { en: 'Export Excel', pt: 'Exportar Excel' },
+  exportarCliente: { en: 'Include customer name and email', pt: 'Incluir nome e e-mail do cliente' },
+  exportarTitulo: { en: 'Exports every order that matches the filters above (not just this page)', pt: 'Exporta todos os pedidos que batem com os filtros acima (não só esta página)' },
+  exportando: { en: 'Exporting…', pt: 'Exportando…' },
+  erroExportar: { en: 'Could not export. Try again in a moment.', pt: 'Não foi possível exportar. Tente de novo em instantes.' },
+  vazioProdutos: { en: 'No orders for these filters.', pt: 'Nenhum pedido para estes filtros.' },
+  prodFiltrarTitulo: { en: 'Filter the orders table', pt: 'Filtrar a tabela de pedidos' },
+  prodTotalLinha: { en: 'Total', pt: 'Total' },
   kpiTaxaEntregaNota2: { en: 'delivered ÷ (on its way + delivered), counting deliveries confirmed by 17TRACK', pt: 'entregues ÷ (a caminho + entregues), contando as entregas confirmadas pelo 17TRACK' },
   kpiACaminhoNota2: { en: 'shipped and not delivered yet (deliveries confirmed by 17TRACK are no longer counted here)', pt: 'enviados e ainda não entregues (entregas já confirmadas pelo 17TRACK não contam mais aqui)' },
   kpiEntregueNota2: { en: 'orders that already reached the customer (provider + 17TRACK)', pt: 'pedidos que já chegaram no cliente (fornecedor + 17TRACK)' },
@@ -421,7 +443,7 @@ function renderKpis(r) {
     });
     return [{ titulo, linhas, totalRotulo, total, totalTexto: n(total) }];
   };
-  const forn = { forn_redrock: () => t('qForn_redrock'), forn_fullstack: () => t('qForn_fullstack'), forn_jetstream: () => t('qForn_jetstream'), forn_nenhum: () => t('qForn_nenhum') };
+  const forn = { forn_redrock: () => t('qForn_redrock'), forn_fullstack: () => t('qForn_fullstack'), forn_jetstream: () => t('qForn_jetstream'), forn_nenhum: () => t('qForn_nenhum'), sv_redrock: () => `${t('qForn_redrock')} · ${t('qSemVenda')}`, sv_fullstack: () => `${t('qForn_fullstack')} · ${t('qSemVenda')}`, sv_jetstream: () => `${t('qForn_jetstream')} · ${t('qSemVenda')}` };
   const plat = (l) => (l.plataforma ? rotularPlataforma(l.plataforma) : t('qNeSemPlataforma'));
   const pend = (nome, ate7) => () => `${nome} · ${t(ate7 ? 'qPendAte7' : 'qPendMais7')}`;
 
@@ -459,38 +481,55 @@ function renderKpis(r) {
   // ficaria sempre zerado, então some fora da sub-aba "Todos".
   if (cardNaoEncontrado) cardNaoEncontrado.classList.add('kpi--largo');
 
+  // 12/11: cada card de andamento mostra "Por produto" ao lado (como o Não encontrado) e ocupa 2 colunas; os pequenos (Total, Taxa, Entregue, Cancelado)
+  // preenchem a 3ª coluna ao lado deles (o grid usa `dense`).
+  const prods = q?.por_produto || [];
+  const nomeProd = (p) => (p.id === 'sem_produto' ? t('qProdSem') : p.id === 'kits' ? t('qProdKits') : p.id === 'outros_produtos' ? t('qProdOutros') : (p.nome || p.chave || '—'));
+  const secProd = (campo, total) => {
+    const ls = prods.filter((p) => p[campo] > 0).sort((a, b) => b[campo] - a[campo]);
+    if (!ls.length) return [];
+    const resto = ls.slice(8).reduce((s, p) => s + p[campo], 0);
+    const linhas = ls.slice(0, 8).map((p) => ({
+      rotulo: nomeProd(p), valor: p[campo], valorTexto: n(p[campo]),
+      detalhe: campo === 'pendente' && p.pendente_mais7 ? `${t('qScDetMais7')} ${n(p.pendente_mais7)}` : '',
+    }));
+    if (resto) linhas.push({ rotulo: t('qProdOutros'), valor: resto, valorTexto: n(resto) });
+    return [{ titulo: t('qPorProduto'), linhas, totalRotulo: t('qTotalRotulo'), total, totalTexto: n(total) }];
+  };
+  const cardTotal = kpiCard({ icone: '◍', tom: 'neutro', rotulo: t('kpiTotal'), valor: n(r.total), nota: t('kpiTotalNota'), secoes: q ? sec(q.total, forn, { total: r.total }) : [] });
+  const cardTaxa = kpiCard({
+    icone: '✓', tom: tomTaxa(taxa), rotulo: t('kpiTaxaEntrega'), valor: pct(taxa), nota: t('kpiTaxaEntregaNota2'),
+    secoes: q ? sec(q.taxa, { entregue_fornecedor: () => t('qEntregueFornecedorCurto'), entregue_17t: () => t('qEntregue17tCurto'), a_caminho: () => t('qACaminhoAinda') }, { totalRotulo: t('qBase'), total: nOu0(r.delivered) + nOu0(r.shipped) }) : [],
+  });
+  const cardPendente = kpiCard({
+    icone: '●', tom: 'neutro', rotulo: t('kpiRecebido'), valor: n(r.pending), nota: t('kpiRecebidoNota'),
+    secoes: q ? [...sec(q.pendente, {
+      pend_jetstream_ate7: pend(t('qForn_jetstream'), true), pend_jetstream_mais7: pend(t('qForn_jetstream'), false),
+      pend_fullstack_ate7: pend(t('qForn_fullstack'), true), pend_fullstack_mais7: pend(t('qForn_fullstack'), false),
+      pend_redrock_ate7: pend(t('qForn_redrock'), true), pend_redrock_mais7: pend(t('qForn_redrock'), false),
+    }, { total: r.pending }), ...secProd('pendente', r.pending)] : [],
+  });
+  const cardCaminho = kpiCard({
+    icone: '➤', tom: 'neutro', rotulo: t('kpiACaminho'), valor: n(aCaminho), nota: t('kpiACaminhoNota2'),
+    secoes: q ? [...sec(q.a_caminho, { cam_transito: () => t('qCamTransito'), cam_problema: () => t('qCamProblema'), cam_sem_17t: () => t('qCamSem17t') }, { total: aCaminho }), ...secProd('a_caminho', aCaminho)] : [],
+  });
+  const cardSemCodigo = kpiCard({
+    icone: '▭', tom: r.sem_codigo_rastreio > 0 ? 'medio' : 'neutro', rotulo: t('kpiSemCodigo'),
+    valor: n(r.sem_codigo_rastreio), nota: t('kpiSemCodigoNota2'),
+    secoes: q ? [...sec(q.sem_codigo, {
+      sc_pend_jetstream: () => t('qScPendJetstream'), sc_pend_fullstack: () => t('qScPendFullstack'), sc_pend_redrock: () => t('qScPendRedrock'),
+      sc_cancelado: () => t('qCancSemCodigo'), outros: () => t('qScOutros'),
+    }, { total: r.sem_codigo_rastreio }), ...secProd('sem_codigo', r.sem_codigo_rastreio)] : [],
+  });
+  const cardCancelado = kpiCard({
+    icone: '✕', tom: 'neutro', rotulo: t('kpiCancelado'), valor: n(r.cancelled), nota: t('kpiCanceladoNota2'),
+    secoes: q ? sec(q.cancelado, { canc_sem_codigo: () => t('qCancSemCodigo'), outros: () => t('qCancComCodigo') }, { total: r.cancelled }) : [],
+  });
+  for (const c of [cardPendente, cardCaminho, cardSemCodigo]) if (c.querySelectorAll('.kpi-quebra').length > 1) c.classList.add('kpi--largo');
   $('rst-kpis').replaceChildren(
-    kpiCard({ icone: '◍', tom: 'neutro', rotulo: t('kpiTotal'), valor: n(r.total), nota: t('kpiTotalNota'), secoes: q ? sec(q.total, forn, { total: r.total }) : [] }),
-    kpiCard({
-      icone: '✓', tom: tomTaxa(taxa), rotulo: t('kpiTaxaEntrega'), valor: pct(taxa), nota: t('kpiTaxaEntregaNota2'),
-      secoes: q ? sec(q.taxa, { entregue_fornecedor: () => t('qEntregueFornecedorCurto'), entregue_17t: () => t('qEntregue17tCurto'), a_caminho: () => t('qACaminhoAinda') }, { totalRotulo: t('qBase'), total: nOu0(r.delivered) + nOu0(r.shipped) }) : [],
-    }),
-    cardEntregue,
-    kpiCard({
-      icone: '●', tom: 'neutro', rotulo: t('kpiRecebido'), valor: n(r.pending), nota: t('kpiRecebidoNota'),
-      secoes: q ? sec(q.pendente, {
-        pend_jetstream_ate7: pend(t('qForn_jetstream'), true), pend_jetstream_mais7: pend(t('qForn_jetstream'), false),
-        pend_fullstack_ate7: pend(t('qForn_fullstack'), true), pend_fullstack_mais7: pend(t('qForn_fullstack'), false),
-        pend_redrock_ate7: pend(t('qForn_redrock'), true), pend_redrock_mais7: pend(t('qForn_redrock'), false),
-      }, { total: r.pending }) : [],
-    }),
-    kpiCard({
-      icone: '➤', tom: 'neutro', rotulo: t('kpiACaminho'), valor: n(aCaminho), nota: t('kpiACaminhoNota2'),
-      secoes: q ? sec(q.a_caminho, { cam_transito: () => t('qCamTransito'), cam_problema: () => t('qCamProblema'), cam_sem_17t: () => t('qCamSem17t') }, { total: aCaminho }) : [],
-    }),
-    kpiCard({
-      icone: '▭', tom: r.sem_codigo_rastreio > 0 ? 'medio' : 'neutro', rotulo: t('kpiSemCodigo'),
-      valor: n(r.sem_codigo_rastreio), nota: t('kpiSemCodigoNota2'),
-      secoes: q ? sec(q.sem_codigo, {
-        sc_pend_jetstream: () => t('qScPendJetstream'), sc_pend_fullstack: () => t('qScPendFullstack'), sc_pend_redrock: () => t('qScPendRedrock'),
-        sc_cancelado: () => t('qCancSemCodigo'), outros: () => t('qScOutros'),
-      }, { total: r.sem_codigo_rastreio }) : [],
-    }),
+    cardPendente, cardTotal, cardCaminho, cardTaxa, cardSemCodigo, cardEntregue,
     ...(cardNaoEncontrado ? [cardNaoEncontrado] : []),
-    kpiCard({
-      icone: '✕', tom: 'neutro', rotulo: t('kpiCancelado'), valor: n(r.cancelled), nota: t('kpiCanceladoNota2'),
-      secoes: q ? sec(q.cancelado, { canc_sem_codigo: () => t('qCancSemCodigo'), outros: () => t('qCancComCodigo') }, { total: r.cancelled }) : [],
-    }),
+    cardCancelado,
   );
   $('rst-kpis-status').replaceChildren(
     kpiCard({ icone: '⚠', tom: r.exception > 0 ? 'ruim' : 'neutro', rotulo: t('kpiErroConsulta'), valor: n(r.exception), nota: t('kpiErroConsultaNota') }),
@@ -1061,7 +1100,102 @@ async function carregarResumo() {
   const { ok, dados: r } = await api(`/api/metricas/rastreio?${params}`);
   if (!ok) return;
   renderKpis(r);
+  renderProdutos(r);
 }
+
+/* ═══════════  Pedidos por produto (12/11)  ═══════════
+ * Uma linha por produto, todas as contagens dos cards lado a lado (r.quebras.por_produto). Os números de Pendente, Sem código, Cancelado e Não
+ * encontrado filtram a tabela de pedidos (mesma contagem); A caminho e Entregue ficam só informativos porque já descontam o 17TRACK. */
+const NOME_PROD = (p) => (p.id === 'sem_produto' ? t('qProdSem') : p.id === 'kits' ? t('qProdKits') : p.id === 'outros_produtos' ? t('qProdOutros') : (p.nome || p.chave || '—'));
+
+function filtrarPorProduto(p, status) {
+  if (p.chave) {
+    estado.produto = p.chave;
+    const sel = $('rst-sel-produto');
+    if ([...sel.options].some((o) => o.value === p.chave)) sel.value = p.chave;
+  }
+  estado.status = status;
+  $('rst-sel-status').value = status;
+  estado.pagina = 1;
+  carregarTudo();
+  $('rst-tabela-corpo').closest('section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderProdutos(r) {
+  const corpo = $('rst-prod-corpo');
+  if (!corpo) return;
+  const lista = r.quebras?.por_produto || [];
+  estado.resumoProdutos = lista;
+  const num = (campo, status) => (p) => {
+    const v = p[campo];
+    if (!v) return '—';
+    if (!status || (!p.chave && status)) return n(v);
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'rst-prod-num'; b.title = t('prodFiltrarTitulo'); b.textContent = n(v);
+    b.addEventListener('click', () => filtrarPorProduto(p, status));
+    return b;
+  };
+  const colunas = [
+    { render: NOME_PROD },
+    { classe: 'cel-num', render: (p) => n(p.total) },
+    { classe: 'cel-num', render: num('pendente', 'pending') },
+    { classe: 'cel-num', render: (p) => (p.pendente_mais7 ? n(p.pendente_mais7) : '—') },
+    { classe: 'cel-num', render: num('a_caminho', '') },
+    { classe: 'cel-num', render: num('entregue', '') },
+    { classe: 'cel-num', render: num('sem_codigo', 'sem_codigo_rastreio') },
+    { classe: 'cel-num', render: num('cancelado', 'cancelled') },
+    { classe: 'cel-num', render: num('nao_encontrado', 'nao_encontrado') },
+  ];
+  renderTabela(corpo, lista, colunas, { vazio: t('vazioProdutos') });
+  if (!lista.length) return;
+  const soma = (campo) => lista.reduce((s, p) => s + (p[campo] || 0), 0);
+  const tr = document.createElement('tr');
+  tr.className = 'q-total';
+  const celulas = [t('prodTotalLinha'), ...['total', 'pendente', 'pendente_mais7', 'a_caminho', 'entregue', 'sem_codigo', 'cancelado', 'nao_encontrado'].map((c) => n(soma(c)))];
+  celulas.forEach((txt, i) => { const td = document.createElement('td'); if (i) td.className = 'cel-num'; td.textContent = txt; tr.append(td); });
+  corpo.append(tr);
+}
+
+function exportarResumoProdutos() {
+  const lista = estado.resumoProdutos || [];
+  const cab = [t('colProduto'), t('colProdTotal'), t('colProdPend'), t('colProdPend7'), t('colProdCaminho'), t('colProdEntregue'), t('colProdSemCodigo'), t('colProdCancelado'), t('colProdNaoEnc')];
+  const linhas = lista.map((p) => [NOME_PROD(p), p.total, p.pendente, p.pendente_mais7, p.a_caminho, p.entregue, p.sem_codigo, p.cancelado, p.nao_encontrado]);
+  baixarCsv(`rastreio-resumo-por-produto_${new Date().toISOString().slice(0, 10)}.csv`, cab, linhas);
+}
+
+/* Exportação dos pedidos (CSV/Excel): os MESMOS filtros da tabela (fulfillment, produto, plataforma, período, status e busca), sem paginação. */
+function urlExportar(formato) {
+  const p = paramsFiltro();
+  if (estado.status) p.set('status', estado.status);
+  if (estado.busca) p.set('search', estado.busca);
+  p.set('formato', formato);
+  if ($('rst-exp-cliente')?.checked) p.set('dados_cliente', '1');
+  return `/api/rastreio/exportar?${p}`;
+}
+
+async function exportarPedidos(formato, botao) {
+  const rotulo = botao.textContent;
+  botao.disabled = true; botao.textContent = t('exportando');
+  try {
+    const resp = await fetch(urlExportar(formato));
+    if (resp.status === 401) { location.replace('/login'); return; }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const blob = await resp.blob();
+    const nome = /filename="([^"]+)"/.exec(resp.headers.get('Content-Disposition') || '')?.[1] || `rastreio-pedidos.${formato}`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = nome;
+    document.body.append(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert(t('erroExportar'));
+  } finally {
+    botao.disabled = false; botao.textContent = rotulo;
+  }
+}
+$('rst-exp-csv')?.addEventListener('click', (e) => exportarPedidos('csv', e.currentTarget));
+$('rst-exp-xlsx')?.addEventListener('click', (e) => exportarPedidos('xlsx', e.currentTarget));
+$('rst-prod-exportar')?.addEventListener('click', exportarResumoProdutos);
 
 /**
  * Filtro de produto da aba: um item por PRODUTO (todas as embalagens/ofertas juntas), com a contagem de pedidos do recorte atual

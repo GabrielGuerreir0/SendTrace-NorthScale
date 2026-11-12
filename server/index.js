@@ -2067,9 +2067,30 @@ async function atender(req, res, url, sessao) {
       plataforma: textoOuNulo(q.get('plataforma')),
       search: textoOuNulo(q.get('search')),
       ordering: textoOuNulo(q.get('ordering')),
+      dias: textoOuNulo(q.get('dias')), data_de: textoOuNulo(q.get('data_de')), data_ate: textoOuNulo(q.get('data_ate')),   // 12/11: o período da aba chegava só nos KPIs, não na tabela
       page: q.get('page') ?? undefined,
       page_size: q.get('page_size') ?? undefined,
     }));
+  }
+
+  // 12/11: exportação dos pedidos (CSV ou Excel) com os MESMOS filtros da tabela — bytes crus, não JSON (mesmo padrão de /api/galeria/exportar/pdf).
+  if (url.pathname === '/api/rastreio/exportar') {
+    const q = url.searchParams;
+    const params = new URLSearchParams();
+    for (const chave of ['status', 'provedor', 'transferido', 'produto', 'produto_grupo', 'plataforma', 'search', 'dias', 'data_de', 'data_ate', 'formato', 'dados_cliente']) {
+      const v = q.get(chave);
+      if (v !== null && v !== '') params.set(chave, v);
+    }
+    const xlsx = q.get('formato') === 'xlsx';
+    const { buffer } = await obterBinario(`/api/rastreio/exportar/?${params}`);
+    const dia = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+    res.writeHead(200, {
+      'Content-Type': xlsx ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="rastreio-pedidos_${dia}.${xlsx ? 'xlsx' : 'csv'}"`,
+      'Cache-Control': 'no-store',
+    });
+    res.end(buffer);
+    return ATENDIDO;
   }
 
   if (url.pathname === '/api/metricas/rastreio') {

@@ -14,6 +14,7 @@
  * sem token — o lead consulta o próprio pedido). A pública nunca devolve
  * PII (endereço/e-mail/telefone) e é rate-limited por IP.
  */
+import ExcelJS from 'exceljs';
 import { query } from '../../server/db.js';
 import { historicoInterno, historicoPublico, ocorrenciasDoPedido, tempoParado } from '../track17/historico.js';
 import { DO_PRODUTO, DA_PLATAFORMA, BASE_PRODUTO, CHAVE_PRODUTO } from '../sql.js';
@@ -280,6 +281,44 @@ async function buscarRelacionados(transacaoId, emailFront, compraCriadoEm) {
   return rows;
 }
 
+/**
+ * Filtros da lista de pedidos (status, fulfillment, produto, plataforma, busca, período) — mesma regra da tabela da aba Rastreio
+ * e da exportação (12/11/2026): o que está na tela é exatamente o que sai no arquivo.
+ */
+function filtrosLista(q) {
+  const valores = [];
+  const partes = ['1=1'];
+  if (q.status === 'sem_codigo_rastreio') {
+    partes.push(`r.tracking_number IS NULL AND r.status_interno IN ('pending', 'shipped', 'delivered', 'cancelled')`);
+  } else if (q.status) {
+    valores.push(q.status); partes.push(`r.status_interno = $${valores.length}`);
+  }
+  if (q.provedor) { valores.push(q.provedor); partes.push(`r.provedor = $${valores.length}`); }
+  if (q.transferido === '1') partes.push('r.transferido_redrock_em IS NOT NULL');
+  if (q.produto) { valores.push(q.produto); partes.push(`d.produto = $${valores.length}`); }
+  if (q.produto_grupo) { valores.push(String(q.produto_grupo)); partes.push(`${CHAVE_PRODUTO('d.')} = $${valores.length}`); }
+  if (q.plataforma) { valores.push(q.plataforma); partes.push(`btrim(d.plataforma) = $${valores.length}`); }
+  if (q.search) {
+    valores.push(`%${q.search}%`);
+    const i = valores.length;
+    partes.push(`(r.transacao_id ILIKE $${i} OR d.nome ILIKE $${i} OR r.tracking_number ILIKE $${i})`);
+  }
+  condicaoPeriodo(q, 'd.criado_em', partes, valores, valores.length + 1);
+  return { partes, valores };
+}
+
+/* ───────────────────  exportação (12/11/2026)  ───────────────────────────── */
+const LIMITE_EXPORTACAO = 100_000;
+const ROTULO_STATUS_EXPORT = {
+  pendente_consulta: 'Consultando fornecedor', nao_encontrado: 'Não encontrado em nenhuma plataforma', pending: 'Pendente de envio',
+  shipped: 'A caminho', delivered: 'Entregue', cancelled: 'Cancelado', exception: 'Erro na consulta', desconhecido: 'Status não mapeado',
+};
+const ROTULO_PROVEDOR_EXPORT = { redrock: 'Red Rock', fullstack: 'FullStack', jetstream: 'Jetpack' };
+const fmtDataHora = (v) => (v
+  ? new Date(v).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  : '');
+const diasEntre = (de, ate = Date.now()) => (de ? Math.max(0, Math.floor((ate - new Date(de).getTime()) / 86_400_000)) : '');
+
 export default async function rotasRastreio(app) {
   /* ═══════════════════════════  internas (painel)  ═══════════════════════ */
 
@@ -317,25 +356,7 @@ export default async function rotasRastreio(app) {
       response: { 200: paginado('RastreioPedido') },
     },
   }, async (req) => {
-    const valores = [];
-    const partes = ['1=1'];
-
-    if (req.query.status === 'sem_codigo_rastreio') {
-      partes.push(`r.tracking_number IS NULL AND r.status_interno IN ('pending', 'shipped', 'delivered', 'cancelled')`);
-    } else if (req.query.status) {
-      valores.push(req.query.status); partes.push(`r.status_interno = $${valores.length}`);
-    }
-    if (req.query.provedor) { valores.push(req.query.provedor); partes.push(`r.provedor = $${valores.length}`); }
-    if (req.query.transferido === '1') partes.push('r.transferido_redrock_em IS NOT NULL');
-    if (req.query.produto) { valores.push(req.query.produto); partes.push(`d.produto = $${valores.length}`); }
-    if (req.query.produto_grupo) { valores.push(String(req.query.produto_grupo)); partes.push(`${CHAVE_PRODUTO('d.')} = $${valores.length}`); }
-    if (req.query.plataforma) { valores.push(req.query.plataforma); partes.push(`btrim(d.plataforma) = $${valores.length}`); }
-    if (req.query.search) {
-      valores.push(`%${req.query.search}%`);
-      const i = valores.length;
-      partes.push(`(r.transacao_id ILIKE $${i} OR d.nome ILIKE $${i} OR r.tracking_number ILIKE $${i})`);
-    }
-    condicaoPeriodo(req.query, 'd.criado_em', partes, valores, valores.length + 1);
+    const { partes, valores } = filtrosLista(req.query);
     const onde = `WHERE ${partes.join(' AND ')}`;
     const base = `FROM rastreio_pedidos r LEFT JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id ${onde}`;
 
@@ -348,6 +369,71 @@ export default async function rotasRastreio(app) {
       [...valores, limit, offset],
     );
     return envelope(rows);
+  });
+
+  app.get('/api/rastreio/exportar/', {
+    onRequest: [app.exigirSessao],
+    schema: {
+      tags: ['Rastreio'],
+      summary: 'Exporta os pedidos do rastreio (CSV ou Excel) com os MESMOS filtros da tabela',
+      description: 'Sem paginação (até 100 mil linhas). Nome e e-mail do cliente só saem com `dados_cliente=1`.',
+      security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          status: { type: 'string' }, provedor: { type: 'string' }, transferido: { type: 'string' }, produto: { type: 'string' },
+          produto_grupo: { type: 'string' }, plataforma: { type: 'string' }, search: { type: 'string' },
+          formato: { type: 'string', enum: ['csv', 'xlsx'] }, dados_cliente: { type: 'string' },
+          ...PERIODO_QS,
+        },
+      },
+    },
+  }, async (req, reply) => {
+    const { partes, valores } = filtrosLista(req.query);
+    const comCliente = req.query.dados_cliente === '1';
+    const { rows } = await query(
+      `SELECT r.transacao_id, r.order_number, d.produto, btrim(d.plataforma) AS plataforma, r.provedor, r.status_interno, r.status_bruto,
+              r.tracking_number, r.carrier_code, t17.ultimo_status AS status_17t, d.criado_em AS comprado_em, r.order_created_at,
+              r.shipped_at, r.delivered_at, r.atualizado_em, r.ultima_consulta_em, coalesce(r.total, d.valor_origem) AS total,
+              coalesce(r.currency, d.moeda_origem) AS currency, r.transferido_redrock_em${comCliente ? ', d.nome, d.email' : ''}
+       FROM rastreio_pedidos r
+       LEFT JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
+       LEFT JOIN rastreio_17t_registros t17 ON t17.numero = r.tracking_number
+       WHERE ${partes.join(' AND ')}
+       ORDER BY coalesce(r.order_created_at, d.criado_em) DESC NULLS LAST, r.transacao_id
+       LIMIT ${LIMITE_EXPORTACAO}`,
+      valores,
+    );
+    const cabecalho = ['Pedido', 'Nº do pedido na fulfillment', 'Produto', 'Plataforma', 'Fulfillment', 'Status', 'Status na fulfillment',
+      'Código de rastreio', 'Transportadora', 'Status 17TRACK', 'Comprado em', 'Pedido criado na fulfillment', 'Enviado em', 'Entregue em',
+      'Dias desde a compra', 'Dias sem mudança', 'Última consulta', 'Valor', 'Moeda', 'Transferido RedRock → FullStack em',
+      ...(comCliente ? ['Cliente', 'E-mail'] : [])];
+    const linhas = rows.map((r) => [
+      r.transacao_id, r.order_number ?? '', r.produto ?? '', r.plataforma ?? '', ROTULO_PROVEDOR_EXPORT[r.provedor] ?? (r.provedor ?? ''),
+      ROTULO_STATUS_EXPORT[r.status_interno] ?? r.status_interno, r.status_bruto ?? '', r.tracking_number ?? '', r.carrier_code ?? '',
+      r.status_17t ?? '', fmtDataHora(r.comprado_em), fmtDataHora(r.order_created_at), fmtDataHora(r.shipped_at), fmtDataHora(r.delivered_at),
+      diasEntre(r.order_created_at ?? r.comprado_em), r.status_interno === 'pending' || r.status_interno === 'shipped' ? diasEntre(r.atualizado_em) : '',
+      fmtDataHora(r.ultima_consulta_em), r.total ?? '', r.currency ?? '', fmtDataHora(r.transferido_redrock_em),
+      ...(comCliente ? [r.nome ?? '', r.email ?? ''] : []),
+    ]);
+    const dia = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+    const base = `rastreio_${req.query.provedor || 'todos'}_${req.query.status || 'todos-status'}_${dia}`.replace(/[^a-zA-Z0-9_-]/g, '');
+    if (req.query.formato === 'xlsx') {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Pedidos');
+      ws.addRow(cabecalho).font = { bold: true };
+      for (const l of linhas) ws.addRow(l);
+      ws.views = [{ state: 'frozen', ySplit: 1 }];
+      ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: cabecalho.length } };
+      ws.columns.forEach((c, i) => { c.width = Math.min(40, Math.max(12, String(cabecalho[i]).length + 2)); });
+      const buf = await wb.xlsx.writeBuffer();
+      return reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        .header('Content-Disposition', `attachment; filename="${base}.xlsx"`).send(Buffer.from(buf));
+    }
+    const escapar = (v) => { const s = v === null || v === undefined ? '' : String(v); return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const corpo = [cabecalho, ...linhas].map((l) => l.map(escapar).join(';')).join('\r\n');
+    return reply.header('Content-Type', 'text/csv; charset=utf-8')
+      .header('Content-Disposition', `attachment; filename="${base}.csv"`).send(`\uFEFF${corpo}`);
   });
 
   app.get('/api/rastreio/:transacao_id/', {
@@ -532,11 +618,15 @@ export default async function rotasRastreio(app) {
                    AND d2.criado_em BETWEEN d.criado_em - interval '3 days' AND d.criado_em + interval '3 days') THEN 'envio_conjunto'
          WHEN d.criado_em IS NOT NULL AND sppl_somar_dias_uteis(d.criado_em, 2) > now() THEN 'recente'
          ELSE 'risco' END`;
-    const [rA, rB, rC] = await Promise.all([
+    const [rA, rB, rC, rD] = await Promise.all([
       query(`SELECT
-         count(*) FILTER (WHERE r.provedor = 'redrock')::int   AS f_redrock,
-         count(*) FILTER (WHERE r.provedor = 'fullstack')::int AS f_fullstack,
-         count(*) FILTER (WHERE r.provedor = 'jetstream')::int AS f_jetstream,
+         count(*) FILTER (WHERE r.provedor = 'redrock'   AND d.transacao_id IS NOT NULL)::int AS f_redrock,
+         count(*) FILTER (WHERE r.provedor = 'fullstack' AND d.transacao_id IS NOT NULL)::int AS f_fullstack,
+         count(*) FILTER (WHERE r.provedor = 'jetstream' AND d.transacao_id IS NOT NULL)::int AS f_jetstream,
+         -- 12/11: linhas que a fulfillment tem mas que não ligam a nenhuma venda (nem pedido de origem): aparecem separadas, não misturadas com os pedidos do SendTrace.
+         count(*) FILTER (WHERE r.provedor = 'redrock'   AND d.transacao_id IS NULL)::int AS sv_redrock,
+         count(*) FILTER (WHERE r.provedor = 'fullstack' AND d.transacao_id IS NULL)::int AS sv_fullstack,
+         count(*) FILTER (WHERE r.provedor = 'jetstream' AND d.transacao_id IS NULL)::int AS sv_jetstream,
          count(*) FILTER (WHERE r.provedor IS NULL)::int       AS f_nenhum,
          count(*) FILTER (WHERE r.status_interno = 'shipped' AND t17.ultimo_status = 'Delivered')::int AS entregue_17t,
          count(*) FILTER (WHERE r.status_interno = 'shipped' AND t17.ultimo_status IN ('InTransit','InfoReceived','OutForDelivery','AvailableForPickup'))::int AS cam_transito,
@@ -572,6 +662,22 @@ export default async function rotasRastreio(app) {
              FROM (SELECT ${CHAVE_PRODUTO('d.')} AS chave, mode() WITHIN GROUP (ORDER BY ${BASE_PRODUTO('d.')}) AS rotulo, count(*)::int AS n
                      ${origem} AND r.status_interno = 'nao_encontrado' AND ${CLASSE_NE} = 'risco' GROUP BY 1) x
              ORDER BY x.n DESC`, parametros),
+      // 12/11: TODOS os produtos, uma linha por produto com a contagem de cada card (alimenta "Por produto" nos cards e a tabela de resumo).
+      query(`SELECT x.chave, x.total, x.pendente, x.pendente_mais7, x.a_caminho, x.entregue, x.cancelado, x.sem_codigo, x.nao_encontrado,
+               coalesce((SELECT p.nome FROM produtos p
+                          WHERE p.slug <> '*' AND regexp_replace(lower(p.nome), '[^a-z0-9]', '', 'g') IN (x.chave, x.chave || 'pro')
+                          ORDER BY length(p.nome) LIMIT 1), x.rotulo) AS nome
+             FROM (SELECT ${CHAVE_PRODUTO('d.')} AS chave, mode() WITHIN GROUP (ORDER BY ${BASE_PRODUTO('d.')}) AS rotulo,
+                     count(*)::int AS total,
+                     count(*) FILTER (WHERE r.status_interno = 'pending')::int AS pendente,
+                     count(*) FILTER (WHERE r.status_interno = 'pending' AND ${idade7} < now() - interval '7 days')::int AS pendente_mais7,
+                     count(*) FILTER (WHERE r.status_interno = 'shipped' AND t17.ultimo_status IS DISTINCT FROM 'Delivered')::int AS a_caminho,
+                     count(*) FILTER (WHERE r.status_interno = 'delivered' OR (r.status_interno = 'shipped' AND t17.ultimo_status = 'Delivered'))::int AS entregue,
+                     count(*) FILTER (WHERE r.status_interno = 'cancelled')::int AS cancelado,
+                     count(*) FILTER (WHERE r.tracking_number IS NULL AND r.status_interno IN ('pending', 'shipped', 'delivered', 'cancelled'))::int AS sem_codigo,
+                     count(*) FILTER (WHERE r.status_interno = 'nao_encontrado')::int AS nao_encontrado
+                   ${origem} GROUP BY 1) x
+             ORDER BY x.pendente DESC, x.total DESC`, parametros),
     ]);
     const a = rA.rows[0];
     const soma = (...xs) => xs.reduce((s, x) => s + (x || 0), 0);
@@ -588,7 +694,8 @@ export default async function rotasRastreio(app) {
     const topProdutos = rC.rows.slice(0, 6).map((r) => ({ id: r.chave === null ? 'sem_produto' : r.chave === 'combos' ? 'kits' : r.chave === 'outros' ? 'outros_produtos' : 'produto', nome: r.nome ?? null, v: r.n }));
     const restoProdutos = rC.rows.slice(6).reduce((s, r) => s + r.n, 0);
     const quebras = {
-      total: comResto([{ id: 'forn_redrock', v: a.f_redrock }, { id: 'forn_fullstack', v: a.f_fullstack }, { id: 'forn_jetstream', v: a.f_jetstream }, { id: 'forn_nenhum', v: a.f_nenhum }], t.total),
+      total: comResto([{ id: 'forn_redrock', v: a.f_redrock }, { id: 'forn_fullstack', v: a.f_fullstack }, { id: 'forn_jetstream', v: a.f_jetstream }, { id: 'forn_nenhum', v: a.f_nenhum },
+        { id: 'sv_redrock', v: a.sv_redrock }, { id: 'sv_fullstack', v: a.sv_fullstack }, { id: 'sv_jetstream', v: a.sv_jetstream }], t.total),
       taxa: [{ id: 'entregue_fornecedor', v: t.delivered }, { id: 'entregue_17t', v: a.entregue_17t }, { id: 'a_caminho', v: caminhoAjust }],
       entregue: comResto([{ id: 'entregue_fornecedor', v: t.delivered }, { id: 'entregue_17t', v: a.entregue_17t }], entregueAjust),
       a_caminho: comResto([{ id: 'cam_transito', v: a.cam_transito }, { id: 'cam_problema', v: a.cam_problema }, { id: 'cam_sem_17t', v: a.cam_sem_17t }], caminhoAjust),
@@ -616,6 +723,11 @@ export default async function rotasRastreio(app) {
       nao_encontrado_buscado_48h: a.ne_buscado_48h,
       nao_encontrado_produtos: comResto([...topProdutos, ...(restoProdutos > 0 ? [{ id: 'outros_produtos', nome: null, v: restoProdutos }] : [])], neLivre),
       sem_codigo_pendentes: scPend,
+      por_produto: rD.rows.map((r) => ({
+        id: r.chave === null ? 'sem_produto' : r.chave === 'combos' ? 'kits' : r.chave === 'outros' ? 'outros_produtos' : 'produto',
+        chave: r.chave, nome: r.nome ?? null, total: r.total, pendente: r.pendente, pendente_mais7: r.pendente_mais7, a_caminho: r.a_caminho,
+        entregue: r.entregue, cancelado: r.cancelado, sem_codigo: r.sem_codigo, nao_encontrado: r.nao_encontrado,
+      })),
     };
     return {
       ...t,
