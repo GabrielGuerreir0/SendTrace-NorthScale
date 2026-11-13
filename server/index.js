@@ -60,6 +60,9 @@ const PUBLICOS = new Set([
   // o rastreio.js da aba INTERNA do painel (arquivo diferente, mesma pasta).
   '/rastreio', '/rastrear.html', '/rastrear.js', '/i18n.js', // i18n.js: o rastrear.js importa — sem isso o /rastreio quebra para quem não está logado
   '/styles.css', '/src/logo_northscale.png',
+  // PWA: o navegador busca o manifest e o service worker sem cookie de sessão.
+  '/manifest.webmanifest', '/sw.js', '/offline.html', '/pwa.js',
+  '/icones/icon-192.png', '/icones/icon-512.png', '/icones/icon-maskable-512.png', '/icones/apple-touch-icon.png',
   // Fontes de marca (Clash Display e Roboto Mono): a tela de login também usa o styles.css.
   '/fonts/ClashDisplay-500.woff2', '/fonts/ClashDisplay-600.woff2', '/fonts/ClashDisplay-700.woff2',
   '/fonts/RobotoMono-500.ttf', '/fonts/RobotoMono-600.ttf', '/fonts/RobotoMono-700.ttf',
@@ -167,6 +170,8 @@ const MIME = {
   '.js': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.png': 'image/png',
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
   '.ttf': 'font/ttf',
