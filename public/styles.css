@@ -3298,3 +3298,14 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .cel-forte + .selo-transferido{display:block;width:max-content}
 .subaba-transferidos{border:2px solid #d6336c;color:#d6336c;font-weight:800}
 .subaba-transferidos[aria-selected="true"]{background:#d6336c;color:#fff}
+
+/* Botão "Instalar app" (PWA) no topo: destaque forte, com pulso discreto para quem ainda não instalou. */
+.btn-instalar {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: linear-gradient(135deg, #1baf7a, #4260e6); color: #fff; border: 0; font-weight: 700;
+  box-shadow: 0 0 0 0 rgba(66, 96, 230, .55); animation: instalar-pulso 2.4s ease-out infinite;
+}
+.btn-instalar:hover { filter: brightness(1.12); }
+.btn-instalar[hidden] { display: none !important; }
+@keyframes instalar-pulso { 70% { box-shadow: 0 0 0 10px rgba(66, 96, 230, 0); } 100% { box-shadow: 0 0 0 0 rgba(66, 96, 230, 0); } }
+@media (prefers-reduced-motion: reduce) { .btn-instalar { animation: none; } }
