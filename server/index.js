@@ -2044,6 +2044,22 @@ async function atender(req, res, url, sessao) {
     return json(res, 200, await obterApi('/api/postmark/resumo/', { dias: dias ?? 7 }));
   }
 
+  /* ── aba "Pesquisa de estorno" (migrações 129/130): repasse para a API. Escrever exige administrador — quem confere é a API. ── */
+  if (url.pathname.startsWith('/api/pesquisa-estorno/')) {
+    const resto = url.pathname.slice('/api/pesquisa-estorno/'.length).replace(/\/+$/, '');
+    const versoes = resto.match(/^perguntas\/([a-z][a-z0-9_]{1,39})\/versoes$/);
+    if (req.method === 'GET' && resto === 'perguntas') return json(res, 200, await obterApi('/api/pesquisa-estorno/perguntas/'));
+    if (req.method === 'GET' && versoes) return json(res, 200, await obterApi(`/api/pesquisa-estorno/perguntas/${versoes[1]}/versoes/`));
+    if (req.method === 'GET' && resto === 'resumo') {
+      const dias = inteiroOuNulo(url.searchParams.get('dias'));
+      if (dias === false) return json(res, 400, { erro: 'dias inválido' });
+      return json(res, 200, await obterApi('/api/pesquisa-estorno/resumo/', { dias: dias ?? 30 }));
+    }
+    if (req.method === 'POST' && resto === 'perguntas') return json(res, 200, await criarApi('/api/pesquisa-estorno/perguntas/', await lerJson(req, 32 * 1024)));
+    if (req.method === 'POST' && resto === 'config') return json(res, 200, await criarApi('/api/pesquisa-estorno/config/', await lerJson(req)));
+    return json(res, 404, { erro: 'Rota não encontrada.' });
+  }
+
   if (url.pathname === '/api/visao-geral') {
     const q = url.searchParams;
     const dias = inteiroOuNulo(q.get('dias'));
