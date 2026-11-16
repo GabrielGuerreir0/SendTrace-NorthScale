@@ -2308,6 +2308,24 @@
   <section class="kpis kpis--suporte" id="rst-kpis-status"></section>
 
   <!-- ═══════════════════  Pedidos por produto (todos os status lado a lado)  ═══════════════════ -->
+  <section class="cartao" id="rst-prazos-card">
+    <header class="cartao-cabeca">
+      <div>
+        <h2>Prazo de envio por fulfillment</h2>
+        <p class="cartao-sub">Dias corridos desde a compra, a mesma regra do Atlas. O card "Pendente de envio" separa os pedidos em <b>no prazo</b> e <b>atrasado</b> por este prazo. Vazio = sem prazo (nada fica atrasado). Só administrador edita.</p>
+      </div>
+    </header>
+    <p class="janela-msg" id="rst-prazos-msg" hidden></p>
+    <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
+      <div id="rst-prazos-campos" style="display:flex;gap:14px;flex-wrap:wrap"></div>
+      <button class="btn btn-forte" id="rst-prazos-salvar" type="button" hidden>Salvar prazos</button>
+    </div>
+    <details style="margin-top:12px">
+      <summary class="cartao-sub" style="cursor:pointer">Histórico dos prazos</summary>
+      <ul id="rst-prazos-hist" class="cartao-sub" style="margin:8px 0 0;padding-left:18px"></ul>
+    </details>
+  </section>
+
   <section class="cartao" id="rst-produtos-card">
     <header class="cartao-cabeca">
       <div>

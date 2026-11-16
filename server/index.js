@@ -2195,6 +2195,13 @@ async function atender(req, res, url, sessao) {
     }));
   }
 
+  /* Prazo de envio por fulfillment (migração 131) — ANTES do detalhe `/api/rastreio/:id`. Gravar: só administrador (a API confere). */
+  if (url.pathname === '/api/rastreio/prazos-envio' || url.pathname === '/api/rastreio/prazos-envio/') {
+    if (req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/prazos-envio/'));
+    if (req.method === 'PUT') return json(res, 200, await substituirApi('/api/rastreio/prazos-envio/', await lerJson(req)));
+    return json(res, 405, { erro: 'Método não permitido.' });
+  }
+
   /*
    * SPPL (migração 090) — regras editáveis e feriados, dentro do Rastreio de Pedidos. ANTES do detalhe `/api/rastreio/:id`, que senão
    * trataria "sppl/regras" como um transacao_id. Leitura: qualquer conta com a página; escrita: só administrador (a API também confere).

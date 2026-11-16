@@ -30,6 +30,8 @@ import {
 import { n, dataHora, dia, duracaoH } from './format.js';
 import { desenharLinha } from './charts.js';
 import { criarTradutor, idiomaAtual, montarSeletorIdioma, forcarIdioma } from './i18n.js';
+import { lerPrazosEnvio } from './rastreioPrazos.js';   // prazo de envio por fulfillment (migração 131)
+document.addEventListener('rastreio:prazos', () => carregarResumo());
 import './rastreioSppl.js';   // SPPL: regras e feriados (seção recolhível no fim da aba)
 import './rastreioAlertas.js';   // SPPL: alertas de logística (ocorrências) e cobranças
 import './rastreioLogistica.js';   // SPPL: saúde, relatório e não encontrados da Red Rock
@@ -122,14 +124,17 @@ const DIC = {
   qCamTransito: { en: 'In transit (17TRACK)', pt: 'Em trânsito (17TRACK)' },
   qCamProblema: { en: 'With an issue (17TRACK: exception, failed delivery, not found)', pt: 'Com ocorrência (17TRACK: exceção, falha na entrega, não encontrado)' },
   qCamSem17t: { en: 'Not registered at 17TRACK', pt: 'Sem registro no 17TRACK' },
-  qPendAte7: { en: 'up to 7 days', pt: 'até 7 dias' },
-  qPendMais7: { en: 'over 7 days', pt: 'mais de 7 dias' },
+  qPendNoPrazo: { en: 'on time', pt: 'no prazo' },
+  qPendAtrasado: { en: 'late', pt: 'atrasado' },
+  qPendAteDias: { en: 'up to {n} days', pt: 'até {n} dias' },
+  qPendMaisDias: { en: 'over {n} days', pt: 'mais de {n} dias' },
+  qPendSemPrazo: { en: 'no shipping deadline set', pt: 'sem prazo de envio definido' },
   qCancSemCodigo: { en: 'Cancelled before getting a tracking code', pt: 'Cancelados antes de ter código de rastreio' },
   qCancComCodigo: { en: 'Cancelled after getting a tracking code', pt: 'Cancelados depois de ter código' },
   qScPendJetstream: { en: 'Pending at JetStream', pt: 'Pendentes JetStream' },
   qScPendFullstack: { en: 'Pending at FullStack', pt: 'Pendentes FullStack' },
   qScPendRedrock: { en: 'Pending at Red Rock', pt: 'Pendentes Red Rock' },
-  qScDetMais7: { en: 'of which over 7 days:', pt: 'dos quais há mais de 7 dias:' },
+  qScDetMais7: { en: 'of which late:', pt: 'dos quais atrasados:' },
   qScOutros: { en: 'Shipped/delivered without a code', pt: 'Enviados/entregues sem código' },
   qNeNaoAchado: { en: 'searched, not found at any fulfillment', pt: 'buscado e não achado em nenhuma fulfillment' },
   qNeAmbiguo: { en: 'ambiguous ID (repeated prefix) — cannot be matched to an order', pt: 'ID ambíguo (prefixo repetido) — não dá para ligar ao pedido' },
@@ -150,7 +155,7 @@ const DIC = {
   subPorProduto: { en: 'Every status per product, for the current filters. Click a number to filter the orders table below.', pt: 'Todos os status por produto, com os filtros atuais. Clique num número para filtrar a tabela de pedidos logo abaixo.' },
   colProdTotal: { en: 'Orders', pt: 'Pedidos' },
   colProdPend: { en: 'Pending shipment', pt: 'Pendente de envio' },
-  colProdPend7: { en: 'Pending > 7 days', pt: 'Pendente > 7 dias' },
+  colProdPend7: { en: 'Pending late', pt: 'Pendente atrasado' },
   colProdCaminho: { en: 'On its way', pt: 'A caminho' },
   colProdEntregue: { en: 'Delivered', pt: 'Entregue' },
   colProdSemCodigo: { en: 'No tracking code', pt: 'Sem código' },
@@ -446,7 +451,12 @@ function renderKpis(r) {
   };
   const forn = { forn_redrock: () => t('qForn_redrock'), forn_fullstack: () => t('qForn_fullstack'), forn_jetstream: () => t('qForn_jetstream'), forn_nenhum: () => t('qForn_nenhum'), sv_redrock: () => `${t('qForn_redrock')} · ${t('qSemVenda')}`, sv_fullstack: () => `${t('qForn_fullstack')} · ${t('qSemVenda')}`, sv_jetstream: () => `${t('qForn_jetstream')} · ${t('qSemVenda')}` };
   const plat = (l) => (l.plataforma ? rotularPlataforma(l.plataforma) : t('qNeSemPlataforma'));
-  const pend = (nome, ate7) => () => `${nome} · ${t(ate7 ? 'qPendAte7' : 'qPendMais7')}`;
+  // 16/11 (migração 131): "no prazo" × "atrasado" pelo prazo de envio de cada fulfillment (os ids *_ate7/*_mais7 ficaram com o nome antigo)
+  const pend = (nome, ate7, ful) => () => {
+    const d = PRAZOS_ENVIO[ful];
+    if (d == null) return `${nome} · ${t(ate7 ? 'qPendNoPrazo' : 'qPendAtrasado')} (${t('qPendSemPrazo')})`;
+    return `${nome} · ${t(ate7 ? 'qPendNoPrazo' : 'qPendAtrasado')} (${t(ate7 ? 'qPendAteDias' : 'qPendMaisDias').replace('{n}', d)})`;
+  };
 
   // 07/11 — arrumado em linhas fixas de 3 colunas (cards da mesma linha com a mesma altura):
   //   1 Visão geral      Total · Taxa de entrega · Entregue
@@ -505,9 +515,9 @@ function renderKpis(r) {
   const cardPendente = kpiCard({
     icone: '●', tom: 'neutro', rotulo: t('kpiRecebido'), valor: n(r.pending), nota: t('kpiRecebidoNota'),
     secoes: q ? [...sec(q.pendente, {
-      pend_jetstream_ate7: pend(t('qForn_jetstream'), true), pend_jetstream_mais7: pend(t('qForn_jetstream'), false),
-      pend_fullstack_ate7: pend(t('qForn_fullstack'), true), pend_fullstack_mais7: pend(t('qForn_fullstack'), false),
-      pend_redrock_ate7: pend(t('qForn_redrock'), true), pend_redrock_mais7: pend(t('qForn_redrock'), false),
+      pend_jetstream_ate7: pend(t('qForn_jetstream'), true, 'jetstream'), pend_jetstream_mais7: pend(t('qForn_jetstream'), false, 'jetstream'),
+      pend_fullstack_ate7: pend(t('qForn_fullstack'), true, 'fullstack'), pend_fullstack_mais7: pend(t('qForn_fullstack'), false, 'fullstack'),
+      pend_redrock_ate7: pend(t('qForn_redrock'), true, 'redrock'), pend_redrock_mais7: pend(t('qForn_redrock'), false, 'redrock'),
     }, { total: r.pending }), ...secProd('pendente', r.pending)] : [],
   });
   const cardCaminho = kpiCard({
@@ -1096,9 +1106,11 @@ async function carregarSaude() {
   carregarSerie();
 }
 
+let PRAZOS_ENVIO = {};
 async function carregarResumo() {
   const params = paramsFiltro();
-  const { ok, dados: r } = await api(`/api/metricas/rastreio?${params}`);
+  const [{ ok, dados: r }, prazos] = await Promise.all([api(`/api/metricas/rastreio?${params}`), lerPrazosEnvio().catch(() => PRAZOS_ENVIO)]);
+  PRAZOS_ENVIO = prazos || {};
   if (!ok) return;
   renderKpis(r);
   renderProdutos(r);
