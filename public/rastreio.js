@@ -347,6 +347,11 @@ const DIC = {
   lt17VerCompleta: { en: 'View the full timeline ({n} events)', pt: 'Ver a linha do tempo completa ({n} eventos)' },
   historico17Motivo: { en: 'Reason: {motivo}', pt: 'Motivo: {motivo}' },
   fichaOcorrenciasSppl: { en: 'SPPL occurrences', pt: 'Ocorrências do SPPL' },
+  fichaSituacaoFulfillment: { en: 'What the fulfillment panel shows', pt: 'O que o painel da fulfillment mostra' },
+  situacaoVistoEm: { en: 'seen on {data}', pt: 'visto em {data}' },
+  situacao_nao_entrou: { en: 'Never reached the fulfillment', pt: 'Não chegou à fulfillment' },
+  situacao_hold_endereco: { en: 'On hold: address', pt: 'Hold por endereço' },
+  situacao_cancelado_teste: { en: 'Cancelled there as test', pt: 'Cancelado lá como teste' },
   ocorrenciasVazio: { en: 'No SPPL occurrence for this order.', pt: 'Nenhuma ocorrência do SPPL para este pedido.' },
   ocorrenciaPrazo: { en: 'due {data}', pt: 'prazo {data}' },
 
@@ -560,6 +565,16 @@ function seloTransferido(p) {
   return s;
 }
 
+/** Por que o pendente não sai, visto no painel da fulfillment (migração 132): selo na lista, texto inteiro na dica e na ficha. */
+function seloSituacao(p) {
+  const s = document.createElement('span');
+  s.className = 'selo-situacao';
+  s.dataset.s = p.situacao_fulfillment;
+  s.textContent = t(`situacao_${p.situacao_fulfillment}`);
+  s.title = p.situacao_fulfillment_detalhe || '';
+  return s;
+}
+
 function celPedido(p) {
   const div = document.createElement('div');
   const forte = document.createElement('span');
@@ -729,6 +744,10 @@ function montarFichaPedido(d) {
         && { rotulo: t('fichaErroUltimaConsulta'), valor: d.ultimo_erro, largo: true },
       d.status_interno === 'desconhecido'
         && { rotulo: t('fichaStatusBruto'), valor: d.status_bruto || '—' },
+      d.situacao_fulfillment && {
+        rotulo: t('fichaSituacaoFulfillment'), largo: true,
+        valor: `${t(`situacao_${d.situacao_fulfillment}`)}. ${d.situacao_fulfillment_detalhe || ''}${d.situacao_fulfillment_visto_em ? ` (${t('situacaoVistoEm', { data: dataHora(d.situacao_fulfillment_visto_em) })})` : ''}`,
+      },
       { rotulo: t('fichaProduto'), valor: d.produto || '—' },
       { rotulo: t('fichaPlataforma'), valor: rotularPlataforma(d.plataforma) },
       { rotulo: t('fichaProvedor'), valor: seloProvedor(d.provedor) },
@@ -760,7 +779,7 @@ function renderTabelaPedidos(pedidos) {
     { render: celPedido },
     { render: (p) => p.produto || '—' },
     { render: (p) => rotularPlataforma(p.plataforma) },
-    { render: (p) => chipRastreio(p.status_interno) },
+    { render: (p) => { if (!p.situacao_fulfillment) return chipRastreio(p.status_interno); const c = document.createElement('span'); c.className = 'cel-pilha'; c.append(chipRastreio(p.status_interno), seloSituacao(p)); return c; } },
     { render: (p) => { const c = document.createElement('span'); c.append(seloProvedor(p.provedor)); if (p.transferido_redrock_em) c.append(' ', seloTransferido(p)); return c; } },
     { render: (p) => p.carrier_code || '—' },
     { classe: 'cel-mono', render: (p) => p.tracking_number || '—' },

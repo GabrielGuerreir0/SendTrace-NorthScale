@@ -62,7 +62,13 @@ const COLUNAS_LISTA = `r.transacao_id, d.nome, d.produto, d.plataforma, r.proved
   r.status_interno, r.status_bruto, r.order_number, r.order_created_at, coalesce(r.total, d.valor_origem) AS total,
   coalesce(r.currency, d.moeda_origem) AS currency, r.fully_fulfilled, r.fully_fulfilled_at, r.tracking_number,
   r.carrier_code, r.tracking_url, r.tracking_status, r.shipped_at, r.delivered_at,
-  r.ultima_consulta_em, r.ultimo_erro, r.criado_em, r.atualizado_em, r.transferido_redrock_em`;
+  r.ultima_consulta_em, r.ultimo_erro, r.criado_em, r.atualizado_em, r.transferido_redrock_em,
+  sf.situacao AS situacao_fulfillment, sf.detalhe AS situacao_fulfillment_detalhe, sf.visto_em AS situacao_fulfillment_visto_em`;
+/**
+ * Situação do pedido vista no painel da fulfillment (migração 132, 16/11/2026): por que um pendente não sai (não chegou à Jetpack, hold por
+ * endereço, cancelado lá como teste). Só vale enquanto o pedido está pendente — depois que sai, a explicação deixa de aparecer.
+ */
+const JOIN_SITUACAO = `LEFT JOIN rastreio_situacao_fulfillment sf ON sf.transacao_id = r.transacao_id AND r.status_interno = 'pending'`;
 
 /**
  * A Red Rock só dá 4 status simples (pending/shipped/delivered/cancelled) —
@@ -380,7 +386,8 @@ export default async function rotasRastreio(app) {
     const { limit, offset, envelope } = fatiar(req, cont.rows[0].n);
     const ordem = montarOrdem(req.query.ordering, ['atualizado_em', 'criado_em', 'order_created_at'], 'r.atualizado_em DESC');
     const { rows } = await query(
-      `SELECT ${COLUNAS_LISTA} ${base} ORDER BY ${ordem}
+      `SELECT ${COLUNAS_LISTA} FROM rastreio_pedidos r LEFT JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id ${JOIN_SITUACAO} ${onde}
+       ORDER BY ${ordem}
        LIMIT $${valores.length + 1} OFFSET $${valores.length + 2}`,
       [...valores, limit, offset],
     );
@@ -411,10 +418,11 @@ export default async function rotasRastreio(app) {
       `SELECT r.transacao_id, r.order_number, d.produto, btrim(d.plataforma) AS plataforma, r.provedor, r.status_interno, r.status_bruto,
               r.tracking_number, r.carrier_code, t17.ultimo_status AS status_17t, d.criado_em AS comprado_em, r.order_created_at,
               r.shipped_at, r.delivered_at, r.atualizado_em, r.ultima_consulta_em, coalesce(r.total, d.valor_origem) AS total,
-              coalesce(r.currency, d.moeda_origem) AS currency, r.transferido_redrock_em${comCliente ? ', d.nome, d.email' : ''}
+              coalesce(r.currency, d.moeda_origem) AS currency, r.transferido_redrock_em, sf.detalhe AS situacao_fulfillment_detalhe${comCliente ? ', d.nome, d.email' : ''}
        FROM rastreio_pedidos r
        LEFT JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
        LEFT JOIN rastreio_17t_registros t17 ON t17.numero = r.tracking_number
+       ${JOIN_SITUACAO}
        WHERE ${partes.join(' AND ')}
        ORDER BY coalesce(r.order_created_at, d.criado_em) DESC NULLS LAST, r.transacao_id
        LIMIT ${LIMITE_EXPORTACAO}`,
@@ -422,14 +430,14 @@ export default async function rotasRastreio(app) {
     );
     const cabecalho = ['Pedido', 'Nº do pedido na fulfillment', 'Produto', 'Plataforma', 'Fulfillment', 'Status', 'Status na fulfillment',
       'Código de rastreio', 'Transportadora', 'Status 17TRACK', 'Comprado em', 'Pedido criado na fulfillment', 'Enviado em', 'Entregue em',
-      'Dias desde a compra', 'Dias sem mudança', 'Última consulta', 'Valor', 'Moeda', 'Transferido RedRock → FullStack em',
+      'Dias desde a compra', 'Dias sem mudança', 'Última consulta', 'Valor', 'Moeda', 'Transferido RedRock → FullStack em', 'Situação na fulfillment',
       ...(comCliente ? ['Cliente', 'E-mail'] : [])];
     const linhas = rows.map((r) => [
       r.transacao_id, r.order_number ?? '', r.produto ?? '', r.plataforma ?? '', ROTULO_PROVEDOR_EXPORT[r.provedor] ?? (r.provedor ?? ''),
       ROTULO_STATUS_EXPORT[r.status_interno] ?? r.status_interno, r.status_bruto ?? '', r.tracking_number ?? '', r.carrier_code ?? '',
       r.status_17t ?? '', fmtDataHora(r.comprado_em), fmtDataHora(r.order_created_at), fmtDataHora(r.shipped_at), fmtDataHora(r.delivered_at),
       diasEntre(r.order_created_at ?? r.comprado_em), r.status_interno === 'pending' || r.status_interno === 'shipped' ? diasEntre(r.atualizado_em) : '',
-      fmtDataHora(r.ultima_consulta_em), r.total ?? '', r.currency ?? '', fmtDataHora(r.transferido_redrock_em),
+      fmtDataHora(r.ultima_consulta_em), r.total ?? '', r.currency ?? '', fmtDataHora(r.transferido_redrock_em), r.situacao_fulfillment_detalhe ?? '',
       ...(comCliente ? [r.nome ?? '', r.email ?? ''] : []),
     ]);
     const dia = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
@@ -490,7 +498,7 @@ export default async function rotasRastreio(app) {
   }, async (req) => {
     const { rows } = await query(
       `SELECT ${COLUNAS_LISTA}, r.tracking, r.cancellation, d.email, d.criado_em AS compra_criado_em
-       FROM rastreio_pedidos r LEFT JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
+       FROM rastreio_pedidos r LEFT JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id ${JOIN_SITUACAO}
        WHERE r.transacao_id = $1`,
       [req.params.transacao_id],
     );
