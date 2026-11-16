@@ -11,9 +11,14 @@
  * depois da marcação dela (data do reembolso > dia da última edição das propriedades), a resolução é uma das RESOLUCOES_REABRIVEIS e o cliente não tem compra ativa:
  * aí a marcação ficou desatualizada e o ticket é reclassificado (o log guarda o tipo anterior para desfazer).
  * A rotina nasce DESLIGADA (config_disparos.reembolso_plataforma_ativo); o backfill/simulação rodam pelo terminal (api/reembolsoPlataformaCli.js).
+ *
+ * 16/11 (Lucas; migração 134): chargeback aberto DEPOIS da 1ª resposta do agente = Evasão provável; no dia ou antes = Sem atendimento (regra fixa, sem IA).
+ * A data do chargeback é a da ABERTURA da disputa (email_ia.chargeback_aberto_em), não a do lançamento. Ticket que a reversão indireta marcou e cujo cliente
+ * tem estorno (email_ia.cliente_tem_estorno) entra aqui e é reclassificado: reversão indireta é só para quem não tem reembolso nem chargeback.
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { pool, query } from '../server/db.js';
+import { TIPOS_REVERSAO_INDIRETA, TIPO_ANALISAR } from './reversaoIndireta.js';
 
 export const BASE = 'Reembolsado pela plataforma';
 export const SEM = `${BASE} - Sem atendimento`;
@@ -30,11 +35,16 @@ const LIMITE_TEXTO = 120_000;   // só protege contra conversa absurda; uma conv
 
 /* ───────── camada 1 (a mesma regra da view, para testar sem banco) ───────── */
 const dataBRT = (d) => new Date(new Date(d).getTime() - 3 * 3600e3).toISOString().slice(0, 10);   // America/Sao_Paulo (sem horário de verão desde 2019)
-export function camada1({ pResp, dr }) {
+export function camada1({ pResp, dr, dcb }) {
   if (!pResp) return { status: SEM, motivo: 'agente nunca respondeu' };
   if (dr && dataBRT(pResp) >= String(dr).slice(0, 10)) return { status: SEM, motivo: 'primeira resposta no dia ou depois do reembolso' };
+  if (dcb) return dataBRT(pResp) >= String(dcb).slice(0, 10)
+    ? { status: SEM, motivo: 'chargeback aberto antes ou no dia da primeira resposta' }
+    : { status: EVA, motivo: 'chargeback aberto depois da primeira resposta do agente' };
   return null;   // vai para a camada 2
 }
+/** Tipos que a reversão indireta grava: com estorno do cliente, o ticket sai dela e é reclassificado aqui. */
+const TIPOS_REVERSAO = [...TIPOS_REVERSAO_INDIRETA, TIPO_ANALISAR];
 
 /* ───────── gatilho: precisa reavaliar? ───────── */
 export const assinatura = (c) => `${c.n_emails}|${c.n_resp}|${c.dr ? String(c.dr).slice(0, 10) : ''}|${c.dcb ? String(c.dcb).slice(0, 10) : ''}`;
@@ -44,9 +54,10 @@ export function precisaAvaliar(c) {
   if (!TIPOS.includes(c.tipo_resolucao)) return false;
   if (c.reembolso_plat_origem === null || c.reembolso_plat_origem === undefined) return false;   // classificado por uma pessoa: não mexe
   if (!AUTORES_SISTEMA.includes(c.propriedades_atualizado_por || 'Sistema')) return false;       // pessoa mudou o tipo à mão
-  const [ne, nr] = String(c.reembolso_plat_assinatura || '').split('|');
+  const [ne, nr, , dcbAntes = ''] = String(c.reembolso_plat_assinatura || '').split('|');
   const conversaMudou = String(c.n_emails) !== ne || String(c.n_resp) !== nr;
-  if (c.reembolso_plat_origem === 'IA') return conversaMudou;                          // IA: só e-mail novo ou resposta nova
+  const chargebackMudou = (c.dcb ? String(c.dcb).slice(0, 10) : '') !== dcbAntes;     // a regra do chargeback é fixa: não chama a IA
+  if (c.reembolso_plat_origem === 'IA') return conversaMudou || chargebackMudou;       // IA: e-mail novo, resposta nova ou chargeback
   return assinatura(c) !== c.reembolso_plat_assinatura;                                // SQL/regra: qualquer mudança
 }
 
@@ -57,21 +68,29 @@ export async function candidatos() {
     await cli.query('BEGIN');
     await cli.query("SET LOCAL statement_timeout = '180s'");   // o padrão do banco é 15 s; esta rotina é mais pesada que uma tela
     const { rows } = await cli.query(
-      `WITH fam AS (
-         SELECT s.id AS caso_id, lower(s.remetente_email) AS em, f.tipo_resolucao, to_char(f.data_reembolso_total, 'YYYY-MM-DD') AS dr, to_char(f.data_chargeback, 'YYYY-MM-DD') AS dcb, f.propriedades_atualizado_por,   -- texto: o driver devolveria DATE como objeto Date
+      `WITH fich AS (
+         SELECT s.id AS caso_id, lower(s.remetente_email) AS em, f.tipo_resolucao, f.data_reembolso_total, f.propriedades_atualizado_por, f.propriedades_atualizado_em,
                 f.reembolso_plat_origem, f.reembolso_plat_assinatura
            FROM email_ia.suporte_escalado s JOIN email_ia.suporte_escalado_ficha f ON f.suporte_escalado_id = s.id
-          WHERE s.ticket_mae_id IS NULL AND f.tipo_resolucao = ANY($1::text[])
-       ), reab AS (   -- marcação de pessoa que o reembolso da plataforma (data posterior à edição) tornou desatualizada
-         SELECT s.id AS caso_id, lower(s.remetente_email) AS em, f.tipo_resolucao, to_char(f.data_reembolso_total, 'YYYY-MM-DD') AS dr, to_char(f.data_chargeback, 'YYYY-MM-DD') AS dcb, f.propriedades_atualizado_por,
-                f.reembolso_plat_origem, f.reembolso_plat_assinatura, true AS reaberto
-           FROM email_ia.suporte_escalado s JOIN email_ia.suporte_escalado_ficha f ON f.suporte_escalado_id = s.id
-          WHERE s.ticket_mae_id IS NULL AND f.tipo_resolucao = ANY($2::text[]) AND f.data_reembolso_total IS NOT NULL
-            AND f.propriedades_atualizado_em IS NOT NULL AND f.propriedades_atualizado_por IS NOT NULL
-            AND f.data_reembolso_total > (f.propriedades_atualizado_em AT TIME ZONE 'America/Sao_Paulo')::date
-            AND NOT email_ia.cliente_tem_compra_ativa(lower(s.remetente_email))
-       ), todos AS (
-         SELECT *, false AS reaberto FROM fam UNION ALL SELECT * FROM reab
+          WHERE s.ticket_mae_id IS NULL AND f.tipo_resolucao = ANY($1::text[] || $2::text[] || $3::text[])
+       ), sel AS (
+         SELECT *, false AS reaberto FROM fich WHERE tipo_resolucao = ANY($1::text[])
+         UNION ALL   -- marcação de pessoa que o reembolso da plataforma (data posterior à edição) tornou desatualizada
+         SELECT *, true FROM fich
+          WHERE tipo_resolucao = ANY($2::text[]) AND data_reembolso_total IS NOT NULL
+            AND propriedades_atualizado_em IS NOT NULL AND propriedades_atualizado_por IS NOT NULL
+            AND data_reembolso_total > (propriedades_atualizado_em AT TIME ZONE 'America/Sao_Paulo')::date
+            AND NOT email_ia.cliente_tem_compra_ativa(em)
+         UNION ALL   -- reversão indireta marcada pelo sistema antes de o estorno chegar (134)
+         SELECT *, true FROM fich
+          WHERE tipo_resolucao = ANY($3::text[]) AND coalesce(propriedades_atualizado_por, 'Sistema') = ANY($4::text[]) AND email_ia.cliente_tem_estorno(em)
+       ), todos AS (   -- datas como texto (o driver devolveria DATE como objeto Date); reembolso da ficha ou da venda (sem compra ativa); chargeback pela abertura da disputa
+         SELECT sel.caso_id, sel.em, sel.tipo_resolucao, sel.propriedades_atualizado_por, sel.reembolso_plat_origem, sel.reembolso_plat_assinatura, sel.reaberto,
+                to_char(coalesce(sel.data_reembolso_total,
+                  CASE WHEN NOT email_ia.cliente_tem_compra_ativa(sel.em)
+                       THEN ((SELECT max(d.reembolsado_em) FROM public.disparos_pos_venda d WHERE lower(d.email) = sel.em) AT TIME ZONE 'America/Sao_Paulo')::date END), 'YYYY-MM-DD') AS dr,
+                to_char(email_ia.chargeback_aberto_em(sel.em) AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS dcb
+           FROM sel
        ), ag AS (
          SELECT coalesce(s.ticket_mae_id, s.id) AS caso_id, min(r.enviado_em) AS p_resp, count(*)::int AS n_resp
            FROM email_ia.respostas_agente r JOIN email_ia.suporte_escalado s ON s.id = r.caso_id
@@ -82,7 +101,7 @@ export async function candidatos() {
        )
        SELECT todos.*, ag.p_resp, coalesce(ag.n_resp, 0) AS n_resp, coalesce(em.n_emails, 0) AS n_emails
          FROM todos LEFT JOIN ag ON ag.caso_id = todos.caso_id LEFT JOIN em ON em.em = todos.em
-        ORDER BY todos.caso_id`, [TIPOS, RESOLUCOES_REABRIVEIS]);
+        ORDER BY todos.caso_id`, [TIPOS, RESOLUCOES_REABRIVEIS, TIPOS_REVERSAO, AUTORES_SISTEMA]);
     await cli.query('COMMIT');
     return rows;
   } catch (e) { await cli.query('ROLLBACK').catch(() => {}); throw e; } finally { cli.release(); }
@@ -159,7 +178,7 @@ export async function perguntarIA(conversa, { modelo = MODELO_PADRAO, api = clie
 /* ───────── decisão por ticket ───────── */
 /** Devolve {status, origem, confianca, motivo, revisar, categoria?} ou {falhou} ou null (nada a fazer). `gravarAvaliacao=false` na simulação não guarda nada fora o cache da IA. */
 export async function decidir(c, { db = { query }, modelo = MODELO_PADRAO, api, forcar = false } = {}) {
-  const c1 = camada1({ pResp: c.p_resp, dr: c.dr });
+  const c1 = camada1({ pResp: c.p_resp, dr: c.dr, dcb: c.dcb });
   if (c1) return { status: c1.status, origem: 'SQL', confianca: null, motivo: c1.motivo, revisar: false };
   if (!c.n_emails) return { status: OUT, origem: 'REGRA', confianca: null, motivo: 'sem e-mail do cliente na base', revisar: false };
   const chaveModelo = `${modelo}|${VERSAO_PROMPT}`, conversa = `${c.n_emails}|${c.n_resp}`;
@@ -187,7 +206,7 @@ export async function gravar(c, d) {
               reembolso_plat_avaliado_em = now(), reembolso_plat_assinatura = $7,
               propriedades_atualizado_por = $8, propriedades_atualizado_em = now(), atualizado_por = $8, atualizado_em = now()
         WHERE suporte_escalado_id = $1 AND tipo_resolucao = $9 AND coalesce(propriedades_atualizado_por, 'Sistema') = ANY($10::text[])`,
-      [c.caso_id, d.status, d.origem, d.confianca, d.motivo, d.revisar, assinatura(c), autor, c.tipo_resolucao, c.reaberto ? [c.propriedades_atualizado_por] : c.tipo_resolucao === BASE ? [...AUTORES_SISTEMA, c.propriedades_atualizado_por ?? 'Sistema'] : AUTORES_SISTEMA]);
+      [c.caso_id, d.status, d.origem, d.confianca, d.motivo, d.revisar, assinatura(c), autor, c.tipo_resolucao, c.reaberto ? [c.propriedades_atualizado_por ?? 'Sistema'] : c.tipo_resolucao === BASE ? [...AUTORES_SISTEMA, c.propriedades_atualizado_por ?? 'Sistema'] : AUTORES_SISTEMA]);
     if (rowCount) await cli.query(`INSERT INTO email_ia.reembolso_plataforma_log (caso_id, tipo_antes, tipo_depois, origem, confianca, motivo, revisar) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
       [c.caso_id, c.tipo_resolucao, d.status, d.origem, d.confianca, d.motivo, d.revisar]);
     await cli.query('COMMIT');

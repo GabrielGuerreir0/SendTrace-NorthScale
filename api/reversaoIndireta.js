@@ -31,7 +31,9 @@ export function tipoPorDias(dias) {
 /**
  * Tickets que cumprem as condições estruturais (a IA decide só a 4ª):
  * 1 motivo Reembolso/Chargeback · 2 tipo atual elegível · 3 última mensagem do ticket é do agente (não do cliente nem do sistema)
- * 5/7 sem reembolso nem chargeback depois do 1º e-mail (indicadores, datas e coluna Reembolsado) · 6 não é reembolso parcial.
+ * 5/7 sem reembolso nem chargeback depois do 1º e-mail (indicadores, datas e coluna Reembolsado) · 6 não é reembolso parcial
+ * 8 o cliente não tem estorno nenhum: chargeback em qualquer venda, ou reembolso sem compra ativa (134, Lucas 16/11; esse ticket é da família
+ *   "Reembolsado pela plataforma", que reclassifica também os que esta rotina marcou antes do estorno chegar).
  * Dias = dias corridos (fuso de São Paulo) desde a última mensagem do agente.
  */
 export async function candidatos() {
@@ -45,7 +47,7 @@ export async function candidatos() {
            FROM email_ia.respostas_agente r JOIN email_ia.suporte_escalado s ON s.id = r.caso_id
           GROUP BY 1
        ), base AS (
-         SELECT s.id AS caso_id, s.status, s.ultimo_email_cliente_em, f.tipo_resolucao, f.detalhamento_motivo, f.motivo_contato,
+         SELECT s.id AS caso_id, s.remetente_email, s.status, s.ultimo_email_cliente_em, f.tipo_resolucao, f.detalhamento_motivo, f.motivo_contato,
                 f.reembolso_apos_1o_email, f.chargeback_apos_1o_email, f.data_reembolso_total, f.data_chargeback, f.chargeback_em, f.percentual_reembolso
            FROM email_ia.suporte_escalado s JOIN email_ia.suporte_escalado_ficha f ON f.suporte_escalado_id = s.id
           WHERE s.ticket_mae_id IS NULL AND f.motivo_contato IN ('Reembolso', 'Chargeback') AND f.tipo_resolucao = ANY($1::text[])
@@ -59,6 +61,7 @@ export async function candidatos() {
           AND coalesce(b.reembolso_apos_1o_email, '') <> 'Sim' AND coalesce(b.chargeback_apos_1o_email, '') <> 'Sim'
           AND b.data_reembolso_total IS NULL AND b.data_chargeback IS NULL AND b.chargeback_em IS NULL
           AND b.percentual_reembolso IS NULL
+          AND NOT email_ia.cliente_tem_estorno(b.remetente_email)
         ORDER BY ag.agente_em`, [TIPOS_ELEGIVEIS]);
     await cli.query('COMMIT');
     return rows.map((r) => ({ ...r, dias: Number(r.dias) }));

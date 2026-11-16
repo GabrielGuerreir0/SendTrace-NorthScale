@@ -56,3 +56,19 @@ test('IA: categoria válida, JSON ruim, categoria desconhecida e erro NUNCA vira
   assert.equal((await perguntarIA('c', { api: null })).falhou, true);
 });
 test('os três nomes e a família', () => { assert.deepEqual(TIPOS, [BASE, SEM, EVA, OUT]); assert.equal(SEM, 'Reembolsado pela plataforma - Sem atendimento'); assert.equal(EVA, 'Reembolsado pela plataforma - Evasão provável'); assert.equal(OUT, 'Reembolsado pela plataforma - Outros'); });
+
+test('134: chargeback aberto depois da 1ª resposta = Evasão provável; no dia ou antes = Sem atendimento (regra fixa, sem IA)', () => {
+  assert.equal(camada1({ pResp: '2026-10-20T14:15:00Z', dr: null, dcb: '2026-11-04' }).status, EVA);
+  assert.equal(camada1({ pResp: '2026-10-20T14:15:00Z', dr: null, dcb: '2026-09-16' }).status, SEM, '#10274: disputa aberta antes de o cliente escrever');
+  assert.equal(camada1({ pResp: '2026-10-20T14:15:00Z', dr: null, dcb: '2026-10-20' }).status, SEM, 'no dia da 1ª resposta');
+  assert.equal(camada1({ pResp: '2026-10-04T15:00:00Z', dr: '2026-10-05', dcb: '2026-10-09' }).status, EVA, 'reembolso e chargeback depois da resposta');
+  assert.equal(camada1({ pResp: '2026-10-06T15:00:00Z', dr: '2026-10-05', dcb: '2026-10-09' }).status, SEM, 'reembolso antes da resposta manda');
+  assert.equal(camada1({ pResp: null, dr: null, dcb: '2026-10-09' }).status, SEM);
+});
+
+test('134: classificado pela IA reavalia quando a data do chargeback muda (a regra fixa decide, sem custo de IA)', () => {
+  const c = { tipo_resolucao: OUT, reembolso_plat_origem: 'IA', propriedades_atualizado_por: 'Sistema (IA)', n_emails: 3, n_resp: 1, dr: null, dcb: '2026-11-04' };
+  assert.equal(precisaAvaliar({ ...c, reembolso_plat_assinatura: assinatura(c) }), false);
+  assert.equal(precisaAvaliar({ ...c, reembolso_plat_assinatura: '3|1||2026-11-10' }), true);
+  assert.equal(precisaAvaliar({ ...c, dcb: null, reembolso_plat_assinatura: '3|1||' }), false);
+});
