@@ -77,6 +77,94 @@ async function carregar() {
   perguntas = r.dados.perguntas || [];
   $('pq-nova').hidden = !ehAdmin();
   renderLista();
+  await carregarResumo();
+}
+
+/* ── acompanhamento (migração 130): chave liga/desliga, funil por grupo, descartes, motivos e comentários ── */
+const DESCARTE = {
+  fora_da_amostra: 'Fora do piloto (comparação)', falou_com_suporte: 'Já falou com o suporte', descadastrado: 'Descadastrado',
+  outro_convite: 'Já tem outro convite', email_invalido: 'E-mail inválido', teste: 'Teste', falha_envio: 'Falhou 3x no envio', inativo_postmark: 'Inativo no Postmark',
+};
+const TIPO_ESTORNO = { REFUND: 'Reembolso', ALERT: 'Alerta (banco)', DISPUTE: 'Chargeback', CHARGEBACK: 'Chargeback (Vupim)' };
+let cfgAtual = {};
+const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '—');
+const nomeGrupo = (g) => (g === 'banco' ? 'Banco' : 'Reembolso');
+
+function tabelaSimples(cab, linhas) {
+  const tb = el('table', 'tabela');
+  const h = tb.createTHead().insertRow();
+  for (const c of cab) h.append(el('th', '', c));
+  const corpo = tb.createTBody();
+  for (const l of linhas) { const tr = corpo.insertRow(); for (const v of l) tr.insertCell().textContent = v; }
+  const caixa = el('div');
+  caixa.style.cssText = 'overflow-x:auto;margin:0 0 18px';
+  caixa.append(tb);
+  return caixa;
+}
+
+function renderResumo(d) {
+  cfgAtual = d.config || {};
+  const ativo = cfgAtual.pesquisa_estorno_ativo === 'true';
+  $('pq-cfg-txt').textContent = `Envio ${ativo ? 'LIGADO' : 'DESLIGADO'} · piloto ${cfgAtual.pesquisa_estorno_pct ?? '—'}% dos estornos · lembrete `
+    + `${cfgAtual.pesquisa_estorno_lembrete_ativo === 'false' ? 'desligado' : 'em 4 dias'} · JVZoo e Vupim desde ${dataHora(cfgAtual.pesquisa_estorno_desde)} · convite 12 h depois do estorno.`;
+  $('pq-cfg-acoes').hidden = !ehAdmin();
+  $('pq-pct').value = cfgAtual.pesquisa_estorno_pct ?? 10;
+  $('pq-lembrete').checked = cfgAtual.pesquisa_estorno_lembrete_ativo !== 'false';
+  $('pq-ligar').textContent = ativo ? 'Desligar envio' : 'Ligar envio';
+  $('pq-ligar').className = ativo ? 'btn btn-fantasma' : 'btn btn-forte';
+
+  const caixa = el('div');
+  const f = d.funil || [];
+  if (!f.length) caixa.append(el('p', 'vazio-suave', 'Nenhum convite no período.'));
+  else {
+    const soma = (k) => f.reduce((s, x) => s + x[k], 0);
+    const linha = (rot, tipo, x) => [rot, tipo, x.criados, x.amostra, x.descartados, x.na_fila, x.enviados, `${x.abertos} (${pct(x.abertos, x.enviados)})`,
+      `${x.clicaram} (${pct(x.clicaram, x.enviados)})`, `${x.concluiram} (${pct(x.concluiram, x.enviados)})`, x.lembretes, x.suspeita, `${x.bounce}/${x.spam}`];
+    const total = Object.fromEntries(['criados', 'amostra', 'descartados', 'na_fila', 'enviados', 'abertos', 'clicaram', 'concluiram', 'lembretes', 'suspeita', 'bounce', 'spam'].map((k) => [k, soma(k)]));
+    caixa.append(el('h3', '', 'Funil'), tabelaSimples(
+      ['Grupo', 'Tipo', 'Estornos', 'No piloto', 'Descartados', 'Na fila', 'Enviados', 'Abriram', 'Clicaram', 'Concluíram', 'Lembretes', 'Não reconhece', 'Bounce/spam'],
+      [...f.map((x) => linha(nomeGrupo(x.grupo), TIPO_ESTORNO[x.estorno_tipo] || x.estorno_tipo || '—', x)), linha('Total', '', total)]));
+  }
+  if (d.descartes?.length) caixa.append(el('h3', '', 'Por que não foi enviado'), tabelaSimples(['Motivo', 'Convites'], d.descartes.map((x) => [DESCARTE[x.motivo] || x.motivo, x.n])));
+
+  const porPergunta = new Map();
+  for (const r of d.respostas || []) {
+    const k = `${r.pergunta_chave}|${r.grupo}`;
+    if (!porPergunta.has(k)) porPergunta.set(k, []);
+    porPergunta.get(k).push(r);
+  }
+  if (porPergunta.size) caixa.append(el('h3', '', 'Respostas'));
+  for (const [k, rs] of porPergunta) {
+    const [chave, grupo] = k.split('|');
+    const p = perguntas.find((x) => x.chave === chave);
+    const total = rs.reduce((s, x) => s + x.n, 0);
+    const rot = (v) => p?.opcoes?.find((o) => o.valor === v)?.rotulo || v;
+    caixa.append(el('div', 'cartao-sub', `${p ? ((grupo === 'banco' && p.texto_banco) || p.texto) : chave} — ${nomeGrupo(grupo)} (${total})`),
+      tabelaSimples(['Resposta', 'Qtde', '%'], rs.map((x) => [rot(x.valor), x.n, pct(x.n, total)])));
+  }
+  if (d.comentarios?.length) {
+    caixa.append(el('h3', '', 'Comentários'), tabelaSimples(['Quando', 'Grupo', 'Produto', 'Comentário'],
+      d.comentarios.map((x) => [dataHora(x.respondido_em), `${nomeGrupo(x.grupo)} · ${x.plataforma}`, x.produto || '—', x.valor])));
+  }
+  if (d.por_dia?.length) {
+    caixa.append(el('h3', '', 'Por dia de envio'), tabelaSimples(['Dia', 'Enviados', 'Clicaram', 'Concluíram'],
+      d.por_dia.map((x) => [String(x.dia).slice(0, 10), x.enviados, x.clicaram, x.concluiram])));
+  }
+  $('pq-resumo').replaceChildren(caixa);
+}
+
+async function carregarResumo() {
+  const r = await api(`/api/pesquisa-estorno/resumo/?dias=${encodeURIComponent($('pq-dias').value)}`);
+  if (!r.ok) { aviso('pq-cfg-msg', r.dados?.erro || r.dados?.message || 'Não foi possível carregar o acompanhamento.', 'erro'); return; }
+  aviso('pq-cfg-msg', '');
+  renderResumo(r.dados);
+}
+
+async function salvarCfg(corpo, msg) {
+  const r = await api('/api/pesquisa-estorno/config/', { metodo: 'POST', corpo });
+  if (!r.ok) { aviso('pq-cfg-msg', r.dados?.erro || r.dados?.message || 'Não foi possível salvar.', 'erro'); return; }
+  aviso('pq-cfg-msg', msg, 'ok');
+  await carregarResumo();
 }
 
 /* ── diálogo ── */
@@ -177,6 +265,15 @@ async function verVersoes() {
   $('pq-historico').replaceChildren(lista);
 }
 
+$('pq-dias').addEventListener('change', carregarResumo);
+$('pq-cfg-salvar').addEventListener('click', () => salvarCfg({ pct: Number($('pq-pct').value), lembrete: $('pq-lembrete').checked },
+  'Configuração salva. Vale a partir da próxima rodada (a cada 10 min).'));
+$('pq-ligar').addEventListener('click', () => {
+  const ligar = cfgAtual.pesquisa_estorno_ativo !== 'true';
+  if (!confirm(ligar ? `Ligar o envio? Os estornos de JVZoo e Vupim passam a receber o convite (${cfgAtual.pesquisa_estorno_pct}% no piloto), 12 h depois do estorno.`
+    : 'Desligar o envio? Nada novo sai até ligar de novo.')) return;
+  salvarCfg({ ativo: ligar }, ligar ? 'Envio LIGADO. A primeira rodada sai em até 10 min.' : 'Envio desligado.');
+});
 $('pq-nova').addEventListener('click', () => abrir(null));
 $('pq-fechar').addEventListener('click', () => $('janela-pesquisa').close());
 $('pq-add-opcao').addEventListener('click', () => $('pq-opcoes').append(linhaOpcao()));

@@ -56,6 +56,7 @@ import rotasRecoverly from './rotas/recoverly.js';
 import rotasTrack17 from './rotas/track17.js';
 import { rodadaDiaria as rodadaDiariaReversaoIndireta } from './reversaoIndireta.js';
 import { rodadaPeriodica as rodadaReembolsoPlataforma } from './reembolsoPlataforma.js';
+import { rodadaPesquisaEstorno } from './pesquisaEstornoEnvio.js';
 import rotasSpplRegras from './rotas/spplRegras.js';
 import rotasSpplOcorrencias from './rotas/spplOcorrencias.js';
 import rotasSpplNaoEncontrados from './rotas/spplNaoEncontrados.js';
@@ -562,6 +563,11 @@ const intervaloReembolsoPlataforma = setInterval(async () => {
   try { await rodadaReembolsoPlataforma((m) => app.log.info(m)); } catch (err) { app.log.error(err, 'falha na classificação de reembolso pela plataforma'); }
 }, 30 * 60 * 1000);
 
+/* Pesquisa de estorno (migração 130): convite 12 h depois do estorno + lembrete em 4 dias, a cada 10 min. Nasce DESLIGADA (`pesquisa_estorno_ativo = 'false'`). */
+const rodarPesquisaEstorno = () => rodadaPesquisaEstorno((m) => app.log.info(m)).catch((err) => app.log.error(err, 'falha no envio da pesquisa de estorno'));
+setTimeout(rodarPesquisaEstorno, 150_000);
+const intervaloPesquisaEstorno = setInterval(rodarPesquisaEstorno, 10 * 60 * 1000);
+
 /* Indicadores gerenciais (migração 110): Reembolso total / Chargeback após o 1º e-mail, preenchidos sozinhos (só campos vazios), a cada 30 min. */
 const INDICADORES_INTERVALO_MS = 30 * 60 * 1000;
 const atualizarIndicadoresGerenciais = async () => {
@@ -591,6 +597,7 @@ for (const sinal of ['SIGINT', 'SIGTERM']) {
     clearInterval(intervaloRisco);
     clearInterval(intervaloReversaoIndireta);
     clearInterval(intervaloReembolsoPlataforma);
+    clearInterval(intervaloPesquisaEstorno);
     clearInterval(intervaloFechamento);
     clearInterval(intervaloIndicadores);
     clearInterval(intervaloRegistro17Track);

@@ -2073,6 +2073,26 @@
   <section class="cartao">
     <header class="cartao-cabeca">
       <div>
+        <h2>Acompanhamento</h2>
+        <p class="cartao-sub" id="pq-cfg-txt">Carregando…</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="pq-dias" title="Período"><option value="7">7 dias</option><option value="30" selected>30 dias</option><option value="90">90 dias</option></select>
+        <span id="pq-cfg-acoes" hidden style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <label title="% dos estornos que recebem o convite">Piloto <input id="pq-pct" type="number" min="0" max="100" step="1" style="width:64px">%</label>
+          <label><input id="pq-lembrete" type="checkbox"> Lembrete</label>
+          <button class="btn btn-fantasma" id="pq-cfg-salvar" type="button">Salvar</button>
+          <button class="btn btn-forte" id="pq-ligar" type="button">Ligar envio</button>
+        </span>
+      </div>
+    </header>
+    <p class="janela-msg" id="pq-cfg-msg" hidden></p>
+    <div id="pq-resumo"><p class="vazio-suave">Carregando…</p></div>
+  </section>
+
+  <section class="cartao">
+    <header class="cartao-cabeca">
+      <div>
         <h2>Perguntas</h2>
         <p class="cartao-sub">Uma pergunta por vez, na ordem abaixo. <b>Reembolso</b> = pediu reembolso · <b>Banco</b> = alerta de chargeback ou chargeback.
         Editar grava uma versão nova: cada resposta guarda a versão que o cliente viu, e nada é apagado.</p>

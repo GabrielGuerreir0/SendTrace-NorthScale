@@ -169,4 +169,53 @@ export default async function rotasPesquisaEstorno(app) {
       q.obrigatoria, q.ativa, req.usuario?.email ?? null]);
     return { pergunta: rows[0] };
   });
+
+  /* ── acompanhamento (migração 130): funil, motivos e a chave liga/desliga ── */
+  const CHAVES_CFG = ['pesquisa_estorno_ativo', 'pesquisa_estorno_pct', 'pesquisa_estorno_lembrete_ativo', 'pesquisa_estorno_desde', 'pesquisa_estorno_max_rodada'];
+  const lerCfg = async () => Object.fromEntries((await query('SELECT chave, valor FROM config_disparos WHERE chave = ANY($1)', [CHAVES_CFG])).rows.map((r) => [r.chave, r.valor]));
+
+  app.get('/api/pesquisa-estorno/resumo/', { onRequest: [app.exigirSessao], schema: { tags: ['Pesquisa de estorno'], summary: 'Funil, descartes, motivos e comentários' } }, async (req) => {
+    const dias = Math.min(Math.max(Number(req.query?.dias) || 30, 1), 365);
+    const desde = `now() - interval '${dias} days'`;
+    const [funil, descartes, respostas, comentarios, porDia, cfg] = await Promise.all([
+      query(`SELECT grupo, estorno_tipo, count(*)::int AS criados, count(*) FILTER (WHERE amostra)::int AS amostra,
+                    count(*) FILTER (WHERE descartado IS NOT NULL AND descartado <> 'fora_da_amostra')::int AS descartados,
+                    count(email_enviado_em)::int AS enviados, count(aberto_em)::int AS abertos, count(clicou_em)::int AS clicaram,
+                    count(iniciado_em)::int AS iniciaram, count(concluido_em)::int AS concluiram, count(lembrete_enviado_em)::int AS lembretes,
+                    count(*) FILTER (WHERE suspeita_fraude)::int AS suspeita, count(bounce_em)::int AS bounce, count(spam_em)::int AS spam,
+                    count(*) FILTER (WHERE email_enviado_em IS NULL AND descartado IS NULL)::int AS na_fila
+               FROM pesquisa_estorno_convites WHERE criado_em >= ${desde} GROUP BY 1, 2 ORDER BY 1, 2`),
+      query(`SELECT descartado AS motivo, count(*)::int AS n FROM pesquisa_estorno_convites WHERE criado_em >= ${desde} AND descartado IS NOT NULL GROUP BY 1 ORDER BY 2 DESC`),
+      query(`SELECT r.pergunta_chave, c.grupo, coalesce(r.valor, '(pulou)') AS valor, count(*)::int AS n
+               FROM pesquisa_estorno_respostas r JOIN pesquisa_estorno_convites c ON c.id = r.convite_id
+              JOIN pesquisa_estorno_perguntas p ON p.chave = r.pergunta_chave AND p.versao = r.pergunta_versao
+              WHERE c.criado_em >= ${desde} AND p.tipo <> 'texto' GROUP BY 1, 2, 3 ORDER BY 1, 2, 4 DESC`),
+      query(`SELECT r.respondido_em, c.grupo, c.estorno_tipo, c.plataforma, c.produto, r.valor
+               FROM pesquisa_estorno_respostas r JOIN pesquisa_estorno_convites c ON c.id = r.convite_id
+              WHERE c.criado_em >= ${desde} AND r.pergunta_chave = 'comentario' AND r.valor IS NOT NULL ORDER BY r.respondido_em DESC LIMIT 50`),
+      query(`SELECT (email_enviado_em AT TIME ZONE 'America/Sao_Paulo')::date AS dia, count(*)::int AS enviados, count(clicou_em)::int AS clicaram,
+                    count(concluido_em)::int AS concluiram
+               FROM pesquisa_estorno_convites WHERE email_enviado_em >= ${desde} GROUP BY 1 ORDER BY 1`),
+      lerCfg(),
+    ]);
+    return { dias, config: cfg, funil: funil.rows, descartes: descartes.rows, respostas: respostas.rows, comentarios: comentarios.rows, por_dia: porDia.rows };
+  });
+
+  app.post('/api/pesquisa-estorno/config/', { onRequest: [app.exigirAdmin], schema: { tags: ['Pesquisa de estorno'], summary: 'Liga/desliga o envio, % do piloto e lembrete' } }, async (req) => {
+    if (req.usuario?.leitura) throw new ErroHttp(403, 'Esta chave é somente de leitura.');
+    const b = req.body ?? {};
+    const novos = {};
+    if (b.ativo !== undefined) novos.pesquisa_estorno_ativo = b.ativo === true || b.ativo === 'true' ? 'true' : 'false';
+    if (b.lembrete !== undefined) novos.pesquisa_estorno_lembrete_ativo = b.lembrete === true || b.lembrete === 'true' ? 'true' : 'false';
+    if (b.pct !== undefined) {
+      const n = Number(b.pct);
+      if (!Number.isInteger(n) || n < 0 || n > 100) throw new ErroHttp(422, 'O percentual do piloto vai de 0 a 100.');
+      novos.pesquisa_estorno_pct = String(n);
+    }
+    for (const [chave, valor] of Object.entries(novos)) {
+      await query('INSERT INTO config_disparos (chave, valor) VALUES ($1, $2) ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor', [chave, valor]);
+    }
+    req.log.info({ por: req.usuario?.email, novos }, 'pesquisa de estorno: configuração alterada');
+    return { config: await lerCfg() };
+  });
 }

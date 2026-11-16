@@ -61,3 +61,44 @@ test('validarPergunta: opções, condição e ordem', () => {
   assert.equal(validarPergunta({ ...base, ordem: 5, mostrar_se: { pergunta: 'motivo', valores: ['outro'] } }, P).ok, false);
   assert.equal(validarPergunta({ ...base, tipo: 'texto', opcoes: [] }, P).pergunta.obrigatoria, false);
 });
+
+import { nomeProduto, montarEmail } from './pesquisaEstornoEmail.js';
+
+test('nome do produto sai limpo para o e-mail', () => {
+  assert.equal(nomeProduto('Neuro Mind Pro 6 Bottles (Last Chance)'), 'Neuro Mind Pro');
+  assert.equal(nomeProduto('M2 - NeuroMind Pro (3 Bottles)'), 'NeuroMind Pro');
+  assert.equal(nomeProduto('LungFresh - 3 Bottles'), 'LungFresh');
+  assert.equal(nomeProduto('MemoVance Pro - 3 Additional Bottles (Last chance)'), 'MemoVance Pro');
+  assert.equal(nomeProduto('Bundle Blessed Kit (Last chance)'), 'Bundle Blessed Kit');
+  assert.equal(nomeProduto('1 Flex Guard + 1 Night Calm + 1 Honey Flush (Upgrade)'), null);
+  assert.equal(nomeProduto(''), null);
+});
+
+test('e-mail do convite: reembolso, banco e lembrete', () => {
+  const motivo = { texto: 'What was the main reason for your refund?', texto_banco: 'What was the main reason you contacted your bank?',
+    opcoes: [{ valor: 'sem_resultado', rotulo: "I didn't see the results I expected" }, { valor: 'outro', rotulo: 'Something else' }] };
+  const base = 'https://sendtrace.exemplo';
+  const r = montarEmail({ c: { token: 'a'.repeat(32), grupo: 'reembolso', nome: 'MARIA silva', produto: 'Glyco Eden 6 Bottles', transacao_id: '123' },
+    pergunta: motivo, base, descadastro: 'https://x/descadastro', suporte: 'support@x' });
+  assert.equal(r.assunto, 'Quick question about your Glyco Eden refund');
+  assert.match(r.html, /Hi Maria,/);
+  assert.match(r.html, /\/pesquisa\?t=a{32}&amp;r=sem_resultado/);
+  assert.match(r.html, /didn&#39;t|didn't/);
+  assert.match(r.html, /Unsubscribe/);
+  assert.match(r.texto, /order 123/);
+
+  const b = montarEmail({ c: { token: 'b'.repeat(32), grupo: 'banco', nome: '<script>', produto: 'X + Y', transacao_id: null },
+    pergunta: { texto: 'Do you recognize this purchase?', opcoes: [{ valor: 'sim', rotulo: 'Yes' }, { valor: 'nao', rotulo: 'No' }] }, base, suporte: 'support@x' });
+  assert.equal(b.assunto, 'About your order');
+  assert.match(b.html, /^(?!.*<script>)/s);
+  assert.match(b.html, /Hi,/);
+  assert.match(b.html, /disputed with your bank/);
+  assert.doesNotMatch(b.html, /Unsubscribe/);
+
+  const l = montarEmail({ c: { token: 'c'.repeat(32), grupo: 'reembolso', nome: 'Ana', produto: 'NightCalm 6 Bottles' }, pergunta: motivo, base, suporte: 'support@x', lembrete: true });
+  assert.equal(l.assunto, '30 seconds to help us? (NightCalm)');
+  assert.match(l.html, /why you asked for a refund/);
+
+  const semOpcoes = montarEmail({ c: { token: 'd'.repeat(32), grupo: 'reembolso' }, pergunta: { texto: 'Comment?', opcoes: [] }, base, suporte: 's' });
+  assert.match(semOpcoes.html, /pesquisa\?t=d{32}"/);
+});
