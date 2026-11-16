@@ -2428,6 +2428,44 @@ const servidor = http.createServer(async (req, res) => {
     }
 
     /*
+     * Pesquisa de motivo de estorno (migração 129): página pública do link do e-mail, uma pergunta por vez. Pública e com token
+     * (api/rotas/pesquisaEstorno.js); passa por aqui pra sair com HTTPS/domínio de verdade. ANTES da guarda de sessão.
+     * O POST grava a resposta e devolve 303 para o GET: o redirecionamento é repassado ao navegador (fetch com redirect 'manual').
+     */
+    if ((url.pathname === '/pesquisa' || url.pathname === '/pesquisa/') && (req.method === 'GET' || req.method === 'POST')) {
+      try {
+        let corpoPost = '';
+        if (req.method === 'POST') { // formulário de uma pergunta: no máximo 8 KB
+          for await (const pedaco of req) { if (corpoPost.length < 8192) corpoPost += pedaco; }
+          corpoPost = corpoPost.slice(0, 8192);
+        }
+        const alvo = await fetch(`${enderecoApi}/pesquisa/${url.search}`, {
+          method: req.method,
+          redirect: 'manual',
+          signal: AbortSignal.timeout(8000),
+          headers: {
+            'Content-Type': req.method === 'POST' ? 'application/x-www-form-urlencoded' : 'text/html',
+            'X-Forwarded-For': req.headers['x-forwarded-for'] || req.socket.remoteAddress || '',
+          },
+          body: req.method === 'POST' ? corpoPost : undefined,
+        });
+        if (alvo.status === 303) {
+          res.writeHead(303, { Location: alvo.headers.get('location') || '/pesquisa', 'Cache-Control': 'no-store' });
+          return res.end();
+        }
+        const corpo = await alvo.text();
+        res.writeHead(alvo.status, {
+          'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex',
+          'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'",
+        });
+        return res.end(corpo);
+      } catch {
+        res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
+        return res.end('Service unavailable. Please try again in a few minutes.');
+      }
+    }
+
+    /*
      * Descadastro dos e-mails de pós-venda (link do rodapé e one-click do List-Unsubscribe-Post).
      * Pública e assinada (api/rotas/descadastro.js); passa por aqui pra sair com HTTPS/domínio de verdade.
      * O GET só mostra a página; quem descadastra é o POST. ANTES da guarda de sessão.

@@ -20,6 +20,7 @@ export const PAGINAS = [
   { chave: 'suporteescalado', rotulo: 'Suporte Escalado' },
   { chave: 'suportehumano', rotulo: 'Suporte Humano' },
   { chave: 'relatorioia', rotulo: 'Relatório de Métricas' },
+  { chave: 'pesquisa', rotulo: 'Pesquisa de estorno' },
 ];
 export const CHAVES = PAGINAS.map((p) => p.chave);
 /** Papéis aceitos por página (as demais só aceitam 'usuario'). */
@@ -51,6 +52,7 @@ const MAPA = [
   ['/api/anexo', ['galeriaia', 'detalhesia', 'suporteescalado', 'suportehumano']],
   ['/api/imagem', ['galeriaia', 'detalhesia', 'ticketsia', 'suporteescalado', 'suportehumano']],
   ['/api/relatorio', ['relatorioia']],
+  ['/api/pesquisa-estorno', ['pesquisa']],
   ['/api/postmark', ['postmark']],
   ['/api/metricas/rastreio', ['rastreio']],
   ['/api/rastreio', ['rastreio']],

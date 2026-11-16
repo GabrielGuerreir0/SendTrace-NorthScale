@@ -24,6 +24,7 @@ import './biblioteca.js';
 import './visaoGeral.js';
 import './rastreio.js';
 import './postmark.js';
+import './pesquisaEstorno.js';
 import './perfil.js';
 
 /* Mesmos traçados usados nos nós do canvas, para o card por canal falar a
@@ -1676,7 +1677,7 @@ function relatarConvite({ email: envio, conviteDias }, senha, quem) {
 const PAGINAS_ACESSO = [
   ['visaogeral', 'Visão Geral'], ['suporte', 'Suporte IA'], ['regua', 'Régua de pós-venda'], ['rastreio', 'Rastreio de Pedidos'],
   ['postmark', 'Postmark'], ['ticketsia', 'Tickets de Atendimento'], ['detalhesia', 'Mais Detalhes'], ['chatia', 'Chat com IA'],
-  ['galeriaia', 'Galeria de Imagens'], ['suporteescalado', 'Suporte Escalado'], ['suportehumano', 'Suporte Humano'], ['relatorioia', 'Relatório de Métricas'],
+  ['galeriaia', 'Galeria de Imagens'], ['suporteescalado', 'Suporte Escalado'], ['suportehumano', 'Suporte Humano'], ['relatorioia', 'Relatório de Métricas'], ['pesquisa', 'Pesquisa de estorno'],
 ];
 
 /** Páginas em que a pessoa pode ser Usuário ou Gestor (mesmas chaves de PAPEIS em api/acessoPaginas.js). */

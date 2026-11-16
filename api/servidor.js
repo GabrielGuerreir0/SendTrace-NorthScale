@@ -69,6 +69,7 @@ import { reconciliar as reconciliar17Track } from './track17/reconciliar.js';
 import rotasPostmark from './rotas/postmark.js';
 import rotasFormularios from './rotas/formularios.js';
 import rotasDescadastro from './rotas/descadastro.js';
+import rotasPesquisaEstorno from './rotas/pesquisaEstorno.js';
 import rotasRecorrencia from './rotas/recorrencia.js';
 import rotasDash from './rotas/dash.js';
 import rotasLeitura from './rotas/leitura.js';
@@ -438,6 +439,7 @@ await app.register(rotasSpplAtivo);
 await app.register(rotasPostmark);
 await app.register(rotasFormularios);
 await app.register(rotasDescadastro);
+await app.register(rotasPesquisaEstorno);   // pesquisa de motivo de estorno (129): página pública /pesquisa + perguntas no painel
 await app.register(rotasRecorrencia);
 await app.register(rotasDash);
 await app.register(rotasLeitura);
