@@ -652,9 +652,15 @@ export default async function rotasRastreio(app) {
                CASE WHEN bt.ultimo_resultado = 'ambiguo' THEN 'ambiguo'
                     WHEN bt.ultimo_resultado LIKE 'nao_achado%' THEN 'nao_achado'
                     WHEN bt.transacao_id IS NULL THEN 'nunca' ELSE 'outro' END AS grupo,
+               -- 16/11: no envio conjunto, em qual fulfillment saiu a outra venda do cliente (a mais próxima no tempo, a mesma regra do CLASSE_NE)
+               CASE WHEN ${CLASSE_NE} = 'envio_conjunto' THEN
+                 (SELECT r2.provedor FROM disparos_pos_venda d2 JOIN rastreio_pedidos r2 ON r2.transacao_id = d2.transacao_id
+                   WHERE lower(d2.email) = lower(d.email) AND d2.transacao_id <> d.transacao_id AND r2.status_interno IN ('shipped', 'delivered')
+                     AND d2.criado_em BETWEEN d.criado_em - interval '3 days' AND d.criado_em + interval '3 days'
+                   ORDER BY abs(extract(epoch FROM d2.criado_em - d.criado_em)) LIMIT 1) END AS ful_irma,
                count(*)::int AS n
              ${origem} AND r.status_interno = 'nao_encontrado'
-             GROUP BY 1, 2, 3 ORDER BY 4 DESC`, parametros),
+             GROUP BY 1, 2, 3, 4 ORDER BY 5 DESC`, parametros),
       query(`SELECT x.chave, x.n,
                coalesce((SELECT p.nome FROM produtos p
                           WHERE p.slug <> '*' AND regexp_replace(lower(p.nome), '[^a-z0-9]', '', 'g') IN (x.chave, x.chave || 'pro')
@@ -714,8 +720,8 @@ export default async function rotasRastreio(app) {
       nao_encontrado_fora: (() => {   // uma linha por plataforma + motivo (a consulta separa também pelo grupo de busca, que aqui não interessa)
         const m = new Map();
         for (const r of rB.rows.filter((x) => x.classe !== 'risco')) {
-          const k = `${r.plataforma}|${r.classe}`;
-          m.set(k, { id: `ne_fora_${r.classe}`, plataforma: r.plataforma, v: (m.get(k)?.v || 0) + r.n });
+          const k = `${r.plataforma}|${r.classe}|${r.ful_irma ?? ''}`;
+          m.set(k, { id: `ne_fora_${r.classe}`, plataforma: r.plataforma, ful: r.ful_irma ?? null, v: (m.get(k)?.v || 0) + r.n });
         }
         return [...m.values()].sort((a, b) => b.v - a.v);
       })(),

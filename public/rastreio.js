@@ -138,6 +138,7 @@ const DIC = {
   qNeReembolsado: { en: 'refunded / chargeback', pt: 'reembolsado / chargeback' },
   qNeForaDaConta: { en: 'Out of the count (not a problem right now)', pt: 'Fora da conta (não é problema agora)' },
   qNeForaTotal: { en: 'Total out of the count', pt: 'Total fora da conta' },
+  qNeOutraVendaEm: { en: 'other order shipped by', pt: 'a outra venda saiu pela' },
   qNeEnvioConjunto: { en: 'customer has another order shipped within 3 days (likely a joint shipment)', pt: 'cliente com outro pedido enviado em até 3 dias (provável envio conjunto)' },
   qNeRecente: { en: 'recent order (under 2 business days)', pt: 'pedido recente (menos de 2 dias úteis)' },
   qNeSemPlataforma: { en: 'No platform', pt: 'Sem plataforma' },
@@ -472,7 +473,7 @@ function renderKpis(r) {
       }, { titulo: t('qPorProduto'), total: neLivre }),
       ...(neFora > 0 ? sec(q.nao_encontrado_fora, {
         ne_fora_reemb: (l) => `${plat(l)} · ${t('qNeReembolsado')}`,
-        ne_fora_envio_conjunto: (l) => `${plat(l)} · ${t('qNeEnvioConjunto')}`,
+        ne_fora_envio_conjunto: (l) => `${plat(l)} · ${t('qNeEnvioConjunto')}${l.ful ? ` · ${t('qNeOutraVendaEm')} ${t(`qForn_${l.ful}`)}` : ''}`,
         ne_fora_recente: (l) => `${plat(l)} · ${t('qNeRecente')}`,
       }, { titulo: t('qNeForaDaConta'), totalRotulo: t('qNeForaTotal'), total: neFora }) : []),
     ] : [],
