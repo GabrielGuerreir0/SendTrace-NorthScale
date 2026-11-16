@@ -352,6 +352,8 @@ const DIC = {
   situacao_nao_entrou: { en: 'Never reached the fulfillment', pt: 'Não chegou à fulfillment' },
   situacao_hold_endereco: { en: 'On hold: address', pt: 'Hold por endereço' },
   situacao_cancelado_teste: { en: 'Cancelled there as test', pt: 'Cancelado lá como teste' },
+  situacao_hold_frascos: { en: 'On hold: over 25 bottles', pt: 'Hold: mais de 25 frascos' },
+  situacao_cancelado: { en: 'Cancelled there', pt: 'Cancelado lá' },
   ocorrenciasVazio: { en: 'No SPPL occurrence for this order.', pt: 'Nenhuma ocorrência do SPPL para este pedido.' },
   ocorrenciaPrazo: { en: 'due {data}', pt: 'prazo {data}' },
 

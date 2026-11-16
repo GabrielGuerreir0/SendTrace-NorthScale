@@ -3378,8 +3378,8 @@ button.vg-emp-seg:hover { filter: brightness(1.12); }
 .cel-pilha{display:inline-flex;flex-direction:column;align-items:flex-start;gap:4px}
 .selo-situacao{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;white-space:nowrap;cursor:help;border:1px solid currentColor}
 .selo-situacao[data-s="nao_entrou"]{color:#c2410c;background:rgba(234,88,12,.12)}
-.selo-situacao[data-s="hold_endereco"]{color:#a16207;background:rgba(202,138,4,.14)}
-.selo-situacao[data-s="cancelado_teste"]{color:#6b7280;background:rgba(107,114,128,.14)}
+.selo-situacao[data-s="hold_endereco"],.selo-situacao[data-s="hold_frascos"]{color:#a16207;background:rgba(202,138,4,.14)}
+.selo-situacao[data-s="cancelado_teste"],.selo-situacao[data-s="cancelado"]{color:#6b7280;background:rgba(107,114,128,.14)}
 .subaba-transferidos{border:2px solid #d6336c;color:#d6336c;font-weight:800}
 .subaba-transferidos[aria-selected="true"]{background:#d6336c;color:#fff}
 
