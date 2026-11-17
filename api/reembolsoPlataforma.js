@@ -15,6 +15,8 @@
  * 16/11 (Lucas; migração 134): chargeback aberto DEPOIS da 1ª resposta do agente = Evasão provável; no dia ou antes = Sem atendimento (regra fixa, sem IA).
  * A data do chargeback é a da ABERTURA da disputa (email_ia.chargeback_aberto_em), não a do lançamento. Ticket que a reversão indireta marcou e cujo cliente
  * tem estorno (email_ia.cliente_tem_estorno) entra aqui e é reclassificado: reversão indireta é só para quem não tem reembolso nem chargeback.
+ * 17/11 (135): o estorno também vem do dash e vale mesmo parcial; "Verificando - Ag. Cliente" e "Não respondido - Autorizado pelo líder" com estorno
+ * também evoluem (planilha da Késsia, 203 tickets parados).
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { pool, query } from '../server/db.js';
@@ -26,7 +28,9 @@ export const EVA = `${BASE} - Evasão provável`;
 export const OUT = `${BASE} - Outros`;
 export const TIPOS = [BASE, SEM, EVA, OUT];
 /** Resoluções que uma pessoa marca e que o reembolso da plataforma, saído DEPOIS da marcação, torna desatualizadas (#10238, Késsia 23/10). */
-export const RESOLUCOES_REABRIVEIS = ['Reversão total do reembolso', 'Reembolso parcial', 'Não envolve reembolso', 'Cliente não retornou', 'Não revertido'];
+export const RESOLUCOES_REABRIVEIS = ['Reversão total do reembolso', 'Reembolso parcial', 'Não envolve reembolso', 'Cliente não retornou', 'Não revertido', 'Não reembolsado - Fora da garantia'];
+/** Estados de espera (17/11, planilha da Késsia): com reembolso ou chargeback do cliente, o tipo tem de evoluir, quem quer que tenha marcado. */
+export const TIPOS_ESPERA = ['Verificando - Ag. Cliente', 'Não respondido - Autorizado pelo líder'];
 const MAPA = { SEM_ATENDIMENTO: SEM, EVASAO_PROVAVEL: EVA, OUTROS: OUT };
 const AUTORES_SISTEMA = ['Sistema', 'Sistema (IA)'];
 export const VERSAO_PROMPT = 'v1';
@@ -72,23 +76,23 @@ export async function candidatos() {
          SELECT s.id AS caso_id, lower(s.remetente_email) AS em, f.tipo_resolucao, f.data_reembolso_total, f.propriedades_atualizado_por, f.propriedades_atualizado_em,
                 f.reembolso_plat_origem, f.reembolso_plat_assinatura
            FROM email_ia.suporte_escalado s JOIN email_ia.suporte_escalado_ficha f ON f.suporte_escalado_id = s.id
-          WHERE s.ticket_mae_id IS NULL AND f.tipo_resolucao = ANY($1::text[] || $2::text[] || $3::text[])
+          WHERE s.ticket_mae_id IS NULL AND f.tipo_resolucao = ANY($1::text[] || $2::text[] || $3::text[] || $5::text[])
        ), sel AS (
          SELECT *, false AS reaberto FROM fich WHERE tipo_resolucao = ANY($1::text[])
          UNION ALL   -- marcação de pessoa que o reembolso da plataforma (data posterior à edição) tornou desatualizada
-         SELECT *, true FROM fich
-          WHERE tipo_resolucao = ANY($2::text[]) AND data_reembolso_total IS NOT NULL
+         SELECT *, true FROM fich   -- 17/11: o reembolso vem da ficha, dos disparos ou do dash, e vale mesmo parcial (135)
+          WHERE tipo_resolucao = ANY($2::text[])
             AND propriedades_atualizado_em IS NOT NULL AND propriedades_atualizado_por IS NOT NULL
-            AND data_reembolso_total > (propriedades_atualizado_em AT TIME ZONE 'America/Sao_Paulo')::date
-            AND NOT email_ia.cliente_tem_compra_ativa(em)
+            AND (coalesce(data_reembolso_total, (email_ia.reembolso_em(em) AT TIME ZONE 'America/Sao_Paulo')::date) > (propriedades_atualizado_em AT TIME ZONE 'America/Sao_Paulo')::date
+                 OR (propriedades_atualizado_por = ANY($4::text[]) AND email_ia.cliente_tem_estorno(em)))   -- o SISTEMA marcou mesmo com estorno: evolui
          UNION ALL   -- reversão indireta marcada pelo sistema antes de o estorno chegar (134)
          SELECT *, true FROM fich
           WHERE tipo_resolucao = ANY($3::text[]) AND coalesce(propriedades_atualizado_por, 'Sistema') = ANY($4::text[]) AND email_ia.cliente_tem_estorno(em)
+         UNION ALL   -- estado de espera (Verificando, Autorizado pelo líder) com estorno: evolui, quem quer que tenha marcado (17/11)
+         SELECT *, true FROM fich WHERE tipo_resolucao = ANY($5::text[]) AND email_ia.cliente_tem_estorno(em)
        ), todos AS (   -- datas como texto (o driver devolveria DATE como objeto Date); reembolso da ficha ou da venda (sem compra ativa); chargeback pela abertura da disputa
          SELECT sel.caso_id, sel.em, sel.tipo_resolucao, sel.propriedades_atualizado_por, sel.reembolso_plat_origem, sel.reembolso_plat_assinatura, sel.reaberto,
-                to_char(coalesce(sel.data_reembolso_total,
-                  CASE WHEN NOT email_ia.cliente_tem_compra_ativa(sel.em)
-                       THEN ((SELECT max(d.reembolsado_em) FROM public.disparos_pos_venda d WHERE lower(d.email) = sel.em) AT TIME ZONE 'America/Sao_Paulo')::date END), 'YYYY-MM-DD') AS dr,
+                to_char(coalesce(sel.data_reembolso_total, (email_ia.reembolso_em(sel.em) AT TIME ZONE 'America/Sao_Paulo')::date), 'YYYY-MM-DD') AS dr,
                 to_char(email_ia.chargeback_aberto_em(sel.em) AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS dcb
            FROM sel
        ), ag AS (
@@ -101,7 +105,7 @@ export async function candidatos() {
        )
        SELECT todos.*, ag.p_resp, coalesce(ag.n_resp, 0) AS n_resp, coalesce(em.n_emails, 0) AS n_emails
          FROM todos LEFT JOIN ag ON ag.caso_id = todos.caso_id LEFT JOIN em ON em.em = todos.em
-        ORDER BY todos.caso_id`, [TIPOS, RESOLUCOES_REABRIVEIS, TIPOS_REVERSAO, AUTORES_SISTEMA]);
+        ORDER BY todos.caso_id`, [TIPOS, RESOLUCOES_REABRIVEIS, TIPOS_REVERSAO, AUTORES_SISTEMA, TIPOS_ESPERA]);
     await cli.query('COMMIT');
     return rows;
   } catch (e) { await cli.query('ROLLBACK').catch(() => {}); throw e; } finally { cli.release(); }
