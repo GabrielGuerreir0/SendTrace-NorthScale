@@ -126,8 +126,10 @@ const DIC = {
   qCamSem17t: { en: 'Not registered at 17TRACK', pt: 'Sem registro no 17TRACK' },
   qPendNoPrazo: { en: 'on time', pt: 'no prazo' },
   qPendAtrasado: { en: 'late', pt: 'atrasado' },
-  qPendAteDias: { en: 'up to {n} days', pt: 'até {n} dias' },
-  qPendMaisDias: { en: 'over {n} days', pt: 'mais de {n} dias' },
+  qPendAteDias: { en: 'up to {n} business days', pt: 'até {n} dias úteis' },
+  qPendMaisDias: { en: 'over {n} business days', pt: 'mais de {n} dias úteis' },
+  qPendHoldEndereco: { en: 'on hold: address problem', pt: 'hold por endereço' },
+  qPendSemVenda: { en: 'no linked sale', pt: 'sem venda ligada' },
   qPendSemPrazo: { en: 'no shipping deadline set', pt: 'sem prazo de envio definido' },
   qCancSemCodigo: { en: 'Cancelled before getting a tracking code', pt: 'Cancelados antes de ter código de rastreio' },
   qCancComCodigo: { en: 'Cancelled after getting a tracking code', pt: 'Cancelados depois de ter código' },
@@ -525,6 +527,7 @@ function renderKpis(r) {
       pend_jetstream_ate7: pend(t('qForn_jetstream'), true, 'jetstream'), pend_jetstream_mais7: pend(t('qForn_jetstream'), false, 'jetstream'),
       pend_fullstack_ate7: pend(t('qForn_fullstack'), true, 'fullstack'), pend_fullstack_mais7: pend(t('qForn_fullstack'), false, 'fullstack'),
       pend_redrock_ate7: pend(t('qForn_redrock'), true, 'redrock'), pend_redrock_mais7: pend(t('qForn_redrock'), false, 'redrock'),
+      pend_hold_endereco: () => t('qPendHoldEndereco'), pend_sem_venda: () => t('qPendSemVenda'),
     }, { total: r.pending }), ...secProd('pendente', r.pending)] : [],
   });
   const cardCaminho = kpiCard({

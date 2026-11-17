@@ -21,6 +21,7 @@ import { DO_PRODUTO, DA_PLATAFORMA, BASE_PRODUTO, CHAVE_PRODUTO } from '../sql.j
 import { fatiar, montarOrdem, ErroHttp } from '../comum.js';
 import { paginado, paginacaoParams } from '../esquemas.js';
 import { condicaoPeriodo } from '../filtrosEmailIA.js';
+import { CORTE_HORA_ET, limiteCompra } from '../prazoEnvio.js';
 
 /** `dias`/`data_de`/`data_ate` documentados nas 3 rotas que os aceitam — ver condicaoPeriodo. */
 const PERIODO_QS = {
@@ -69,6 +70,10 @@ const COLUNAS_LISTA = `r.transacao_id, d.nome, d.produto, d.plataforma, r.proved
  * endereço, cancelado lá como teste). Só vale enquanto o pedido está pendente — depois que sai, a explicação deixa de aparecer.
  */
 const JOIN_SITUACAO = `LEFT JOIN rastreio_situacao_fulfillment sf ON sf.transacao_id = r.transacao_id AND r.status_interno = 'pending'`;
+// 17/11 (card "Pendente de envio", mesma conta do Atlas): pedido cancelado ou de teste na fulfillment não é pendente; hold por endereço e linha
+// sem venda ligada aparecem em linhas próprias e não entram no "no prazo"/"atrasado". Usam o JOIN_SITUACAO (sf) e a venda (d).
+const NA_CONTA_PENDENTE = `sf.situacao IS DISTINCT FROM 'cancelado' AND sf.situacao IS DISTINCT FROM 'cancelado_teste'`;
+const PENDENTE_NORMAL = `(${NA_CONTA_PENDENTE} AND sf.situacao IS DISTINCT FROM 'hold_endereco' AND d.transacao_id IS NOT NULL)`;
 
 /**
  * A Red Rock só dá 4 status simples (pending/shipped/delivered/cancelled) —
@@ -326,8 +331,9 @@ const fmtDataHora = (v) => (v
 const diasEntre = (de, ate = Date.now()) => (de ? Math.max(0, Math.floor((ate - new Date(de).getTime()) / 86_400_000)) : '');
 
 /*
- * Prazo de envio por fulfillment (migração 131, 16/11/2026): dias corridos desde a compra, editável na aba Rastreio. Substitui o corte fixo de 7 dias
- * do card "Pendente de envio". Prazo vazio = nada é marcado como atrasado (a mesma regra do Atlas).
+ * Prazo de envio por fulfillment (migração 131, 16/11/2026), editável na aba Rastreio. Substitui o corte fixo de 7 dias do card "Pendente de envio".
+ * 17/11: o número é de dias ÚTEIS, com o corte de 14h ET na Jetpack — a regra do contrato, igual ao Atlas (api/prazoEnvio.js). Prazo vazio = nada
+ * é marcado como atrasado.
  */
 const PROVEDORES_PRAZO = ['fullstack', 'jetstream', 'redrock'];
 const prazoValido = (v) => (v === null || v === undefined || v === '' ? null : Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 60 ? Number(v) : undefined);
@@ -337,9 +343,13 @@ async function lerPrazoEnvio() {
   try { bruto = JSON.parse(rows[0]?.valor || '{}'); } catch { /* JSON quebrado: sem prazo */ }
   return Object.fromEntries(PROVEDORES_PRAZO.map((k) => [k, prazoValido(bruto[k]) ?? null]));
 }
-/** SQL: o pedido passou do prazo de envio do seu fulfillment? NULL quando o fulfillment não tem prazo (os números vêm validados de lerPrazoEnvio). */
-const sqlAtrasadoEnvio = (prazos, idade) => `coalesce(${idade} < now() - make_interval(days => CASE r.provedor ${
-  PROVEDORES_PRAZO.filter((k) => prazos[k] != null).map((k) => `WHEN '${k}' THEN ${prazos[k]}`).join(' ')} END), false)`;
+/** SQL: o pedido passou do prazo de envio do seu fulfillment? Compara a compra com o limite de cada fulfillment calculado agora (dias úteis + corte);
+ *  fulfillment sem prazo nunca fica atrasado. Os limites são datas geradas aqui (ISO), não vêm do usuário. */
+const sqlAtrasadoEnvio = (prazos, idade, agora = Date.now()) => {
+  const casos = PROVEDORES_PRAZO.filter((k) => prazos[k] != null)
+    .map((k) => `WHEN '${k}' THEN ${idade} < '${limiteCompra(prazos[k], CORTE_HORA_ET[k], agora).toISOString()}'::timestamptz`);
+  return casos.length ? `coalesce(CASE r.provedor ${casos.join(' ')} END, false)` : 'false';
+};
 
 export default async function rotasRastreio(app) {
   /* ═══════════════════════════  internas (painel)  ═══════════════════════ */
@@ -463,10 +473,10 @@ export default async function rotasRastreio(app) {
   /* ── prazo de envio por fulfillment (migração 131): leitura para quem tem a página; gravar só administrador ── */
   app.get('/api/rastreio/prazos-envio/', {
     onRequest: [app.exigirSessao],
-    schema: { tags: ['Rastreio'], summary: 'Prazo de envio por fulfillment (dias corridos) e histórico', security: [{ bearerAuth: [] }] },
+    schema: { tags: ['Rastreio'], summary: 'Prazo de envio por fulfillment (dias úteis; Jetpack com corte às 14h ET) e histórico', security: [{ bearerAuth: [] }] },
   }, async () => {
     const { rows } = await query(`SELECT em, por, de, para FROM rastreio_prazo_envio_historico ORDER BY em DESC LIMIT 20`);
-    return { prazos: await lerPrazoEnvio(), historico: rows };
+    return { prazos: await lerPrazoEnvio(), cortes_hora_et: CORTE_HORA_ET, historico: rows };
   });
   app.put('/api/rastreio/prazos-envio/', {
     onRequest: [app.exigirAdmin],
@@ -632,7 +642,7 @@ export default async function rotasRastreio(app) {
          count(*)::int                                                    AS total,
          count(*) FILTER (WHERE r.status_interno = 'pendente_consulta')::int AS pendente_consulta,
          count(*) FILTER (WHERE r.status_interno = 'nao_encontrado')::int    AS nao_encontrado,
-         count(*) FILTER (WHERE r.status_interno = 'pending')::int           AS pending,
+         count(*) FILTER (WHERE r.status_interno = 'pending' AND ${NA_CONTA_PENDENTE})::int AS pending,
          count(*) FILTER (WHERE r.status_interno = 'shipped')::int           AS shipped,
          count(*) FILTER (WHERE r.status_interno = 'delivered')::int         AS delivered,
          count(*) FILTER (WHERE r.status_interno = 'cancelled')::int         AS cancelled,
@@ -641,7 +651,7 @@ export default async function rotasRastreio(app) {
          count(*) FILTER (
            WHERE r.tracking_number IS NULL AND r.status_interno IN ('pending', 'shipped', 'delivered', 'cancelled')
          )::int AS sem_codigo_rastreio
-       FROM rastreio_pedidos r LEFT JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
+       FROM rastreio_pedidos r LEFT JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id ${JOIN_SITUACAO}
        WHERE ${DO_PRODUTO(1, 'd.')} AND ${DA_PLATAFORMA(2, 'd.')} ${filtroPeriodo}`,
       [req.query.produto ?? null, req.query.plataforma ?? null, ...valores.slice(2)],
     );
@@ -656,11 +666,13 @@ export default async function rotasRastreio(app) {
        LEFT JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
        LEFT JOIN rastreio_17t_registros t17 ON t17.numero = r.tracking_number
        LEFT JOIN rastreio_busca_tentativas bt ON bt.transacao_id = r.transacao_id
+       ${JOIN_SITUACAO}
        WHERE ${DO_PRODUTO(1, 'd.')} AND ${DA_PLATAFORMA(2, 'd.')} ${filtroPeriodo}`;
     const idade7 = `coalesce(r.order_created_at, r.criado_em)`;
     // 16/11: os campos *_ate7 / *_mais7 / pendente_mais7 mantêm o nome (o schema da resposta e a tela usam), mas agora são "no prazo" × "atrasado"
     // pelo prazo de envio de cada fulfillment (migração 131), não mais o corte fixo de 7 dias.
-    const atrasadoEnvio = sqlAtrasadoEnvio(await lerPrazoEnvio(), idade7);
+    // 17/11: o atraso só conta para o pedido normal; hold por endereço e linha sem venda ligada viram linhas próprias (como o "Fora da conta" do Atlas).
+    const atrasadoEnvio = `(${sqlAtrasadoEnvio(await lerPrazoEnvio(), idade7)} AND ${PENDENTE_NORMAL})`;
     // 09/11: o "não encontrado" separa o que está FORA da conta: reembolso/chargeback; cliente com outro pedido já enviado em ±3 dias (provável envio
     // conjunto do upsell/downsell: a regra do funil diz que o up/down vai na mesma fulfillment do front); e pedido novo (menos de 2 dias úteis).
     // Só o que sobra ('risco') entra no número do card. As linhas "fora" continuam visíveis numa tabela própria.
@@ -685,12 +697,14 @@ export default async function rotasRastreio(app) {
          count(*) FILTER (WHERE r.status_interno = 'shipped' AND t17.ultimo_status IN ('InTransit','InfoReceived','OutForDelivery','AvailableForPickup'))::int AS cam_transito,
          count(*) FILTER (WHERE r.status_interno = 'shipped' AND t17.ultimo_status IN ('Exception','DeliveryFailure','NotFound','Expired'))::int AS cam_problema,
          count(*) FILTER (WHERE r.status_interno = 'shipped' AND t17.ultimo_status IS NULL)::int AS cam_sem_17t,
-         count(*) FILTER (WHERE r.status_interno = 'pending' AND r.provedor = 'jetstream' AND NOT ${atrasadoEnvio})::int AS pend_js_ate7,
+         count(*) FILTER (WHERE r.status_interno = 'pending' AND r.provedor = 'jetstream' AND ${PENDENTE_NORMAL} AND NOT ${atrasadoEnvio})::int AS pend_js_ate7,
          count(*) FILTER (WHERE r.status_interno = 'pending' AND r.provedor = 'jetstream' AND ${atrasadoEnvio})::int AS pend_js_mais7,
-         count(*) FILTER (WHERE r.status_interno = 'pending' AND r.provedor = 'fullstack' AND NOT ${atrasadoEnvio})::int AS pend_fs_ate7,
+         count(*) FILTER (WHERE r.status_interno = 'pending' AND r.provedor = 'fullstack' AND ${PENDENTE_NORMAL} AND NOT ${atrasadoEnvio})::int AS pend_fs_ate7,
          count(*) FILTER (WHERE r.status_interno = 'pending' AND r.provedor = 'fullstack' AND ${atrasadoEnvio})::int AS pend_fs_mais7,
-         count(*) FILTER (WHERE r.status_interno = 'pending' AND r.provedor = 'redrock'   AND NOT ${atrasadoEnvio})::int AS pend_rr_ate7,
+         count(*) FILTER (WHERE r.status_interno = 'pending' AND r.provedor = 'redrock'   AND ${PENDENTE_NORMAL} AND NOT ${atrasadoEnvio})::int AS pend_rr_ate7,
          count(*) FILTER (WHERE r.status_interno = 'pending' AND r.provedor = 'redrock'   AND ${atrasadoEnvio})::int AS pend_rr_mais7,
+         count(*) FILTER (WHERE r.status_interno = 'pending' AND sf.situacao = 'hold_endereco')::int AS pend_hold_endereco,
+         count(*) FILTER (WHERE r.status_interno = 'pending' AND d.transacao_id IS NULL AND ${NA_CONTA_PENDENTE} AND sf.situacao IS DISTINCT FROM 'hold_endereco')::int AS pend_sem_venda,
          count(*) FILTER (WHERE r.status_interno = 'cancelled' AND r.tracking_number IS NULL)::int AS canc_sem_codigo,
          count(*) FILTER (WHERE r.status_interno = 'pending' AND r.tracking_number IS NULL AND r.provedor = 'jetstream')::int AS sc_pend_js,
          count(*) FILTER (WHERE r.status_interno = 'pending' AND r.tracking_number IS NULL AND r.provedor = 'fullstack')::int AS sc_pend_fs,
@@ -728,7 +742,7 @@ export default async function rotasRastreio(app) {
                           ORDER BY length(p.nome) LIMIT 1), x.rotulo) AS nome
              FROM (SELECT ${CHAVE_PRODUTO('d.')} AS chave, mode() WITHIN GROUP (ORDER BY ${BASE_PRODUTO('d.')}) AS rotulo,
                      count(*)::int AS total,
-                     count(*) FILTER (WHERE r.status_interno = 'pending')::int AS pendente,
+                     count(*) FILTER (WHERE r.status_interno = 'pending' AND ${NA_CONTA_PENDENTE})::int AS pendente,
                      count(*) FILTER (WHERE r.status_interno = 'pending' AND ${atrasadoEnvio})::int AS pendente_mais7,
                      count(*) FILTER (WHERE r.status_interno = 'shipped' AND t17.ultimo_status IS DISTINCT FROM 'Delivered')::int AS a_caminho,
                      count(*) FILTER (WHERE r.status_interno = 'delivered' OR (r.status_interno = 'shipped' AND t17.ultimo_status = 'Delivered'))::int AS entregue,
@@ -762,6 +776,7 @@ export default async function rotasRastreio(app) {
         { id: 'pend_jetstream_ate7', v: a.pend_js_ate7 }, { id: 'pend_jetstream_mais7', v: a.pend_js_mais7 },
         { id: 'pend_fullstack_ate7', v: a.pend_fs_ate7 }, { id: 'pend_fullstack_mais7', v: a.pend_fs_mais7 },
         { id: 'pend_redrock_ate7', v: a.pend_rr_ate7 }, { id: 'pend_redrock_mais7', v: a.pend_rr_mais7 },
+        { id: 'pend_hold_endereco', v: a.pend_hold_endereco }, { id: 'pend_sem_venda', v: a.pend_sem_venda },
       ], t.pending),
       cancelado: comResto([{ id: 'canc_sem_codigo', v: a.canc_sem_codigo }], t.cancelled),
       sem_codigo: comResto([

@@ -1,7 +1,7 @@
 /**
  * Aba Rastreio — prazo de envio por fulfillment (migração 131; pedido do Lucas, 16/11/2026).
  *
- * Dias corridos desde a compra (a mesma regra do Atlas). O card "Pendente de envio" separa "no prazo" × "atrasado" por esse prazo
+ * Dias úteis desde a compra, com o corte de 14h ET na Jetpack (17/11: a regra do contrato, igual ao Atlas). O card "Pendente de envio" separa "no prazo" × "atrasado" por esse prazo
  * (antes era um corte fixo de 7 dias). Todo mundo com a página vê; só administrador grava (a API também confere). Prazo vazio = sem prazo.
  * Depois de salvar, dispara `rastreio:prazos` para a aba recalcular os cards.
  */
@@ -28,7 +28,7 @@ function render() {
   caixa.replaceChildren(...FUL.map(([k, nome]) => {
     const l = document.createElement('label');
     l.className = 'campo';
-    const s = document.createElement('span'); s.textContent = `${nome} (dias)`;
+    const s = document.createElement('span'); s.textContent = `${nome} (dias úteis${atual?.cortes_hora_et?.[k] != null ? `, corte ${atual.cortes_hora_et[k]}h ET` : ''})`;
     const i = document.createElement('input');
     i.type = 'number'; i.min = '0'; i.max = '60'; i.step = '1'; i.style.width = '110px'; i.dataset.ful = k;
     i.value = atual?.prazos?.[k] ?? ''; i.placeholder = 'sem prazo'; i.disabled = !admin;
@@ -41,7 +41,7 @@ function render() {
   const nome = Object.fromEntries(FUL);
   lista.replaceChildren(...(hist.length ? hist.map((h) => {
     const mud = FUL.map(([k]) => k).filter((k) => (h.de?.[k] ?? null) !== (h.para?.[k] ?? null))
-      .map((k) => `${nome[k]}: ${h.de?.[k] ?? 'sem prazo'} → ${h.para?.[k] ?? 'sem prazo'} dia(s)`).join(' · ');
+      .map((k) => `${nome[k]}: ${h.de?.[k] ?? 'sem prazo'} → ${h.para?.[k] ?? 'sem prazo'} dia(s) útil(eis)`).join(' · ');
     const li = document.createElement('li');
     li.textContent = `${dataHora(h.em)} · ${h.por || '—'} · ${mud}`;
     return li;
