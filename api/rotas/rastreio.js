@@ -678,9 +678,9 @@ export default async function rotasRastreio(app) {
     // Só o que sobra ('risco') entra no número do card. As linhas "fora" continuam visíveis numa tabela própria.
     const CLASSE_NE = `CASE
          WHEN d.reembolsado_em IS NOT NULL OR d.chargeback_em IS NOT NULL THEN 'reemb'
-         WHEN d.email IS NOT NULL AND EXISTS (SELECT 1 FROM disparos_pos_venda d2 JOIN rastreio_pedidos r2 ON r2.transacao_id = d2.transacao_id
-                 WHERE lower(d2.email) = lower(d.email) AND d2.transacao_id <> d.transacao_id AND r2.status_interno IN ('shipped', 'delivered')
-                   AND d2.criado_em BETWEEN d.criado_em - interval '3 days' AND d.criado_em + interval '3 days') THEN 'envio_conjunto'
+         -- 20/11 (migração 136): envio conjunto = a venda tem pedido PRINCIPAL atrelado (rastreio_principal_id, preenchido por atrelar_principal.py:
+         -- upsell/downsell → front do mesmo e-mail, enviado, ±3 dias). É o mesmo critério da ficha do suporte/IA; fronts e casos ambíguos voltam a "risco".
+         WHEN r.rastreio_principal_id IS NOT NULL THEN 'envio_conjunto'
          WHEN d.criado_em IS NOT NULL AND sppl_somar_dias_uteis(d.criado_em, 2) > now() THEN 'recente'
          ELSE 'risco' END`;
     const [rA, rB, rC, rD] = await Promise.all([
@@ -719,12 +719,9 @@ export default async function rotasRastreio(app) {
                CASE WHEN bt.ultimo_resultado = 'ambiguo' THEN 'ambiguo'
                     WHEN bt.ultimo_resultado LIKE 'nao_achado%' THEN 'nao_achado'
                     WHEN bt.transacao_id IS NULL THEN 'nunca' ELSE 'outro' END AS grupo,
-               -- 16/11: no envio conjunto, em qual fulfillment saiu a outra venda do cliente (a mais próxima no tempo, a mesma regra do CLASSE_NE)
+               -- 16/11 (20/11: pelo principal atrelado): no envio conjunto, em qual fulfillment saiu o pedido principal
                CASE WHEN ${CLASSE_NE} = 'envio_conjunto' THEN
-                 (SELECT r2.provedor FROM disparos_pos_venda d2 JOIN rastreio_pedidos r2 ON r2.transacao_id = d2.transacao_id
-                   WHERE lower(d2.email) = lower(d.email) AND d2.transacao_id <> d.transacao_id AND r2.status_interno IN ('shipped', 'delivered')
-                     AND d2.criado_em BETWEEN d.criado_em - interval '3 days' AND d.criado_em + interval '3 days'
-                   ORDER BY abs(extract(epoch FROM d2.criado_em - d.criado_em)) LIMIT 1) END AS ful_irma,
+                 (SELECT rp.provedor FROM rastreio_pedidos rp WHERE rp.transacao_id = r.rastreio_principal_id) END AS ful_irma,
                count(*)::int AS n
              ${origem} AND r.status_interno = 'nao_encontrado'
              GROUP BY 1, 2, 3, 4 ORDER BY 5 DESC`, parametros),
