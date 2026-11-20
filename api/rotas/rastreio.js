@@ -641,7 +641,7 @@ export default async function rotasRastreio(app) {
       `SELECT
          count(*)::int                                                    AS total,
          count(*) FILTER (WHERE r.status_interno = 'pendente_consulta')::int AS pendente_consulta,
-         count(*) FILTER (WHERE r.status_interno = 'nao_encontrado')::int    AS nao_encontrado,
+         count(*) FILTER (WHERE r.status_interno = 'nao_encontrado' AND r.rastreio_principal_id IS NULL)::int    AS nao_encontrado,
          count(*) FILTER (WHERE r.status_interno = 'pending' AND ${NA_CONTA_PENDENTE})::int AS pending,
          count(*) FILTER (WHERE r.status_interno = 'shipped')::int           AS shipped,
          count(*) FILTER (WHERE r.status_interno = 'delivered')::int         AS delivered,
@@ -712,7 +712,7 @@ export default async function rotasRastreio(app) {
          count(*) FILTER (WHERE r.status_interno = 'pending' AND r.tracking_number IS NULL AND r.provedor = 'jetstream' AND ${atrasadoEnvio})::int AS sc_pend_js_mais7,
          count(*) FILTER (WHERE r.status_interno = 'pending' AND r.tracking_number IS NULL AND r.provedor = 'fullstack' AND ${atrasadoEnvio})::int AS sc_pend_fs_mais7,
          count(*) FILTER (WHERE r.status_interno = 'pending' AND r.tracking_number IS NULL AND r.provedor = 'redrock'   AND ${atrasadoEnvio})::int AS sc_pend_rr_mais7,
-         count(*) FILTER (WHERE r.status_interno = 'nao_encontrado' AND bt.ultima_tentativa_em >= now() - interval '2 days')::int AS ne_buscado_48h
+         count(*) FILTER (WHERE r.status_interno = 'nao_encontrado' AND r.rastreio_principal_id IS NULL AND bt.ultima_tentativa_em >= now() - interval '2 days')::int AS ne_buscado_48h
        ${origem}`, parametros),
       query(`SELECT coalesce(nullif(btrim(d.plataforma), ''), '') AS plataforma,
                ${CLASSE_NE} AS classe,
@@ -723,14 +723,14 @@ export default async function rotasRastreio(app) {
                CASE WHEN ${CLASSE_NE} = 'envio_conjunto' THEN
                  (SELECT rp.provedor FROM rastreio_pedidos rp WHERE rp.transacao_id = r.rastreio_principal_id) END AS ful_irma,
                count(*)::int AS n
-             ${origem} AND r.status_interno = 'nao_encontrado'
+             ${origem} AND r.status_interno = 'nao_encontrado' AND r.rastreio_principal_id IS NULL
              GROUP BY 1, 2, 3, 4 ORDER BY 5 DESC`, parametros),
       query(`SELECT x.chave, x.n,
                coalesce((SELECT p.nome FROM produtos p
                           WHERE p.slug <> '*' AND regexp_replace(lower(p.nome), '[^a-z0-9]', '', 'g') IN (x.chave, x.chave || 'pro')
                           ORDER BY length(p.nome) LIMIT 1), x.rotulo) AS nome
              FROM (SELECT ${CHAVE_PRODUTO('d.')} AS chave, mode() WITHIN GROUP (ORDER BY ${BASE_PRODUTO('d.')}) AS rotulo, count(*)::int AS n
-                     ${origem} AND r.status_interno = 'nao_encontrado' AND ${CLASSE_NE} = 'risco' GROUP BY 1) x
+                     ${origem} AND r.status_interno = 'nao_encontrado' AND r.rastreio_principal_id IS NULL AND ${CLASSE_NE} = 'risco' GROUP BY 1) x
              ORDER BY x.n DESC`, parametros),
       // 12/11: TODOS os produtos, uma linha por produto com a contagem de cada card (alimenta "Por produto" nos cards e a tabela de resumo).
       query(`SELECT x.chave, x.total, x.pendente, x.pendente_mais7, x.a_caminho, x.entregue, x.cancelado, x.sem_codigo, x.nao_encontrado,
@@ -745,7 +745,7 @@ export default async function rotasRastreio(app) {
                      count(*) FILTER (WHERE r.status_interno = 'delivered' OR (r.status_interno = 'shipped' AND t17.ultimo_status = 'Delivered'))::int AS entregue,
                      count(*) FILTER (WHERE r.status_interno = 'cancelled')::int AS cancelado,
                      count(*) FILTER (WHERE r.tracking_number IS NULL AND r.status_interno IN ('pending', 'shipped', 'delivered', 'cancelled'))::int AS sem_codigo,
-                     count(*) FILTER (WHERE r.status_interno = 'nao_encontrado')::int AS nao_encontrado
+                     count(*) FILTER (WHERE r.status_interno = 'nao_encontrado' AND r.rastreio_principal_id IS NULL)::int AS nao_encontrado
                    ${origem} GROUP BY 1) x
              ORDER BY x.pendente DESC, x.total DESC`, parametros),
     ]);
@@ -760,6 +760,7 @@ export default async function rotasRastreio(app) {
     const caminhoAjust = t.shipped - a.entregue_17t;
     const scPend = soma(a.sc_pend_js, a.sc_pend_fs, a.sc_pend_rr);
     const neFora = soma(...rB.rows.filter((r) => r.classe !== 'risco').map((r) => r.n));
+    // 20/11: os atrelados ao pedido principal (rastreio_principal_id) já estão ligados ao banco: não entram mais neste card nem em "fora da conta".
     const neLivre = t.nao_encontrado - neFora;   // = só o que fica "a verificar" (classe risco)
     const topProdutos = rC.rows.slice(0, 6).map((r) => ({ id: r.chave === null ? 'sem_produto' : r.chave === 'combos' ? 'kits' : r.chave === 'outros' ? 'outros_produtos' : 'produto', nome: r.nome ?? null, v: r.n }));
     const restoProdutos = rC.rows.slice(6).reduce((s, r) => s + r.n, 0);
