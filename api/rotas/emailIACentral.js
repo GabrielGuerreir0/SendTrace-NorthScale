@@ -1957,9 +1957,11 @@ export default async function rotasEmailIACentral(app) {
                              AND e.evento IN ('SALE', 'payment', 'neworder') AND e.valor IS NOT NULL
                            ORDER BY e.recebido_em ASC LIMIT 1), r.total) AS valor,
                 coalesce(r.currency, 'USD') AS moeda,
-                r.provedor, r.status_interno AS rastreio_status, r.carrier_code, r.tracking_number, r.tracking_url
+                r.provedor, r.status_interno AS rastreio_status, r.carrier_code, r.tracking_number, r.tracking_url,
+                -- 20/11: upsell/downsell em envio conjunto herda o rastreio do pedido principal (rastreio_resolver, migração 136); true = o código é do pedido principal
+                (r.transacao_id IS NOT NULL AND r.transacao_id <> d.transacao_id) AS rastreio_do_principal
          FROM disparos_pos_venda d
-         LEFT JOIN rastreio_pedidos r ON r.transacao_id = d.transacao_id
+         LEFT JOIN rastreio_pedidos r ON r.transacao_id = public.rastreio_resolver(d.transacao_id)
          WHERE lower(d.email) = lower($1) ORDER BY d.criado_em DESC`,
         [emailCompra],
       ),

@@ -308,6 +308,10 @@ public.sppl_regras (a matriz editável de prazos e ações do SPPL): origem, cat
   prioridade, imediato (não espera os prazos de 5/10/15 dias), contata_cliente, ativa.
   Quadro por pedido (atalho): rastreio_pedidos + rastreio_17t_registros (via tracking_number) + sppl_ocorrencias (via transacao_id).
   Pedidos "não encontrados" (status_interno = 'nao_encontrado', ~2.900 em 12/10) a Red Rock não conhece: ficam FORA dos alertas do SPPL.
+  ENVIO CONJUNTO (20/11): upsell/downsell vai na caixa do front e não tem pedido próprio na fulfillment (fica 'nao_encontrado'). Quando o campo
+  rastreio_pedidos.rastreio_principal_id está preenchido, o rastreio desse pedido é o do pedido principal: use public.rastreio_resolver(transacao_id)
+  (devolve o transacao_id do principal) e leia status, código e datas da linha de rastreio_pedidos desse id. Ao responder o cliente, o código é o da caixa
+  em que o pedido principal viajou.
 
 public.chat_atendimentos (atendimentos do chat de IA do site):
   id, email, transacao_id, motivo, resumo, desfecho, resolvido, reembolso_pedido,
