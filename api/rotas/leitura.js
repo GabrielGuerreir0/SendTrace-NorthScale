@@ -18,7 +18,7 @@
 import { ErroHttp } from '../comum.js';
 import { query } from '../../server/db.js';
 import { consultarLeitura, leituraConfigurada, LIMITE_PADRAO, LIMITE_MAXIMO } from '../../server/dbLeitura.js';
-import { criarChave, listarChaves, revogarChave, mascararLinhas } from '../leituraChaves.js';
+import { criarChave, listarChaves, revogarChave, mascararLinhas, LIMITE_POR_MINUTO } from '../leituraChaves.js';
 
 const RE_NOME = /^[a-z_][a-z0-9_]*$/;
 
@@ -67,7 +67,7 @@ export default async function rotasLeitura(app) {
     return {
       quem: req.usuario.leitura ? { dono: req.usuario.nome, chave_id: req.usuario.chaveId, mascarar_pii: !!req.usuario.mascararPii } : { dono: req.usuario.nome, administrador: true },
       leitura_do_banco_ativa: leituraConfigurada,
-      limites: { linhas_por_consulta_padrao: LIMITE_PADRAO, linhas_por_consulta_maximo: LIMITE_MAXIMO, tempo_por_consulta_s: 20, chamadas_por_minuto: 120 },
+      limites: { linhas_por_consulta_padrao: LIMITE_PADRAO, linhas_por_consulta_maximo: LIMITE_MAXIMO, tempo_por_consulta_s: 20, chamadas_por_minuto: LIMITE_POR_MINUTO },
       rotas: {
         esquema: 'GET /api/leitura/esquema[?tabela=public.tickets]',
         tabela: 'GET /api/leitura/tabela/:nome?limite=100&offset=0&ordem=coluna&desc=1',

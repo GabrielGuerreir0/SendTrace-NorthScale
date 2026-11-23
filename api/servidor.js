@@ -76,7 +76,7 @@ import rotasRecorrencia from './rotas/recorrencia.js';
 import rotasDash from './rotas/dash.js';
 import rotasLeitura from './rotas/leitura.js';
 import rotasMcp from './rotas/mcp.js';
-import { ehTokenLeitura, validarChave, dentroDoLimite, auditar } from './leituraChaves.js';
+import { ehTokenLeitura, validarChave, dentroDoLimite, auditar, LIMITE_POR_MINUTO } from './leituraChaves.js';
 import { agendarSincronizacaoDash } from '../server/dash.js';
 
 const PORTA = Number(process.env.API_PORT) || 4400;
@@ -185,7 +185,7 @@ app.decorate('exigirSessao', async (req) => {
     if (req.method !== 'GET' && !(req.method === 'POST' && caminho === '/api/leitura/sql') && !ehEdicaoPropriedades) {
       throw new ErroHttp(403, 'Esta chave é somente de leitura.');
     }
-    if (!dentroDoLimite(chave.id)) throw new ErroHttp(429, 'Muitas consultas por minuto (limite 120). Espere um pouco.');
+    if (!dentroDoLimite(chave.id)) throw new ErroHttp(429, `Muitas consultas por minuto (limite ${LIMITE_POR_MINUTO}). Espere um pouco.`);
     req.usuario = {
       user_id: null, email: `leitura-${chave.id}@api`, nome: chave.dono, admin: true, gestorEscalado: true, gestorHumano: true, tipo: 'access',
       leitura: true, chaveId: chave.id, mascararPii: chave.mascarar_pii, editaPropriedades: Boolean(chave.edita_propriedades),

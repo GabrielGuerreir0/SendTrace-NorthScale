@@ -78,10 +78,12 @@ export async function auditar(a) {
 /* ─────────────────────  limite por chave (em memória)  ───────────────────── */
 
 const JANELA_MS = 60_000;
-const MAX_POR_JANELA = 120;
+/** 23/11: de 120 para 600 por minuto. O Atlas (Rastreio) lê os eventos do 17TRACK em ~64 lotes × 2 consultas e estourava os 120 (HTTP 429, lotes perdidos). `LEITURA_MAX_POR_MINUTO` no .env ajusta sem novo código. */
+export const LIMITE_POR_MINUTO = Number(process.env.LEITURA_MAX_POR_MINUTO) || 600;
+const MAX_POR_JANELA = LIMITE_POR_MINUTO;
 const contagem = new Map();
 
-/** true = pode seguir; false = estourou o limite (120 chamadas por minuto, por chave). */
+/** true = pode seguir; false = estourou o limite (LIMITE_POR_MINUTO chamadas por minuto, por chave). */
 export function dentroDoLimite(chaveId) {
   const agora = Date.now();
   const c = contagem.get(chaveId);

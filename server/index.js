@@ -2546,7 +2546,7 @@ const servidor = http.createServer(async (req, res) => {
     /*
      * Chave de LEITURA (`Authorization: Bearer str_ro_…`, migração 115) — a Késsia/Claude consulta o SendTrace inteiro daqui, sem cookie.
      * Repassa para a API: qualquer GET de /api/… (as telas) e o POST de /api/leitura/sql. A chave é conferida na API, que recusa tudo
-     * que não seja leitura, limita a 120 chamadas/min e grava a auditoria (leitura_auditoria). Resposta repassada como veio (JSON ou arquivo).
+     * que não seja leitura, limita a 600 chamadas/min (LEITURA_MAX_POR_MINUTO) e grava a auditoria (leitura_auditoria). Resposta repassada como veio (JSON ou arquivo).
      * ANTES da guarda de sessão. Repassa o IP de quem chegou para a auditoria.
      */
     if (/^Bearer str_ro_/i.test(String(req.headers.authorization ?? '')) && url.pathname.startsWith('/api/')) {

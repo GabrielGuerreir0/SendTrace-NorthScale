@@ -7,7 +7,7 @@
  * O endereço, portanto, é segredo: nada aqui o registra (o log e a auditoria trocam o trecho da chave por `<chave>`), e revogar a chave o invalida.
  *
  * Cada ferramenta chama a PRÓPRIA API por dentro (`app.inject`) com `Authorization: Bearer <chave>` — então vale tudo o que já vale para a chave:
- * só GET (+ POST /api/leitura/sql em transação READ ONLY), 120/min, máscara de dados pessoais, auditoria linha a linha, credenciais fora.
+ * só GET (+ POST /api/leitura/sql em transação READ ONLY), 600/min (LEITURA_MAX_POR_MINUTO), máscara de dados pessoais, auditoria linha a linha, credenciais fora.
  */
 import { validarChave } from '../leituraChaves.js';
 
