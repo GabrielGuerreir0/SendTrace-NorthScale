@@ -2405,6 +2405,28 @@ const servidor = http.createServer(async (req, res) => {
     }
 
     /*
+     * Lista de compradores para o app de membros (api/rotas/acessoCompradores.js) — `Authorization: Bearer` com chave exclusiva,
+     * conferida na API (não é a str_ro_, que lê tudo). Só GET; repassa a chave e o IP. ANTES da guarda de sessão.
+     */
+    if (url.pathname === '/api/acesso/compradores' && req.method === 'GET') {
+      try {
+        const alvo = await fetch(`${enderecoApi}/api/acesso/compradores${url.search}`, {
+          signal: AbortSignal.timeout(30000),
+          headers: {
+            Accept: 'application/json',
+            Authorization: String(req.headers.authorization ?? ''),
+            'X-Forwarded-For': req.headers['x-forwarded-for'] || req.socket.remoteAddress || '',
+          },
+        });
+        const corpo = await alvo.text();
+        res.writeHead(alvo.status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+        return res.end(corpo);
+      } catch {
+        return json(res, 502, { erro: 'sem conexão com o servidor' });
+      }
+    }
+
+    /*
      * Webhook do 17TRACK (SPPL) — o 17TRACK chama aqui quando um rastreio muda. Repassa o corpo BRUTO (a assinatura é conferida
      * na API, sobre os bytes originais) e o cabeçalho `sign`. ANTES da guarda de sessão: o 17TRACK não tem cookie. Só POST.
      */

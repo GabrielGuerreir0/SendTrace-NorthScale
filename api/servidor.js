@@ -53,6 +53,7 @@ import rotasVisaoGeral from './rotas/visaoGeral.js';
 import rotasAlertas, { verificarEEnviarAlertas } from './rotas/alertas.js';
 import rotasRastreio from './rotas/rastreio.js';
 import rotasRecoverly from './rotas/recoverly.js';
+import rotasAcessoCompradores from './rotas/acessoCompradores.js';
 import rotasTrack17 from './rotas/track17.js';
 import { rodadaDiaria as rodadaDiariaReversaoIndireta } from './reversaoIndireta.js';
 import { rodadaPeriodica as rodadaReembolsoPlataforma } from './reembolsoPlataforma.js';
@@ -292,6 +293,7 @@ await app.register(swagger, {
       { name: 'Rastreio', description: 'Onde cada pedido está de verdade (Red Rock) — snapshot, linha do tempo e a rota pública `/rastrear/:transacao_id`, sem login.' },
       { name: 'Dash', description: 'Integração com o dash: sincronização de pedidos (leitura), metas, indicadores e o endpoint de retenção que o dash consome.' },
       { name: 'Recoverly', description: 'Consulta de rastreio para o atendimento 0800 da Recoverly (X-Api-Key, só leitura).' },
+      { name: 'Acesso', description: 'Lista de compradores (e-mail e situação) de um produto para o app de membros (Bearer exclusivo, só leitura).' },
       { name: 'Saúde', description: 'A API está de pé?' },
     ],
   },
@@ -430,6 +432,7 @@ await app.register(rotasVisaoGeral);
 await app.register(rotasAlertas);
 await app.register(rotasRastreio);
 await app.register(rotasRecoverly);
+await app.register(rotasAcessoCompradores);
 await app.register(rotasTrack17);
 await app.register(rotasSpplRegras);
 await app.register(rotasSpplOcorrencias);
