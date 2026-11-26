@@ -45,7 +45,7 @@ const rotuloDia = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 /** Cor fixa por plataforma na paleta categórica (`--serie-N`) — as 3
  * conhecidas sempre com a mesma cor entre uma troca de métrica e outra;
  * qualquer plataforma nova cai nas posições seguintes. */
-const COR_PLATAFORMA = { JVZoo: 0, BuyGoods: 1, DigiStore24: 2, Vupim: 3, Paggins: 4 };
+const COR_PLATAFORMA = { JVZoo: 0, BuyGoods: 1, DigiStore24: 2, Vupim: 3, Paggins: 4, Tauk: 5, Logicall: 6 };
 
 const POR_PAGINA = 25;
 const estado = {
