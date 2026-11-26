@@ -128,7 +128,7 @@ export const LABEL_PROBLEMA_PAGAMENTO = {
 export const LABEL_PLATAFORMA = {
   digistore24: 'DigiStore24', buygoods: 'BuyGoods', jvzoo: 'JVZoo', interno: 'Interno',
   hotmart: 'Hotmart', eduzz: 'Eduzz', monetizze: 'Monetizze', kiwify: 'Kiwify',
-  clickbank: 'ClickBank', cartpanda: 'CartPanda', braintree: 'Braintree', paypal: 'PayPal',
+  clickbank: 'ClickBank', cartpanda: 'CartPanda', vupim: 'Vupim', paggins: 'Paggins', braintree: 'Braintree', paypal: 'PayPal',
   stripe: 'Stripe', shipoffers: 'ShipOffers', helpdesk: 'Helpdesk',
 };
 export const LABEL_TIPO_CONTEUDO = {

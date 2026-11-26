@@ -30,7 +30,7 @@ export const DisparoPosVenda = {
     email: texto(200),
     telefone: texto(40),
     produto: texto(300),
-    plataforma: { ...texto(60), description: "Plataforma de venda: 'DigiStore24', 'JVZoo', 'BuyGoods'… Nulo = não informada." },
+    plataforma: { ...texto(60), description: "Plataforma de venda: 'DigiStore24', 'JVZoo', 'BuyGoods', 'Vupim', 'Paggins'… Nulo = não informada." },
     etapa_atual: { type: 'integer', description: 'Em que etapa da régua o pedido está.' },
     proximo_disparo: dataHora,
     status: { type: 'string', maxLength: 40, description: "'ativo', 'processando', 'cancelado', 'concluido'…" },

@@ -44,7 +44,7 @@ const LIMITE_LOTE = 25;
    · resolvido pela IA e motivos: calculados abaixo a partir do primeiro registro. */
 const REEMBOLSO_CONFIAVEL_DESDE = '2026-09-09T00:00:00-03:00';
 
-const PLATAFORMAS = ['JVZoo', 'DigiStore24', 'BuyGoods'];
+const PLATAFORMAS = ['JVZoo', 'DigiStore24', 'BuyGoods', 'Vupim', 'Paggins'];
 const FULFILLMENT = ['redrock', 'fullstack', 'jetstream', 'nenhum'];
 
 /* ═══════════════════════════  janela de período  ═══════════════════════════ */

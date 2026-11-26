@@ -325,7 +325,7 @@ function cardsRetencao(s) {
 
 /* ═════════════════════  A · Resultado — dado do dash (Fase 2)  ═════════════════════ */
 
-const ROT_PLAT = { jvzoo: 'JVZoo', digistore24: 'Digistore24', buygoods: 'BuyGoods' };
+const ROT_PLAT = { jvzoo: 'JVZoo', digistore24: 'Digistore24', buygoods: 'BuyGoods', vupim: 'Vupim', paggins: 'Paggins' };
 const rotPlat = (p) => ROT_PLAT[p] ?? p;
 const dhm = (iso) => (iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—');
 

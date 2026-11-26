@@ -24,7 +24,7 @@ export const PROBLEMAS_PAGAMENTO = [
 ];
 export const PLATAFORMAS = [
   'digistore24', 'buygoods', 'jvzoo', 'interno', 'hotmart', 'eduzz', 'monetizze', 'kiwify',
-  'clickbank', 'cartpanda', 'braintree', 'paypal', 'stripe', 'shipoffers', 'helpdesk',
+  'clickbank', 'cartpanda', 'vupim', 'paggins', 'braintree', 'paypal', 'stripe', 'shipoffers', 'helpdesk',
 ];
 // Lista nova (31/08/2026, 12 motivos + outro) + os valores legado (a IA não
 // classifica mais com eles, mas e-mails antigos ainda têm — precisam
