@@ -1123,9 +1123,10 @@ function renderFiltroPlataforma(s) {
   for (const p of lista) {
     rotulos.push([p.plataforma, `${p.plataforma}${p.total ? ` · ${n(p.total)}` : ''}`]);
   }
-  if (escolhido && !lista.some((p) => p.plataforma === escolhido)) {
+  if (escolhido && escolhido !== '__sem' && !lista.some((p) => p.plataforma === escolhido)) {
     rotulos.push([escolhido, `${escolhido} · 0`]);
   }
+  rotulos.push(['__sem', 'Sem plataforma']);   // 26/11: recorte dos pedidos sem plataforma (valor especial '__sem' tratado em DA_PLATAFORMA)
 
   sel.value = escolhido ?? '';
   sel.dataset.ativo = escolhido ? 'sim' : 'nao';

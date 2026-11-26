@@ -39,7 +39,8 @@ function filtros(q) {
   if (q.quadro === 'sem17') where.push('l.sem_17track');
   else if (q.quadro === 'todos' || q.quadro === undefined || q.quadro === '') where.push('l.quadro IS NOT NULL');
   else { const n = Number(q.quadro); if (!QUADROS.includes(n)) throw new ErroHttp(400, 'Quadro inválido (1 a 5).'); add('l.quadro = ?', n); }
-  if (q.plataforma) add('lower(btrim(l.plataforma)) = ?', String(q.plataforma).toLowerCase().slice(0, 40));
+  if (q.plataforma === '__sem') where.push("nullif(btrim(l.plataforma), '') IS NULL");
+  else if (q.plataforma) add('lower(btrim(l.plataforma)) = ?', String(q.plataforma).toLowerCase().slice(0, 40));
   if (q.fulfillment) add('l.fulfillment = ?', String(q.fulfillment).slice(0, 40));
   if (q.suporte_ativo === 'sim') where.push(`EXISTS (SELECT 1 FROM sppl_ativo_tickets tt WHERE tt.transacao_id = l.transacao_id AND tt.status_ticket <> 'fechado')`);
   if (q.suporte_ativo === 'nao') where.push(`NOT EXISTS (SELECT 1 FROM sppl_ativo_tickets tt WHERE tt.transacao_id = l.transacao_id AND tt.status_ticket <> 'fechado')`);

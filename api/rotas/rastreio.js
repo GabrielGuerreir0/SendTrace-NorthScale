@@ -17,7 +17,7 @@
 import ExcelJS from 'exceljs';
 import { query } from '../../server/db.js';
 import { historicoInterno, historicoPublico, ocorrenciasDoPedido, tempoParado } from '../track17/historico.js';
-import { DO_PRODUTO, DA_PLATAFORMA, BASE_PRODUTO, CHAVE_PRODUTO } from '../sql.js';
+import { DO_PRODUTO, DA_PLATAFORMA, BASE_PRODUTO, CHAVE_PRODUTO, SEM_PLATAFORMA } from '../sql.js';
 import { fatiar, montarOrdem, ErroHttp } from '../comum.js';
 import { paginado, paginacaoParams } from '../esquemas.js';
 import { condicaoPeriodo } from '../filtrosEmailIA.js';
@@ -48,7 +48,8 @@ function filtroCompra(qs, colunaData = 'd.criado_em') {
   if (qs.produto) { condicoes.push(`d.produto = $${i}`); valores.push(String(qs.produto)); i += 1; }
   // grupo de produto (todas as embalagens/ofertas do mesmo produto) — o filtro da aba Rastreio
   if (qs.produto_grupo) { condicoes.push(`${CHAVE_PRODUTO('d.')} = $${i}`); valores.push(String(qs.produto_grupo)); i += 1; }
-  if (qs.plataforma) { condicoes.push(`btrim(d.plataforma) = $${i}`); valores.push(String(qs.plataforma)); i += 1; }
+  if (qs.plataforma === SEM_PLATAFORMA) condicoes.push(`nullif(btrim(d.plataforma), '') IS NULL`);
+  else if (qs.plataforma) { condicoes.push(`btrim(d.plataforma) = $${i}`); valores.push(String(qs.plataforma)); i += 1; }
   // coalesce pro mesmo 'nenhum' que a tabela "Provedores" de /saude/ usa —
   // sem isto, provedor=nenhum (drill-down daquela linha) não bateria com
   // nada (a coluna é NULL, nunca a string 'nenhum').
@@ -308,7 +309,8 @@ function filtrosLista(q) {
   if (q.transferido === '1') partes.push('r.transferido_redrock_em IS NOT NULL');
   if (q.produto) { valores.push(q.produto); partes.push(`d.produto = $${valores.length}`); }
   if (q.produto_grupo) { valores.push(String(q.produto_grupo)); partes.push(`${CHAVE_PRODUTO('d.')} = $${valores.length}`); }
-  if (q.plataforma) { valores.push(q.plataforma); partes.push(`btrim(d.plataforma) = $${valores.length}`); }
+  if (q.plataforma === SEM_PLATAFORMA) partes.push(`nullif(btrim(d.plataforma), '') IS NULL`);
+  else if (q.plataforma) { valores.push(q.plataforma); partes.push(`btrim(d.plataforma) = $${valores.length}`); }
   if (q.search) {
     valores.push(`%${q.search}%`);
     const i = valores.length;
@@ -603,6 +605,13 @@ export default async function rotasRastreio(app) {
         ORDER BY lower(g.plataforma)`,
       fp.valores,
     );
+    // 26/11: "Sem plataforma" (pedido sem venda ligada); LEFT JOIN porque o rastreio sem origem nem tem linha na view
+    const { rows: [sem] } = await query(
+      `SELECT count(*)::int AS total FROM rastreio_pedidos r LEFT JOIN rastreio_pedido_d d ON d.transacao_id = r.transacao_id
+        WHERE ${fp.sql} AND nullif(btrim(d.plataforma), '') IS NULL`,
+      fp.valores,
+    );
+    plats.push({ plataforma: SEM_PLATAFORMA, total: sem?.total ?? 0 });
     return { plataformas: plats, produtos: rows.map((r) => ({ chave: r.chave, nome: r.chave === 'combos' ? 'Kits e combos' : r.chave === 'outros' ? 'Outros' : r.nome, total: r.total })) };
   });
 

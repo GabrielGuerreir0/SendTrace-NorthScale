@@ -23,7 +23,8 @@ export default async function rotasSpplNaoEncontrados(app) {
     const q = req.query ?? {};
     const where = []; const valores = [];
     if (q.faixa) { if (!FAIXAS[q.faixa]) throw new ErroHttp(400, 'Faixa inválida.'); where.push(FAIXAS[q.faixa]); }
-    if (q.plataforma) { valores.push(String(q.plataforma).slice(0, 40)); where.push(`btrim(d.plataforma) = $${valores.length}`); }
+    if (q.plataforma === '__sem') where.push("nullif(btrim(d.plataforma), '') IS NULL");
+    else if (q.plataforma) { valores.push(String(q.plataforma).slice(0, 40)); where.push(`btrim(d.plataforma) = $${valores.length}`); }
     if (q.busca) { valores.push(`%${String(q.busca).slice(0, 80).replace(/[\\%_]/g, (m) => `\\${m}`)}%`); where.push(`(r.transacao_id ILIKE $${valores.length} OR d.produto ILIKE $${valores.length})`); }
     const extra = where.length ? ` AND ${where.join(' AND ')}` : '';
     const exportar = q.todos === '1';

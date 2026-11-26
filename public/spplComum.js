@@ -9,7 +9,7 @@ const SO_DATA = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-dig
 export const fmtDataHora = (iso) => (iso ? DATA_HORA.format(new Date(iso)) : '—');
 export const fmtData = (iso) => (iso ? SO_DATA.format(new Date(iso)) : '—');
 export const fmtValor = (v) => (v === null || v === undefined || v === '' ? '—' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD' }).format(Number(v)));
-export const ROT_PLATAFORMA = { jvzoo: 'JVZoo', buygoods: 'BuyGoods', digistore24: 'Digistore24', vupim: 'Vupim', paggins: 'Paggins', tauk: 'Tauk', logicall: 'Logicall' };
+export const ROT_PLATAFORMA = { jvzoo: 'JVZoo', buygoods: 'BuyGoods', digistore24: 'Digistore24', vupim: 'Vupim', paggins: 'Paggins', tauk: 'Tauk', logicall: 'Logicall', __sem: 'Sem plataforma' };
 export const rotPlataforma = (p) => ROT_PLATAFORMA[String(p || '').toLowerCase().trim()] ?? (p || '—');
 
 /** <label class="campo"><span>rótulo</span><select> */

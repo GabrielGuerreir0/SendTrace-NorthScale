@@ -101,10 +101,12 @@ export const DO_PRODUTO = (n, alias = '') =>
  *
  * Igualdade exata sobre o valor gravado (aparado de espaços): o catálogo é
  * montado do que existe na fila, então o que se escolhe é o que está lá. Um
- * pedido sem plataforma nunca casa com recorte nenhum.
+ * pedido sem plataforma nunca casa com recorte nenhum, EXCETO o recorte especial '__sem' (26/11/2026: "Sem plataforma"), que pega só os sem plataforma.
  */
+export const SEM_PLATAFORMA = '__sem';
 export const DA_PLATAFORMA = (n, alias = '') =>
-  `($${n}::text IS NULL OR btrim(${alias}plataforma) = $${n}::text)`;
+  `($${n}::text IS NULL OR (CASE WHEN $${n}::text = '${SEM_PLATAFORMA}' THEN nullif(btrim(${alias}plataforma), '') IS NULL
+                                 ELSE btrim(${alias}plataforma) = $${n}::text END))`;
 
 /**
  * A qual canal o erro pertence, deduzido do prefixo de `ultimo_erro`.

@@ -1254,8 +1254,8 @@ async function carregarProdutos() {
   const selPlat = $('rst-sel-plataforma');
   const plats = dados.plataformas ?? [];
   const opcoesPlat = [['', t('todasPlataformas')]];
-  for (const p of plats) opcoesPlat.push([p.plataforma, `${p.plataforma} · ${n(p.total)}`]);
-  if (estado.plataforma && !plats.some((p) => p.plataforma === estado.plataforma)) opcoesPlat.push([estado.plataforma, `${estado.plataforma} · 0`]);
+  for (const p of plats) opcoesPlat.push([p.plataforma, `${p.plataforma === '__sem' ? t('qNeSemPlataforma') : p.plataforma} · ${n(p.total)}`]);
+  if (estado.plataforma && !plats.some((p) => p.plataforma === estado.plataforma)) opcoesPlat.push([estado.plataforma, `${estado.plataforma === '__sem' ? t('qNeSemPlataforma') : estado.plataforma} · 0`]);
   const montar = (el, ops, valor) => {
     if (document.activeElement === el) return;   // não trocar a lista no meio da escolha
     el.replaceChildren(...ops.map(([value, textContent]) => Object.assign(document.createElement('option'), { value, textContent })));
