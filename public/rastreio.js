@@ -1373,7 +1373,7 @@ for (const nome of Object.keys(SUBABAS_PROVEDOR)) {
  * Abas internas do Rastreio de Pedidos: "Fulfillments" (pedidos, KPIs, saúde do rastreio, lista — com o filtro por fulfillment acima)
  * e "SPPL" (Saúde do SPPL, Relatório de logística, Alertas de logística, Regras). Lembra a última aba por navegador.
  */
-const ABAS_RASTREIO = ['fulfillments', 'sppl', 'monitor', 'ativo'];
+const ABAS_RASTREIO = ['fulfillments', 'sppl', 'monitor', 'ativo', 'monit'];
 function mudarAbaRastreio(nome) {
   if (!ABAS_RASTREIO.includes(nome)) nome = 'fulfillments';
   for (const chave of ABAS_RASTREIO) {
@@ -1385,6 +1385,8 @@ function mudarAbaRastreio(nome) {
   else import('./spplMonitor.js').then((m) => m.fecharMonitor()).catch(() => {});
   if (nome === 'ativo') import('./spplAtivo.js').then((m) => m.abrirAtivo()).catch(() => {});
   else import('./spplAtivo.js').then((m) => m.fecharAtivo()).catch(() => {});
+  if (nome === 'monit') import('./monit.js').then((m) => m.abrirMonit()).catch(() => {});   // MONIT-SPPL (142)
+  else import('./monit.js').then((m) => m.fecharMonit()).catch(() => {});
   try { localStorage.setItem('rstAbaPrincipal', nome); } catch { /* sem armazenamento: só não lembra */ }
 }
 for (const chave of ABAS_RASTREIO) $(`rst-aba-btn-${chave}`)?.addEventListener('click', () => mudarAbaRastreio(chave));

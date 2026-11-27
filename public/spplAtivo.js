@@ -9,13 +9,13 @@ import { el, fmtDataHora, fmtData, rotPlataforma, campoSelect, campoTexto, criar
 const POR_PAGINA = 50;
 const ROT_PROP = { status_logistico: 'Status logístico', motivo_problema: 'Motivo do problema', status_suporte: 'Status do suporte', status_ticket: 'Status do ticket', rastreio_reenvio: 'Código de rastreio do reenvio', link_reenvio: 'Link de rastreio do reenvio' };
 const ROT_TICKET = { aberto: 'Aberto', resolvido: 'Resolvido', fechado: 'Fechado' };
-const estado = { sub: 'tickets', pagina: 1, selecionados: new Set(), itens: [], total: 0, kpis: null, status_ticket: 'abertos', status_logistico: '', motivo_problema: '', status_suporte: '', contato: '', resposta: '', busca: '', carregando: false };
+const estado = { sub: 'tickets', pagina: 1, selecionados: new Set(), itens: [], total: 0, kpis: null, status_ticket: 'abertos', status_logistico: '', motivo_problema: '', status_suporte: '', contato: '', resposta: '', origem: '', busca: '', carregando: false };
 let C = null;       // listas das propriedades (da API)
 let raiz = null; let iniciado = false; let msgEl = null; let temporizador = null;
 
 const consulta = (extra = {}) => {
   const q = new URLSearchParams();
-  for (const k of ['status_ticket', 'status_logistico', 'motivo_problema', 'status_suporte', 'contato', 'resposta', 'busca']) if (estado[k]) q.set(k, estado[k]);
+  for (const k of ['status_ticket', 'status_logistico', 'motivo_problema', 'status_suporte', 'contato', 'resposta', 'origem', 'busca']) if (estado[k]) q.set(k, estado[k]);
   for (const [k, v] of Object.entries(extra)) q.set(k, String(v));
   return q.toString();
 };
@@ -50,14 +50,15 @@ const celula = (rotulo, conteudo, classe) => { const td = document.createElement
 
 function linha(t) {
   const tr = document.createElement('tr'); tr.className = 'sup-linha-clique';
-  const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = estado.selecionados.has(t.id); cb.setAttribute('aria-label', `Selecionar o ticket do pedido ${t.numero_pedido}`);
+  const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = estado.selecionados.has(t.id); cb.setAttribute('aria-label', `Selecionar o ticket ${t.numero_pedido ? `do pedido ${t.numero_pedido}` : `de ${t.email || 'cliente sem pedido'}`}`);
   cb.addEventListener('click', (e) => e.stopPropagation()); cb.addEventListener('change', () => { if (cb.checked) estado.selecionados.add(t.id); else estado.selecionados.delete(t.id); atualizarBarra(); });
   const tdCb = document.createElement('td'); tdCb.append(cb);
   const cliente = el('div'); cliente.append(el('strong', t.nome || '—'), el('br'), el('small', t.email || 'sem e-mail', 'cartao-sub'));
   const status = el('div'); status.append(el('span', ROT_TICKET[t.status_ticket] ?? t.status_ticket, 'sppl-selo'));
+  if (t.origem === 'equipe') { const e = el('span', 'Iniciado pela equipe', 'sppl-selo sppl-selo--p2'); if (t.motivo_contato) e.title = `Motivo: ${t.motivo_contato}`; status.append(el('br'), e); }
   if (t.resposta_pendente) status.append(el('br'), el('span', 'Cliente respondeu', 'sppl-selo sppl-selo--p0'));
   const contato = t.enviados ? `${t.enviados} e-mail(s) · último ${fmtDataHora(t.ultimo_envio_em)}` : 'Sem contato ainda';
-  tr.append(tdCb, celula('Pedido', el('strong', t.numero_pedido)), celula('Cliente', cliente), celula('Produto', t.produto || '—'), celula('Código de rastreio', t.rastreio_reenvio ? `${t.rastreio_original || '—'} → reenvio ${t.rastreio_reenvio}` : (t.rastreio_original || '—')),
+  tr.append(tdCb, celula('Pedido', el('strong', t.numero_pedido || '—')), celula('Cliente', cliente), celula('Produto', t.produto || '—'), celula('Código de rastreio', t.rastreio_reenvio ? `${t.rastreio_original || '—'} → reenvio ${t.rastreio_reenvio}` : (t.rastreio_original || '—')),
     celula('Status logístico', t.status_logistico), celula('Motivo do problema', t.motivo_problema), celula('Status do suporte', t.status_suporte), celula('Ticket', status), celula('Contato', contato), celula('Selecionado em', fmtData(t.selecionado_em)));
   tr.addEventListener('click', () => abrirDetalhe(t.id));
   return tr;
@@ -71,7 +72,7 @@ async function carregarTickets() {
     const corpo = raiz.querySelector('#ativo-corpo');
     if (!r.ok) { corpo.replaceChildren(vazioTr(erroDe(r, 'Não foi possível carregar os tickets.'))); return; }
     estado.itens = r.dados.itens; estado.total = r.dados.total; estado.kpis = r.dados.kpis;
-    corpo.replaceChildren(...(estado.itens.length ? estado.itens.map(linha) : [vazioTr('Nenhum ticket com os filtros atuais. Para criar tickets, selecione pedidos na aba "Monitoramento logístico".')]));
+    corpo.replaceChildren(...(estado.itens.length ? estado.itens.map(linha) : [vazioTr('Nenhum ticket com os filtros atuais. Para criar tickets, selecione pedidos na aba "Monitoramento logístico" ou use "Novo ticket".')]));
     montarPaginacao(raiz.querySelector('#ativo-paginacao'), { pagina: estado.pagina, totalPaginas: Math.max(1, Math.ceil(estado.total / POR_PAGINA)), total: estado.total, rotuloItem: 'tickets' }, (p) => { estado.pagina = p; carregarTickets(); });
     desenharKpis(); desenharSub(); atualizarBarra();
   } finally { estado.carregando = false; }
@@ -130,25 +131,54 @@ async function abrirPropriedades(ids) {
   j.abrir();
 }
 
+/** Lista legível de contatos anteriores (alerta de contato duplicado: quem enviou, quando e qual modelo). */
+function listaContatos(contatos) {
+  const ul = el('ul');
+  for (const c of contatos) {
+    const quando = fmtDataHora(c.quando);
+    ul.append(el('li', c.tipo === 'envio'
+      ? `${c.por || '—'} enviou${c.modelo_nome ? ` o modelo "${c.modelo_nome}"` : ' um e-mail'}${c.assunto ? ` ("${c.assunto}")` : ''} em ${quando}${c.status !== 'enviado' ? ` · ${c.status === 'fila' || c.status === 'enviando' ? 'ainda na fila' : c.status}` : ''}`
+      : `Ticket #${c.ticket_id} (${ROT_TICKET[c.status] ?? c.status}${c.origem === 'equipe' ? ', iniciado pela equipe' : ''}) criado por ${c.por || '—'} em ${quando}`));
+  }
+  return ul;
+}
+const areaTexto = (rotulo, valor, linhas, max) => { const l = el('label', undefined, 'campo campo--cresce'); l.append(el('span', rotulo)); const t = document.createElement('textarea'); t.rows = linhas; t.maxLength = max; t.value = valor || ''; l.append(t); return { rotulo: l, area: t }; };
+
 async function abrirEnvio(ids, { respondendo = false } = {}) {
   const j = criarJanela('ativo-janela-envio'); const corpo = j.refazer(respondendo ? 'Responder ao cliente' : 'Enviar e-mail aos clientes', `${ids.length} ticket(s) selecionado(s)`);
-  corpo.append(el('p', 'Cada cliente recebe o PRÓPRIO e-mail, sem ver os demais destinatários. O envio não fecha nem resolve o ticket; o status só muda quando a equipe alterar. Antes de enviar você confere os destinatários, a mensagem e as propriedades.', 'cartao-sub'));
-  const as = campoTexto('Assunto', { max: 200, placeholder: 'Ex.: Update on your order {pedido}', cresce: true }); corpo.append(as.rotulo);
-  const lt = el('label', undefined, 'campo campo--cresce'); lt.append(el('span', 'Mensagem'));
-  const ta = document.createElement('textarea'); ta.rows = 9; ta.maxLength = 8000; ta.placeholder = 'Hi {nome},\n\nWe are looking into your order {pedido}...'; lt.append(ta); corpo.append(lt);
+  corpo.append(el('p', 'Cada cliente recebe o PRÓPRIO e-mail, sem ver os demais destinatários. O cliente recebe o texto em INGLÊS (o que está nos campos abaixo). O envio não fecha nem resolve o ticket; o status só muda quando a equipe alterar. Antes de enviar você confere os destinatários, a mensagem e as propriedades.', 'cartao-sub'));
+  // modelo: escolher preenche assunto e texto (em inglês); o português aparece só como referência para a equipe
+  const rm = await api('/api/rastreio/sppl/ativo/modelos'); const modelos = rm.ok ? rm.dados.modelos.filter((m) => m.ativo) : [];
+  let modeloAtual = null;
+  const sm = campoSelect('Modelo de e-mail', [['', '(escrever na hora)'], ...modelos.map((m) => [m.id, m.nome])], '');
+  corpo.append(sm.rotulo);
+  const refPt = document.createElement('details'); refPt.hidden = true; const refResumo = el('summary', 'O que diz (português, só para você)'); const refTexto = el('pre'); refTexto.style.whiteSpace = 'pre-wrap'; refPt.append(refResumo, refTexto); corpo.append(refPt);
+  const as = campoTexto('Assunto (em inglês)', { max: 200, placeholder: 'Ex.: An update on your order {pedido}', cresce: true }); corpo.append(as.rotulo);
+  const lt = el('label', undefined, 'campo campo--cresce'); lt.append(el('span', 'Mensagem (em inglês)'));
+  const ta = document.createElement('textarea'); ta.rows = 11; ta.maxLength = 8000; ta.placeholder = 'Hi {nome},\n\nWe are looking into your order {pedido}...'; lt.append(ta); corpo.append(lt);
+  sm.select.addEventListener('change', () => {
+    modeloAtual = modelos.find((m) => m.id === sm.select.value) ?? null; refPt.hidden = !modeloAtual;
+    if (modeloAtual) { as.input.value = modeloAtual.assunto_en; ta.value = modeloAtual.corpo_en; refResumo.textContent = `O que diz (português, só para você): ${modeloAtual.descricao_pt || modeloAtual.nome}`; refTexto.textContent = `${modeloAtual.assunto_pt || ''}\n\n${modeloAtual.corpo_pt || ''}`; }
+  });
   const chips = el('div', undefined, 'sppl-acoes'); chips.append(el('span', 'Inserir:', 'cartao-sub'));
   for (const m of C.marcadores) { const b = el('button', `{${m}}`, 'btn'); b.type = 'button'; b.addEventListener('click', () => { const i = ta.selectionStart ?? ta.value.length; ta.setRangeText(`{${m}}`, i, ta.selectionEnd ?? i, 'end'); ta.focus(); }); chips.append(b); }
   corpo.append(chips);
   const det = document.createElement('details'); det.append(el('summary', 'Atualizar propriedades dos tickets neste mesmo envio (opcional)')); const bp = blocoPropriedades(); det.append(bp.elemento); corpo.append(det);
   const aviso = el('p', '', 'cartao-sub'); aviso.setAttribute('role', 'status'); const conf = el('div'); corpo.append(conf, aviso);
   const acoes = el('div', undefined, 'sppl-acoes'); const bConf = el('button', 'Conferir antes de enviar', 'btn btn-forte'); bConf.type = 'button'; acoes.append(bConf); corpo.append(acoes);
-  const corpoReq = (extra) => ({ ids, assunto: as.input.value.trim(), texto: ta.value.trim(), ...(Object.keys(bp.ler()).length ? { propriedades: bp.ler() } : {}), ...extra });
+  const corpoReq = (extra) => ({ ids, assunto: as.input.value.trim(), texto: ta.value.trim(), ...(modeloAtual ? { modelo_id: modeloAtual.id } : {}), ...(Object.keys(bp.ler()).length ? { propriedades: bp.ler() } : {}), ...extra });
   bConf.addEventListener('click', async () => {
     const r = await api('/api/rastreio/sppl/ativo/enviar', { metodo: 'POST', corpo: corpoReq({ simular: true }) });
     if (!r.ok) { mensagem(aviso, erroDe(r, 'Não foi possível conferir.'), true); return; }
     const d = r.dados; conf.replaceChildren(); mensagem(aviso, '');
-    conf.append(el('h3', `Conferência: ${d.total} e-mail(s)`, 'sppl-secao-titulo'), el('p', d.aviso, 'cartao-sub'));
+    conf.append(el('h3', `Conferência: ${d.total} e-mail(s)${d.modelo ? ` · modelo "${d.modelo.nome}"` : ''}`, 'sppl-secao-titulo'), el('p', d.aviso, 'cartao-sub'));
     if (d.exemplo) { const ex = el('div'); ex.append(el('p', `Exemplo (primeiro destinatário): para ${d.exemplo.para}`, 'cartao-sub'), el('strong', `Assunto: ${d.exemplo.assunto}`)); const pre = el('pre', d.exemplo.texto); pre.style.whiteSpace = 'pre-wrap'; ex.append(pre); conf.append(ex); }
+    if (d.ja_contatados) {
+      const caixa = el('div', undefined, 'sppl-destaque'); caixa.append(el('strong', `Atenção: ${d.ja_contatados} cliente(s) já foram contatados antes (últimos 90 dias). Isto não bloqueia o envio; você decide.`));
+      for (const x of d.destinatarios.filter((y) => y.contatos_anteriores.length)) { caixa.append(el('p', `${x.nome || '—'} <${x.email}> · pedido ${x.pedido}`, 'cartao-sub'), listaContatos(x.contatos_anteriores)); }
+      conf.append(caixa);
+    }
+    if (d.sem_dados?.length) conf.append(el('p', `Atenção: ${d.sem_dados.length} cliente(s) sem dado para algum marcador usado (a mensagem sairia com lacuna): ${d.sem_dados.slice(0, 8).map((x) => `${x.email} (${x.faltando.join(', ')})`).join('; ')}${d.sem_dados.length > 8 ? '…' : ''}`, 'sppl-aviso'));
     if (d.sem_email.length) conf.append(el('p', `Sem e-mail válido (não receberão): ${d.sem_email.map((x) => x.pedido).join(', ')}`, 'sppl-aviso'));
     if (d.ignorados_fechados.length) conf.append(el('p', `Tickets fechados ignorados: ${d.ignorados_fechados.length}`, 'sppl-aviso'));
     if (d.propriedades) { const ul = el('ul'); for (const l of resumoProps(d.propriedades)) ul.append(el('li', l)); conf.append(el('p', 'Propriedades que serão atualizadas junto:', 'cartao-sub'), ul); }
@@ -161,6 +191,96 @@ async function abrirEnvio(ids, { respondendo = false } = {}) {
     });
   });
   j.abrir();
+}
+
+/* ═══════════════════════  Novo ticket (avulso, iniciado pela equipe)  ═══════════════════════ */
+const ROT_SITUACAO = { novo: 'Novo ticket', ja_existe: 'Já existe ticket aberto (será reaproveitado)', nao_encontrado: 'Pedido não encontrado', invalido: 'Entrada inválida', sem_email: 'Pedido sem e-mail (não dá para criar)', repetido: 'Repetido na lista (ignorado)' };
+
+async function abrirNovoTicket() {
+  const j = criarJanela('ativo-janela-novo'); const corpo = j.refazer('Novo ticket (iniciado pela equipe)', 'Contato pontual com o cliente, fora da lista do Monitoramento logístico');
+  corpo.append(el('p', 'Cole um ou vários e-mails e/ou números de pedido (um por linha, ou separados por vírgula). Cria UM ticket por cliente. O ticket nasce marcado como "Iniciado pela equipe", sem SLA e fora das métricas da logística; a resposta do cliente continua entrando no mesmo ticket. Nada é enviado nesta etapa.', 'cartao-sub'));
+  const lt = el('label', undefined, 'campo campo--cresce'); lt.append(el('span', 'E-mails e/ou pedidos'));
+  const ta = document.createElement('textarea'); ta.rows = 6; ta.maxLength = 20000; ta.placeholder = 'cliente@exemplo.com\n1234567\noutro@exemplo.com, 7654321'; lt.append(ta); corpo.append(lt);
+  const mot = campoTexto('Motivo do contato (opcional)', { max: 200, placeholder: 'Ex.: confirmar endereço, pacote retido, atraso, reenvio', cresce: true }); corpo.append(mot.rotulo);
+  const aviso = el('p', '', 'cartao-sub'); aviso.setAttribute('role', 'status'); const conf = el('div'); corpo.append(conf, aviso);
+  const acoes = el('div', undefined, 'sppl-acoes'); const bBuscar = el('button', 'Buscar clientes', 'btn btn-forte'); bBuscar.type = 'button'; acoes.append(bBuscar); corpo.append(acoes);
+  const req = (extra) => ({ texto: ta.value, motivo_contato: mot.input.value.trim(), ...extra });
+  bBuscar.addEventListener('click', async () => {
+    const r = await api('/api/rastreio/sppl/ativo/criar', { metodo: 'POST', corpo: req({ simular: true }) });
+    if (!r.ok) { mensagem(aviso, erroDe(r, 'Não foi possível buscar.'), true); return; }
+    const { resumo, itens } = r.dados; conf.replaceChildren(); mensagem(aviso, '');
+    conf.append(el('h3', 'Conferência', 'sppl-secao-titulo'),
+      el('p', `${resumo.entradas} entrada(s): ${resumo.novos} novo(s), ${resumo.ja_existem} já existente(s), ${resumo.nao_encontrados} não encontrado(s), ${resumo.invalidos} inválido(s)${resumo.sem_email ? `, ${resumo.sem_email} sem e-mail` : ''}${resumo.repetidos ? `, ${resumo.repetidos} repetido(s)` : ''}. Nenhum ticket foi criado ainda.`));
+    if (resumo.sem_pedido) conf.append(el('p', `${resumo.sem_pedido} cliente(s) sem pedido localizado: o ticket será criado só com o e-mail (marcadores de pedido/rastreio ficarão vazios no texto).`, 'sppl-aviso'));
+    if (resumo.com_contato_anterior) conf.append(el('p', `Atenção: ${resumo.com_contato_anterior} cliente(s) já tiveram contato/ticket nos últimos 90 dias (detalhes abaixo). Isto não bloqueia; você decide.`, 'sppl-aviso'));
+    const ul = el('ul');
+    for (const i of itens) {
+      const li = el('li'); const quem = i.email ? `${i.nome || '—'} <${i.email}>${i.numero_pedido ? ` · pedido ${i.numero_pedido}` : ''}${i.produto ? ` · ${i.produto}` : ''}` : i.entrada;
+      li.append(el('strong', `${ROT_SITUACAO[i.situacao] ?? i.situacao}${i.ticket_id ? ` (#${i.ticket_id})` : ''}: `), document.createTextNode(quem));
+      if (i.pedidos_encontrados > 1) li.append(el('small', ` · ${i.pedidos_encontrados} pedidos deste cliente; usando o mais recente`, 'cartao-sub'));
+      if (i.contatos_anteriores?.length) li.append(listaContatos(i.contatos_anteriores));
+      ul.append(li);
+    }
+    conf.append(ul);
+    const util = resumo.novos + resumo.ja_existem;
+    const cria = async (depoisEnviar) => {
+      cria1.disabled = true; cria2.disabled = true;
+      const g = await api('/api/rastreio/sppl/ativo/criar', { metodo: 'POST', corpo: req({ confirmar: true }) });
+      if (!g.ok) { mensagem(aviso, erroDe(g, 'Não foi possível criar.'), true); cria1.disabled = false; cria2.disabled = false; return; }
+      j.fechar(); estado.origem = 'equipe'; estado.status_ticket = 'abertos'; sincronizarFiltros(); await carregarTickets();
+      mensagem(msgEl, `${g.dados.criados} ticket(s) criado(s)${g.dados.ja_existiam ? `, ${g.dados.ja_existiam} já existia(m)` : ''}.`);
+      if (depoisEnviar && g.dados.ticket_ids.length) abrirEnvio(g.dados.ticket_ids);
+    };
+    const cria1 = el('button', `Criar ${resumo.novos} ticket(s)`, 'btn'); cria1.type = 'button'; cria1.disabled = !resumo.novos; cria1.addEventListener('click', () => cria(false));
+    const cria2 = el('button', `Criar e preparar o e-mail (${util})`, 'btn btn-forte'); cria2.type = 'button'; cria2.disabled = !util; cria2.addEventListener('click', () => cria(true));
+    const linhaBt = el('div', undefined, 'sppl-acoes'); linhaBt.append(cria1, cria2); conf.append(linhaBt);
+  });
+  j.abrir();
+}
+
+/* ═══════════════════════  Modelos de e-mail (PT para a equipe, EN para o cliente)  ═══════════════════════ */
+async function abrirModelos() {
+  const j = criarJanela('ativo-janela-modelos'); const corpo = j.refazer('Modelos de e-mail do Suporte Ativo', 'A equipe escreve em português; o cliente recebe o texto em inglês');
+  const r = await api('/api/rastreio/sppl/ativo/modelos'); if (!r.ok) { corpo.append(el('p', erroDe(r, 'Não foi possível carregar os modelos.'), 'sppl-aviso')); j.abrir(); return; }
+  const dados = r.dados; const aviso = el('p', '', 'cartao-sub'); aviso.setAttribute('role', 'status');
+  const desenhar = (selId) => {
+    corpo.replaceChildren();
+    corpo.append(el('p', `Marcadores: ${dados.marcadores.map((m) => `{${m}}`).join(' ')}. Cada cliente recebe os dados DELE; marcador desconhecido é recusado ao salvar. A tradução automática ainda não existe: o texto em inglês é editado à mão.`, 'cartao-sub'));
+    const ass = campoTexto('Assinatura padrão ({assinatura})', { valor: dados.assinatura, max: 200, cresce: true }); const bAss = el('button', 'Salvar assinatura', 'btn'); bAss.type = 'button';
+    bAss.addEventListener('click', async () => { const g = await api('/api/rastreio/sppl/ativo/assinatura', { metodo: 'PUT', corpo: { assinatura: ass.input.value } }); if (!g.ok) { mensagem(aviso, erroDe(g, 'Não foi possível salvar a assinatura.'), true); return; } dados.assinatura = g.dados.assinatura; mensagem(aviso, 'Assinatura salva.'); });
+    const linhaAss = el('div', undefined, 'sppl-acoes'); linhaAss.append(ass.rotulo, bAss); corpo.append(linhaAss);
+    const lista = el('div', undefined, 'sppl-acoes');
+    for (const m of dados.modelos) { const b = el('button', undefined, 'btn'); b.type = 'button'; b.append(document.createTextNode(m.nome)); if (!m.ativo) b.append(el('small', ' (inativo)')); if (m.editado) b.append(el('small', ' (editado)')); if (m.id === selId) b.classList.add('btn-forte'); b.addEventListener('click', () => desenhar(m.id)); lista.append(b); }
+    const bNovo = el('button', '+ Novo modelo', 'btn'); bNovo.type = 'button'; bNovo.addEventListener('click', () => desenhar('__novo')); lista.append(bNovo); corpo.append(lista);
+    if (!selId) { corpo.append(el('p', 'Escolha um modelo para ver e editar, ou crie um novo.', 'cartao-sub'), aviso); return; }
+    const m = selId === '__novo' ? { id: '', nome: '', descricao_pt: '', assunto_pt: '', corpo_pt: '', assunto_en: '', corpo_en: '', ativo: true, de_fabrica: false, editado: false } : dados.modelos.find((x) => x.id === selId);
+    corpo.append(el('h3', selId === '__novo' ? 'Novo modelo' : `Modelo: ${m.nome}`, 'sppl-secao-titulo'));
+    const nome = campoTexto('Nome', { valor: m.nome, max: 80, cresce: true }); const desc = campoTexto('O que diz (descrição em português)', { valor: m.descricao_pt || '', max: 400, cresce: true });
+    const aPt = campoTexto('Assunto (português, para a equipe)', { valor: m.assunto_pt || '', max: 200, cresce: true }); const cPt = areaTexto('Texto (português, para a equipe)', m.corpo_pt, 9, 8000);
+    const aEn = campoTexto('Assunto (inglês, o que o cliente recebe) *', { valor: m.assunto_en || '', max: 200, cresce: true }); const cEn = areaTexto('Texto (inglês, o que o cliente recebe) *', m.corpo_en, 11, 8000);
+    corpo.append(nome.rotulo, desc.rotulo, aPt.rotulo, cPt.rotulo, aEn.rotulo, cEn.rotulo);
+    const acoes = el('div', undefined, 'sppl-acoes');
+    const bSalvar = el('button', 'Salvar modelo', 'btn btn-forte'); bSalvar.type = 'button';
+    bSalvar.addEventListener('click', async () => {
+      const corpoReq = { nome: nome.input.value, descricao_pt: desc.input.value, assunto_pt: aPt.input.value, corpo_pt: cPt.area.value, assunto_en: aEn.input.value, corpo_en: cEn.area.value };
+      const g = selId === '__novo' ? await api('/api/rastreio/sppl/ativo/modelos', { metodo: 'POST', corpo: corpoReq }) : await api(`/api/rastreio/sppl/ativo/modelos/${encodeURIComponent(selId)}`, { metodo: 'PUT', corpo: corpoReq });
+      if (!g.ok) { mensagem(aviso, erroDe(g, 'Não foi possível salvar.'), true); return; }
+      const i = dados.modelos.findIndex((x) => x.id === g.dados.id); if (i >= 0) dados.modelos[i] = g.dados; else dados.modelos.push(g.dados);
+      desenhar(g.dados.id); mensagem(aviso, 'Modelo salvo.');
+    });
+    acoes.append(bSalvar);
+    if (selId !== '__novo') {
+      if (m.de_fabrica) { const bRest = el('button', 'Voltar ao texto original', 'btn'); bRest.type = 'button'; bRest.disabled = !m.editado; bRest.addEventListener('click', async () => {
+        const g = await api(`/api/rastreio/sppl/ativo/modelos/${encodeURIComponent(selId)}/restaurar`, { metodo: 'POST', corpo: {} }); if (!g.ok) { mensagem(aviso, erroDe(g, 'Não foi possível restaurar.'), true); return; }
+        dados.modelos[dados.modelos.findIndex((x) => x.id === selId)] = g.dados; desenhar(selId); mensagem(aviso, 'Texto original restaurado.'); }); acoes.append(bRest); }
+      const bAtivo = el('button', m.ativo ? 'Desativar' : 'Ativar', 'btn'); bAtivo.type = 'button'; bAtivo.addEventListener('click', async () => {
+        const g = await api(`/api/rastreio/sppl/ativo/modelos/${encodeURIComponent(selId)}/ativo`, { metodo: 'POST', corpo: { ativo: !m.ativo } }); if (!g.ok) { mensagem(aviso, erroDe(g, 'Não foi possível alterar.'), true); return; }
+        dados.modelos[dados.modelos.findIndex((x) => x.id === selId)] = g.dados; desenhar(selId); mensagem(aviso, g.dados.ativo ? 'Modelo ativado.' : 'Modelo desativado (não aparece mais no envio).'); });
+      acoes.append(bAtivo);
+    }
+    corpo.append(acoes, aviso);
+  };
+  desenhar(null); j.abrir();
 }
 
 async function acompanharLote(lote, total, conf, aviso, j) {
@@ -185,10 +305,11 @@ async function acompanharLote(lote, total, conf, aviso, j) {
 /* ═══════════════════════  detalhe de um ticket  ═══════════════════════ */
 async function abrirDetalhe(id) {
   const r = await api(`/api/rastreio/sppl/ativo/tickets/${id}`); if (!r.ok) { mensagem(msgEl, erroDe(r, 'Ticket não encontrado.'), true); return; }
-  const t = r.dados; const j = criarJanela('ativo-janela-detalhe'); const corpo = j.refazer(`Pedido ${t.numero_pedido}`, `${t.nome || '—'} · ${t.email || 'sem e-mail'} · ${rotPlataforma(t.plataforma)}`);
+  const t = r.dados; const j = criarJanela('ativo-janela-detalhe'); const corpo = j.refazer(t.numero_pedido ? `Pedido ${t.numero_pedido}` : `Cliente ${t.email || '—'}`, `${t.nome || '—'} · ${t.email || 'sem e-mail'} · ${rotPlataforma(t.plataforma)}`);
   const info = el('p', `${t.produto || '—'} · ${t.fulfillment || '—'} · ${t.transportadora || '—'} · rastreio original ${t.rastreio_original || '—'}${t.link_rastreio ? '' : ''}`, 'cartao-sub'); corpo.append(info);
+  if (t.origem === 'equipe') corpo.append(el('p', `Iniciado pela equipe${t.selecionado_por ? ` por ${t.selecionado_por}` : ''}${t.motivo_contato ? ` · motivo: ${t.motivo_contato}` : ''}${t.pedido_transacao_id ? '' : ' · sem pedido localizado (só e-mail)'}. Sem SLA; fora das métricas da logística.`, 'sppl-destaque'));
   const acoesTop = el('div', undefined, 'sppl-acoes');
-  const bFolha = el('button', 'Abrir folha do pedido', 'btn'); bFolha.type = 'button'; bFolha.addEventListener('click', () => { j.fechar(); document.dispatchEvent(new CustomEvent('rastreio:abrir-pedido', { detail: { transacao_id: t.transacao_id } })); });
+  const bFolha = el('button', 'Abrir folha do pedido', 'btn'); bFolha.type = 'button'; bFolha.disabled = String(t.transacao_id).startsWith('avulso:') && !t.pedido_transacao_id; bFolha.addEventListener('click', () => { j.fechar(); document.dispatchEvent(new CustomEvent('rastreio:abrir-pedido', { detail: { transacao_id: t.pedido_transacao_id || t.transacao_id } })); });
   const bMail = el('button', 'Enviar e-mail', 'btn btn-forte'); bMail.type = 'button'; bMail.disabled = t.status_ticket === 'fechado' || !t.email; bMail.addEventListener('click', () => { j.fechar(); abrirEnvio([t.id]); });
   acoesTop.append(bFolha, bMail);
   if (t.resposta_pendente) { const bAt = el('button', 'Marcar resposta como atendida', 'btn'); bAt.type = 'button'; bAt.addEventListener('click', async () => { await api(`/api/rastreio/sppl/ativo/tickets/${t.id}/atender`, { metodo: 'POST', corpo: {} }); j.fechar(); carregarTickets(); }); acoesTop.append(bAt); }
@@ -214,10 +335,10 @@ async function abrirDetalhe(id) {
   if (!respostas.length) corpo.append(el('p', 'O cliente ainda não respondeu.', 'cartao-sub'));
   for (const x of respostas) { const d = el('div', undefined, 'sppl-destaque'); d.append(el('strong', `${fmtDataHora(x.data_email)} · ${x.assunto || '(sem assunto)'}`)); const pre = el('pre', x.corpo || ''); pre.style.whiteSpace = 'pre-wrap'; d.append(pre); corpo.append(d); }
   corpo.append(el('h3', 'E-mails enviados', 'sppl-secao-titulo'));
-  const ul = el('ul'); for (const e of t.envios) ul.append(el('li', `${fmtDataHora(e.enviado_em || e.criado_em)} · ${e.status === 'enviado' ? 'enviado' : e.status} · ${e.assunto}${e.erro ? ` (${e.erro})` : ''}`)); if (!t.envios.length) ul.append(el('li', 'Nenhum e-mail enviado ainda.')); corpo.append(ul);
+  const ul = el('ul'); for (const e of t.envios) ul.append(el('li', `${fmtDataHora(e.enviado_em || e.criado_em)} · ${e.status === 'enviado' ? 'enviado' : e.status}${e.criado_por ? ` por ${e.criado_por}` : ''}${e.modelo_nome ? ` · modelo "${e.modelo_nome}"` : ''} · ${e.assunto}${e.erro ? ` (${e.erro})` : ''}`)); if (!t.envios.length) ul.append(el('li', 'Nenhum e-mail enviado ainda.')); corpo.append(ul);
   corpo.append(el('h3', 'Histórico de ações', 'sppl-secao-titulo'));
-  const ul2 = el('ul'); const ROT_ACAO = { selecionado: 'Selecionado para o Suporte Ativo', propriedades: 'Propriedades alteradas', email_enfileirado: 'E-mail na fila', email_enviado: 'E-mail enviado', email_falhou: 'E-mail falhou', atendida: 'Resposta marcada como atendida', fechado: 'Ticket fechado', reaberto: 'Ticket reaberto' };
-  for (const a of t.acoes) { const det = a.detalhe && typeof a.detalhe === 'object' && !a.detalhe.lote ? Object.entries(a.detalhe).map(([k, v]) => (v && typeof v === 'object' ? `${ROT_PROP[k] ?? k}: ${v.de ?? '—'} → ${v.para ?? '—'}` : `${k}: ${v}`)).join('; ') : ''; ul2.append(el('li', `${fmtDataHora(a.em)} · ${ROT_ACAO[a.tipo] ?? a.tipo} · ${a.por || ''}${det ? ` · ${det}` : ''}`)); }
+  const ul2 = el('ul'); const ROT_ACAO = { selecionado: 'Selecionado para o Suporte Ativo', propriedades: 'Propriedades alteradas', email_enfileirado: 'E-mail na fila', email_enviado: 'E-mail enviado', email_falhou: 'E-mail falhou', atendida: 'Resposta marcada como atendida', fechado: 'Ticket fechado', reaberto: 'Ticket reaberto', criado_avulso: 'Ticket avulso criado pela equipe' };
+  for (const a of t.acoes) { const det = a.detalhe && typeof a.detalhe === 'object' && !a.detalhe.lote && a.tipo !== 'criado_avulso' ? Object.entries(a.detalhe).map(([k, v]) => (v && typeof v === 'object' ? `${ROT_PROP[k] ?? k}: ${v.de ?? '—'} → ${v.para ?? '—'}` : `${k}: ${v}`)).join('; ') : ''; ul2.append(el('li', `${fmtDataHora(a.em)} · ${ROT_ACAO[a.tipo] ?? a.tipo} · ${a.por || ''}${det ? ` · ${det}` : ''}`)); }
   corpo.append(ul2); j.abrir();
 }
 
@@ -229,7 +350,7 @@ async function carregarRespostas() {
   if (!r.ok) { alvo.replaceChildren(el('p', erroDe(r, 'Não foi possível carregar as respostas.'), 'sppl-aviso')); return; }
   if (!r.dados.itens.length) { alvo.replaceChildren(el('p', todas ? 'Nenhum cliente respondeu ainda.' : 'Nenhuma resposta pendente. 🎉', 'cartao-sub')); return; }
   alvo.replaceChildren(...r.dados.itens.map((t) => {
-    const card = el('div', undefined, 'sppl-destaque'); const topo = el('div'); topo.append(el('strong', `${t.nome || '—'} · pedido ${t.numero_pedido}`), el('span', ` · ${fmtDataHora(t.ultima_resposta_em)}`, 'cartao-sub'));
+    const card = el('div', undefined, 'sppl-destaque'); const topo = el('div'); topo.append(el('strong', `${t.nome || '—'} · ${t.numero_pedido ? `pedido ${t.numero_pedido}` : (t.email || 'sem pedido')}`), el('span', ` · ${fmtDataHora(t.ultima_resposta_em)}`, 'cartao-sub'));
     if (t.resposta_pendente) topo.append(document.createTextNode(' '), el('span', 'Pendente', 'sppl-selo sppl-selo--p0'));
     const assunto = el('p', t.ultima_resposta_assunto || '(sem assunto)', 'cartao-sub'); const pre = el('pre', t.ultima_resposta_texto || ''); pre.style.whiteSpace = 'pre-wrap';
     const acoes = el('div', undefined, 'sppl-acoes');
@@ -242,12 +363,16 @@ async function carregarRespostas() {
 
 /* ═══════════════════════  montagem  ═══════════════════════ */
 function sincronizarFiltros() {
-  for (const [id, k] of [['ativo-f-ticket', 'status_ticket'], ['ativo-f-logistico', 'status_logistico'], ['ativo-f-motivo', 'motivo_problema'], ['ativo-f-suporte', 'status_suporte'], ['ativo-f-contato', 'contato'], ['ativo-f-resposta', 'resposta']]) { const s = raiz.querySelector(`#${id}`); if (s) s.value = estado[k] ?? ''; }
+  for (const [id, k] of [['ativo-f-ticket', 'status_ticket'], ['ativo-f-logistico', 'status_logistico'], ['ativo-f-motivo', 'motivo_problema'], ['ativo-f-suporte', 'status_suporte'], ['ativo-f-contato', 'contato'], ['ativo-f-resposta', 'resposta'], ['ativo-f-origem', 'origem']]) { const s = raiz.querySelector(`#${id}`); if (s) s.value = estado[k] ?? ''; }
 }
 function montar() {
   raiz = document.getElementById('ativo-raiz'); raiz.replaceChildren();
   const cab = el('header', undefined, 'cartao-cabeca'); const quem = el('div');
-  quem.append(el('h2', 'Suporte Ativo do SPPL'), el('p', 'Área do contato ativo com clientes de pedidos com problema logístico. Os pedidos chegam aqui só por seleção da equipe (ação "Selecionar para Suporte Ativo" no Monitoramento logístico). Selecione tickets, confira e envie e-mails individuais em massa e atualize as propriedades de uma vez. As respostas dos clientes ficam na fila "Respostas dos clientes", separada da fila normal de suporte.', 'cartao-sub'));
+  quem.append(el('h2', 'Suporte Ativo do SPPL'), el('p', 'Área do contato ativo com clientes de pedidos com problema logístico. Os pedidos chegam aqui só por seleção da equipe (ação "Selecionar para Suporte Ativo" no Monitoramento logístico) ou pela equipe, com "Novo ticket" (contato pontual por e-mail ou pedido). Selecione tickets, confira e envie e-mails individuais em massa e atualize as propriedades de uma vez. As respostas dos clientes ficam na fila "Respostas dos clientes", separada da fila normal de suporte.', 'cartao-sub'));
+  const botoes = el('div', undefined, 'sppl-acoes');
+  const bNovo = el('button', 'Novo ticket', 'btn btn-forte'); bNovo.type = 'button'; bNovo.id = 'ativo-btn-novo'; bNovo.addEventListener('click', abrirNovoTicket);
+  const bMod = el('button', 'Modelos de e-mail', 'btn'); bMod.type = 'button'; bMod.id = 'ativo-btn-modelos'; bMod.addEventListener('click', abrirModelos);
+  botoes.append(bNovo, bMod); quem.append(botoes);
   cab.append(quem); raiz.append(cab);
   const kp = el('div', undefined, 'sppl-kpis'); kp.id = 'ativo-kpis'; raiz.append(kp);
   const abas = el('div', undefined, 'subabas'); abas.setAttribute('role', 'tablist');
@@ -265,7 +390,8 @@ function montar() {
   const fs = campoSelect('Status do suporte', [['', 'Todos'], ...C.status_suporte.map((x) => [x, x])], '', mud('status_suporte')); fs.select.id = 'ativo-f-suporte';
   const fc = campoSelect('Contato', [['', 'Todos'], ['sem', 'Sem e-mail enviado'], ['com', 'Com e-mail enviado']], '', mud('contato')); fc.select.id = 'ativo-f-contato';
   const fr = campoSelect('Resposta', [['', 'Todas'], ['pendente', 'Cliente respondeu (pendente)']], '', mud('resposta')); fr.select.id = 'ativo-f-resposta';
-  filtros.append(bs.rotulo, ft.rotulo, fl.rotulo, fm.rotulo, fs.rotulo, fc.rotulo, fr.rotulo); vt.append(filtros);
+  const fo = campoSelect('Origem', [['', 'Todas'], ['logistica', 'Do Monitoramento logístico'], ['equipe', 'Iniciado pela equipe']], '', mud('origem')); fo.select.id = 'ativo-f-origem';
+  filtros.append(bs.rotulo, ft.rotulo, fo.rotulo, fl.rotulo, fm.rotulo, fs.rotulo, fc.rotulo, fr.rotulo); vt.append(filtros);
   const barra = el('div', undefined, 'sppl-acoes'); barra.id = 'ativo-barra';
   const txt = el('span', 'Nenhum ticket selecionado', 'cartao-sub'); txt.id = 'ativo-sel-texto';
   const mk = (id, rot, cls, fn) => { const b = el('button', rot, cls); b.type = 'button'; b.id = id; b.addEventListener('click', fn); return b; };

@@ -28,8 +28,14 @@ export const PROPRIEDADES = {
 };
 
 /** Marcadores aceitos na mensagem em massa; cada cliente recebe a mensagem com os dados DELE. */
-export const MARCADORES = ['nome', 'pedido', 'produto', 'rastreio', 'link_rastreio'];
+export const MARCADORES = ['nome', 'pedido', 'produto', 'rastreio', 'link_rastreio', 'transportadora', 'endereco', 'assinatura'];
 
 /** Limites de segurança do envio em massa (a caixa support@ é a mesma do atendimento: um bloqueio por excesso derrubaria o suporte). */
 export const MAX_POR_LOTE = 200;
 export const MAX_SELECIONAR = 1000;
+
+/** Ticket avulso ("Novo ticket", iniciado pela equipe): máximo de clientes por lote de criação e janela (dias) do alerta de contato duplicado. */
+export const MAX_AVULSOS = 200;
+export const DIAS_ALERTA_CONTATO = 90;
+export const ASSINATURA_PADRAO = 'Customer Care Team';
+export const ORIGENS = ['logistica', 'equipe'];

@@ -65,6 +65,8 @@ import rotasSpplRelatorio from './rotas/spplRelatorio.js';
 import rotasSpplLogistica from './rotas/spplLogistica.js';
 import rotasSpplAtivo from './rotas/spplAtivo.js';
 import { iniciarEnvioAtivo } from './sppl/ativoEnvios.js';
+import rotasMonitSppl from './rotas/monitSppl.js';
+import { iniciarMonit } from './monit/atualizar.js';
 import { registrarPendentes as registrarNo17Track } from './track17/jobRegistro.js';
 import { rodar as rodarMotorSppl } from './sppl/motor.js';
 import { reconciliar as reconciliar17Track } from './track17/reconciliar.js';
@@ -440,6 +442,7 @@ await app.register(rotasSpplNaoEncontrados);
 await app.register(rotasSpplRelatorio);
 await app.register(rotasSpplLogistica);
 await app.register(rotasSpplAtivo);
+await app.register(rotasMonitSppl);   // MONIT-SPPL (142): Monitoramento Logístico da Késsia
 await app.register(rotasPostmark);
 await app.register(rotasFormularios);
 await app.register(rotasDescadastro);
@@ -543,6 +546,8 @@ const intervaloRisco = setInterval(recalcularRisco, RISCO_INTERVALO_MS);
 const desligarFilaDeRespostas = iniciarFilaDeRespostas(app.log);
 /* SPPL Suporte Ativo (migração 101): envio em massa individual em segundo plano, espaçado e com teto por hora. */
 const intervaloEnvioAtivo = iniciarEnvioAtivo((m) => app.log.info(m));
+/* MONIT-SPPL (migração 142): refaz a classificação dos pedidos em aberto a cada 10 min (api/monit/atualizar.js). Erro vira só log. */
+const intervaloMonit = iniciarMonit((m) => app.log.info(m));
 
 const FECHAMENTO_INTERVALO_MS = 15 * 60 * 1000;
 const fecharTicketsAutomatico = async () => {
@@ -606,6 +611,7 @@ for (const sinal of ['SIGINT', 'SIGTERM']) {
     clearInterval(intervaloRegistro17Track);
     clearInterval(intervaloMotorSppl);
     clearInterval(intervaloEnvioAtivo);
+    clearInterval(intervaloMonit);
     clearInterval(intervaloReconciliacao17Track);
     desligarFilaDeRespostas();
     await app.close();

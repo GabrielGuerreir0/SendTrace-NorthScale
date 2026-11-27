@@ -58,7 +58,7 @@ export default async function rotasSpplLogistica(app) {
   }, async () => {
     const { rows } = await query(`SELECT quadro, count(*)::int AS n, count(*) FILTER (WHERE sem_17track)::int AS sem17 FROM sppl_logistica GROUP BY 1`);
     const quadros = Object.fromEntries(QUADROS.map((q) => [q, rows.find((r) => r.quadro === q)?.n ?? 0]));
-    const extra = (await query(`SELECT (SELECT count(*)::int FROM sppl_ativo_tickets WHERE status_ticket <> 'fechado') AS tickets_abertos`)).rows[0];
+    const extra = (await query(`SELECT (SELECT count(*)::int FROM sppl_ativo_tickets WHERE status_ticket <> 'fechado' AND origem = 'logistica' AND NOT criado_pelo_monit) AS tickets_abertos`)).rows[0];
     extra.sem_17track = rows.reduce((t, r) => t + r.sem17, 0);
     return { quadros, ...extra, gerado_em: new Date().toISOString() };
   });
