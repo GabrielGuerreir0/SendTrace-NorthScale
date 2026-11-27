@@ -229,7 +229,11 @@ export async function obterBinario(rota) {
     throw new ErroApi(`GET ${rota}: HTTP ${resposta.status}`, { status: resposta.status, rota });
   }
   const buffer = Buffer.from(await resposta.arrayBuffer());
-  return { buffer, mimeType: resposta.headers.get('content-type') || 'application/octet-stream' };
+  return {
+    buffer,
+    mimeType: resposta.headers.get('content-type') || 'application/octet-stream',
+    nomeArquivo: resposta.headers.get('x-nome-arquivo'),
+  };
 }
 
 /**

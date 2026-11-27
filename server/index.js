@@ -2203,6 +2203,34 @@ async function atender(req, res, url, sessao) {
   }
 
   /*
+   * Monitoramento Logístico MONIT-SPPL (migração 142) — repasse direto à API, que valida tudo. ANTES do detalhe `/api/rastreio/:id`, que senão
+   * trataria "monit/config" como um transacao_id. O .xlsx é binário (nome do arquivo vem no cabeçalho X-Nome-Arquivo da API).
+   */
+  if (url.pathname.startsWith('/api/rastreio/monit/')) {
+    const caminho = url.pathname.replace(/\/$/, '');
+    try {
+      if (req.method === 'GET' && caminho === '/api/rastreio/monit/pedidos.xlsx') {
+        const { buffer, nomeArquivo } = await obterBinario(`${caminho}?${url.searchParams}`);
+        res.writeHead(200, {
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'Content-Disposition': 'attachment; filename="pedidos.xlsx"',
+          'X-Nome-Arquivo': nomeArquivo || 'pedidos.xlsx',
+          'Cache-Control': 'no-store',
+        });
+        res.end(buffer);
+        return ATENDIDO;
+      }
+      if (req.method === 'GET') return json(res, 200, await obterApi(caminho, Object.fromEntries(url.searchParams)));
+      if (req.method === 'POST') return json(res, 200, await criarApi(caminho, await lerJson(req, 256 * 1024)));
+      if (req.method === 'DELETE') return json(res, 200, await apagarApi(caminho));
+    } catch (err) {
+      if (err instanceof ErroApi) return json(res, err.status || 400, { erro: detalharErroApi(err, 'A API recusou a operação.') });
+      throw err;
+    }
+    return json(res, 404, { erro: 'Rota do Monitoramento não encontrada.' });
+  }
+
+  /*
    * SPPL (migração 090) — regras editáveis e feriados, dentro do Rastreio de Pedidos. ANTES do detalhe `/api/rastreio/:id`, que senão
    * trataria "sppl/regras" como um transacao_id. Leitura: qualquer conta com a página; escrita: só administrador (a API também confere).
    */
@@ -2243,6 +2271,8 @@ async function atender(req, res, url, sessao) {
         if (req.method === 'GET') return json(res, 200, await obterApi(caminho, Object.fromEntries(url.searchParams)));
         if (req.method === 'POST') return json(res, 200, await criarApi(caminho, await lerJson(req, 256 * 1024)));
         if (req.method === 'PATCH') return json(res, 200, await remendarApi(caminho, await lerJson(req, 64 * 1024)));
+        // modelos de e-mail e assinatura (140/141) são gravados com PUT
+        if (req.method === 'PUT') return json(res, 200, await substituirApi(caminho, await lerJson(req, 256 * 1024)));
       }
       if (resto === 'saude' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/saude'));
       if (resto === 'relatorio' && req.method === 'GET') return json(res, 200, await obterApi('/api/rastreio/sppl/relatorio', { dias: url.searchParams.get('dias') }));
