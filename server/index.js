@@ -545,7 +545,7 @@ async function servirEstatico(req, res, urlPath) {
 
 /** Administrador, ou gestor do Suporte Escalado ou do Suporte Humano (papel por página, 072; é um papel só, vale nas duas). */
 // Filtros por lista suspensa da fila do Suporte Humano (3º momento, item 1): repassados à API, que aplica no servidor.
-const FILTROS_FILA = ['tag_motivo', 'motivo_contato', 'detalhamento_motivo', 'tipo_resolucao', 'status_ticket', 'motivo_reenvio', 'status_logistica', 'status_ajuda', 'responsavel_logistica_id', 'quantidade_reenvio', 'percentual_reembolso', 'ajuda_para_id', 'valor_compra_min', 'valor_compra_max', 'deducao_min', 'deducao_max', 'valor_reembolsar_min', 'valor_reembolsar_max'];
+const FILTROS_FILA = ['tag_motivo', 'motivo_contato', 'detalhamento_motivo', 'tipo_resolucao', 'status_ticket', 'motivo_reenvio', 'status_logistica', 'status_ajuda', 'responsavel_logistica_id', 'quantidade_reenvio', 'percentual_reembolso', 'ajuda_para_id', 'valor_compra_min', 'valor_compra_max', 'deducao_min', 'deducao_max', 'valor_reembolsar_min', 'valor_reembolsar_max', 'origem_ticket'];
 const ehGestorEscalado = (u) => Boolean(u?.admin || (u?.acessos ?? []).some((a) => (a.pagina === 'suporteescalado' || a.pagina === 'suportehumano') && a.papel === 'gestor'));
 
 /**
@@ -1704,6 +1704,22 @@ async function atender(req, res, url, sessao) {
       return json(res, 200, await obterApi('/api/suporte-escalado/fila', { board_id: boardFila, q: url.searchParams.get('q'), dias: url.searchParams.get('dias'), de: url.searchParams.get('de'), ate: url.searchParams.get('ate'),
         ...Object.fromEntries(FILTROS_FILA.map((k) => [k, url.searchParams.get(k)])) }));
     } catch (err) { return erroFicha(err, 'Não consegui carregar a fila.'); }
+  }
+
+  /* ── Suporte Humano, "Novo ticket" iniciado pela equipe (migração 143): tudo repassa à API, que valida o board e quem pode (400/403/404/503). A lista de e-mails/pedidos vai no corpo (até ~50 KB). ── */
+  if (url.pathname === '/api/suporte-escalado/novo-ticket/modelos' && req.method === 'GET') {
+    try { return json(res, 200, await obterApi('/api/suporte-escalado/novo-ticket/modelos')); } catch (err) { return erroFicha(err, 'Não consegui carregar os modelos.'); }
+  }
+  if (url.pathname === '/api/suporte-escalado/novo-ticket' && req.method === 'POST') {
+    try { return json(res, 200, await criarApi('/api/suporte-escalado/novo-ticket', await lerJson(req, 128 * 1024))); } catch (err) { return erroFicha(err, 'Não consegui abrir o ticket.'); }
+  }
+  if (url.pathname === '/api/suporte-escalado/novo-ticket/lote' && req.method === 'GET') {
+    const lote = url.searchParams.get('lote');
+    if (!lote) return json(res, 400, { erro: 'Informe o lote.' });
+    try { return json(res, 200, await obterApi('/api/suporte-escalado/novo-ticket/lote', { lote })); } catch (err) { return erroFicha(err, 'Não consegui ver o andamento do envio.'); }
+  }
+  if (url.pathname === '/api/suporte-escalado/novo-ticket/lote/reenviar' && req.method === 'POST') {
+    try { return json(res, 200, await criarApi('/api/suporte-escalado/novo-ticket/lote/reenviar', await lerJson(req))); } catch (err) { return erroFicha(err, 'Não consegui tentar de novo.'); }
   }
 
   /* ── Suporte Humano, 2º momento da solicitação da Késsia (PDF de 07/10/2026): tudo repassa à API, que valida quem pode (403/404/422) ── */

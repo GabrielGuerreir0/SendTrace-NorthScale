@@ -3,24 +3,28 @@
  * filtros, ficha do pedido com a linha do tempo do 17Track, e (módulos à parte) tratativas e prazos. SEMPRE em português.
  * Os textos de negócio (nomes, "como tratar", urgência) vêm da API (`/api/rastreio/monit/config`): a tela não os repete. Todo texto da API entra por textContent.
  */
-import { api, montarPaginacao } from './emailComum.js';
+import { api as apiBase, montarPaginacao } from './emailComum.js';
 import { el, fmtData, fmtDataHora, fmtValor, rotPlataforma, campoSelect, campoTexto, criarJanela, selo, mensagem } from './spplComum.js';
+import { desenharJornada } from './monitJornada.js';
 
 const BASE = '/api/rastreio/monit';
+/** O painel (BFF) devolve o motivo da recusa em `erro`; as telas leem `detail`. Aqui os dois viram `detail`, para a mensagem real chegar à pessoa. */
+async function api(rota, opcoes) { const r = await apiBase(rota, opcoes); if (!r.ok && r.dados && !r.dados.detail && r.dados.erro) r.dados.detail = r.dados.erro; return r; }
 const estado = {
   cfg: null, leitura: null, resumo: null, dados: null, carregando: false, aba: 'classificacao',
   filtros: { desde: '2026-10-01', reemb: 'sem' },                                  // globais (valem para todas as abas)
   lista: { grupo: '', classe: '', causa: '', q: '', fulfillment: '', plataforma: '', tratado: '', multi: false, ordem: 'dias_desde_evento', dir: 'desc', pagina: 1 },
   selecionados: new Set(), tamanho: 100,
+  semEmail: new Set(),   // pedidos já vistos nas listas que NÃO têm e-mail do cliente (para o contador da seleção)
 };
 let raiz = null; let temporizador = null; let iniciado = false; let tokenLista = 0; let msgEl = null;
 const modulos = {};   // módulos carregados sob demanda (tratativas, prazos, indicadores)
-const ARQUIVOS = { tratativas: './monitTratativas.js', prazos: './monitPrazos.js', indicadores: './monitIndicadores.js' };
+const ARQUIVOS = { tratativas: './monitTratativas.js', prazos: './monitPrazos.js', indicadores: './monitIndicadores.js', email: './monitEmail.js' };
 /** Importa e inicia um módulo uma única vez. `raizDe` = onde ele desenha (aba ou bloco). */
 async function modulo(nome, raizDe) {
   if (modulos[nome]) return modulos[nome];
   const m = await import(ARQUIVOS[nome]); modulos[nome] = m;
-  m.iniciar({ raiz: raizDe ?? raiz.querySelector(`.mon-painel[data-aba=${nome}]`), estado, api, abrirFicha, parametros, filtrarPor });
+  m.iniciar({ raiz: raizDe ?? raiz.querySelector(`.mon-painel[data-aba=${nome}]`), estado, api, abrirFicha, parametros, filtrarPor, abrirEmailPadrao });
   return m;
 }
 
@@ -113,7 +117,7 @@ async function carregarLista() {
   const r = await api(`${BASE}/lista?${parametros({ extra: { ordem: estado.lista.ordem, dir: estado.lista.dir, pagina: estado.lista.pagina, tamanho: estado.tamanho } })}`);
   if (meu !== tokenLista) return;   // chegou uma resposta mais nova
   if (!r.ok) { corpo.replaceChildren(linhaVazia(r.dados?.detail ?? 'Não foi possível carregar a lista.')); return; }
-  estado.dados = r.dados; desenharTabela();
+  estado.dados = r.dados; lembrarSemEmail(r.dados.itens); desenharTabela();
 }
 
 async function carregarTudo() { await Promise.all([carregarResumo(), carregarLista()]); }
@@ -226,9 +230,26 @@ function atualizarBarraSelecao() {
   const m = modulos.tratativas; if (m?.aoMudarSelecao) m.aoMudarSelecao();
   const t = raiz.querySelector('#mon-sel-texto'); if (!t) return;
   const k = estado.selecionados.size;
-  t.textContent = k ? `${n(k)} pedido(s) selecionado(s)` : 'Nenhum pedido selecionado';
-  for (const id of ['mon-btn-limpar', 'mon-btn-tratativa']) { const b = raiz.querySelector(`#${id}`); if (b) b.hidden = !k; }
+  const sem = [...estado.selecionados].filter((id) => estado.semEmail.has(id)).length;
+  t.textContent = k ? `${n(k)} pedido(s) selecionado(s)${sem ? ` · ${n(sem)} sem e-mail do cliente` : ''}` : 'Nenhum pedido selecionado';
+  for (const id of ['mon-btn-limpar', 'mon-btn-tratativa', 'mon-btn-email']) { const b = raiz.querySelector(`#${id}`); if (b) b.hidden = !k; }
   const todos = raiz.querySelector('#mon-marca-todos'); if (todos) todos.checked = Boolean(estado.dados?.itens.length) && estado.dados.itens.every((p) => estado.selecionados.has(p.pedido_id));
+}
+
+/** Guarda quais pedidos das listas já carregadas não têm e-mail do cliente (contador da seleção; o editor de e-mail confere de novo no servidor). */
+export function lembrarSemEmail(itens) { for (const p of itens ?? []) { if (p.email_cliente) estado.semEmail.delete(p.pedido_id); else estado.semEmail.add(p.pedido_id); } }
+
+/** "Preparar e-mail padrão" para os pedidos selecionados: o mesmo editor serve a lista da Classificação e a da aba Tratativas. */
+async function abrirEmailPadrao(aoFinalizar) {
+  if (!estado.selecionados.size) return;
+  try {
+    const m = await modulo('email', raiz);
+    await m.abrirEditor([...estado.selecionados], (res) => {
+      estado.selecionados.clear(); for (const cb of raiz.querySelectorAll('input[type=checkbox]')) cb.checked = false; atualizarBarraSelecao();
+      mensagem(msgEl, res.tipo === 'enviados' ? `${n(res.enfileirados)} e-mail(s) enfileirado(s).` : `${n(res.gravadas)} pedido(s) marcado(s) como enviado(s).`);
+      carregarLista(); modulos.tratativas?.recarregar?.(); carregarEstado(); if (aoFinalizar) aoFinalizar(res);
+    });
+  } catch { mensagem(msgEl, 'Não foi possível abrir o editor de e-mail.', true); }
 }
 
 /** Marca TODOS os pedidos do filtro atual (não só os da página): lê as páginas de 500 até acabar (máx. 20 mil). */
@@ -237,6 +258,7 @@ async function selecionarTodosDoFiltro() {
   for (let pagina = 1; pagina <= 40; pagina += 1) {
     const r = await api(`${BASE}/lista?${parametros({ extra: { ordem: 'pedido', dir: 'asc', pagina, tamanho: 500 } })}`); if (!r.ok) break;
     for (const p of r.dados.itens) estado.selecionados.add(p.pedido_id);
+    lembrarSemEmail(r.dados.itens);
     if (pagina * 500 >= r.dados.total) break;
   }
   for (const cb of raiz.querySelectorAll('#mon-corpo input[type=checkbox]')) cb.checked = true;
@@ -282,6 +304,7 @@ export async function abrirFicha(id) {
   campo('E-mails enviados', f.emails.enviados ? `${f.emails.enviados} (${f.emails.tipos ?? ''}) · último em ${fmtDataHora(f.emails.ultimo)}` : '0');
   corpo2.append(dl);
 
+  const jornada = desenharJornada(f.jornada); if (jornada) corpo2.append(jornada);
   corpo2.append(el('h3', 'Linha do tempo'));
   if (!f.eventos.length) corpo2.append(el('p', 'Sem eventos registrados.', 'mon-vazio'));
   else {
@@ -296,6 +319,11 @@ export async function abrirFicha(id) {
     }
     tab.append(th, tb); const env = el('div', undefined, 'tabela-envolve'); env.append(tab); corpo2.append(env);
   }
+  // e-mail padrão deste pedido (o mesmo editor da lista, com um pedido só)
+  const bloco = el('div'); bloco.append(el('h3', 'E-mail padrão'));
+  const bEm = el('button', 'Preparar e-mail padrão', 'btn btn-forte'); bEm.type = 'button'; bEm.disabled = !p.email; bEm.title = p.email ? '' : 'Este pedido não tem e-mail do cliente.';
+  bEm.addEventListener('click', async () => { try { const m = await modulo('email', raiz); await m.abrirEditor([p.pedido_id], () => { abrirFicha(p.pedido_id); carregarLista(); modulos.tratativas?.recarregar?.(); }); } catch { mensagem(msgEl, 'Não foi possível abrir o editor de e-mail.', true); } });
+  bloco.append(bEm); corpo2.append(bloco);
   try { const t = await modulo('tratativas'); corpo2.append(t.fichaTratativas(f)); } catch { /* sem o bloco de tratativas */ }
 }
 
@@ -331,10 +359,11 @@ function montarClassificacao(pai) {
   const bLimpar = el('button', 'Limpar seleção', 'btn'); bLimpar.type = 'button'; bLimpar.id = 'mon-btn-limpar'; bLimpar.hidden = true; bLimpar.addEventListener('click', () => { estado.selecionados.clear(); for (const cb of raiz.querySelectorAll('#mon-corpo input[type=checkbox]')) cb.checked = false; atualizarBarraSelecao(); });
   const bReg = el('button', 'Registrar tratativa', 'btn btn-forte'); bReg.type = 'button'; bReg.id = 'mon-btn-tratativa'; bReg.hidden = true;
   bReg.addEventListener('click', async () => { try { const t = await modulo('tratativas'); t.abrirFormulario([...estado.selecionados], (r) => { estado.selecionados.clear(); for (const cb of raiz.querySelectorAll('#mon-corpo input[type=checkbox]')) cb.checked = false; atualizarBarraSelecao(); mensagem(msgEl, `${r.gravadas} tratativa(s) registrada(s).`); carregarLista(); modulos.tratativas?.recarregar?.(); }); } catch { mensagem(msgEl, 'Não foi possível abrir o formulário.', true); } });
+  const bEmail = el('button', 'Preparar e-mail padrão', 'btn btn-forte'); bEmail.type = 'button'; bEmail.id = 'mon-btn-email'; bEmail.hidden = true; bEmail.addEventListener('click', () => abrirEmailPadrao());
   const bTodos = el('button', 'Selecionar todos do filtro', 'btn'); bTodos.type = 'button'; bTodos.addEventListener('click', selecionarTodosDoFiltro);
   const bXls = el('button', 'Baixar relatório (.xlsx)', 'btn'); bXls.type = 'button'; bXls.id = 'mon-btn-xlsx';
   bXls.addEventListener('click', async () => { try { const t = await modulo('tratativas'); await t.baixarRelatorio(parametros({ extra: { ordem: estado.lista.ordem, dir: estado.lista.dir } }), msgEl, bXls); } catch { mensagem(msgEl, 'Não foi possível gerar a planilha.', true); } });
-  barra.append(txt, bTodos, bReg, bLimpar, bXls); pai.append(barra);
+  barra.append(txt, bTodos, bEmail, bReg, bLimpar, bXls); pai.append(barra);
   const envolve = el('div', undefined, 'tabela-envolve'); const tab = el('table', undefined, 'tabela tabela--empilha tabela--larga mon-tabela'); tab.id = 'mon-tabela';
   const thead = el('thead'); const trh = el('tr');
   const thm = el('th'); thm.scope = 'col'; const todos = document.createElement('input'); todos.type = 'checkbox'; todos.id = 'mon-marca-todos'; todos.setAttribute('aria-label', 'Selecionar todos os pedidos desta página');

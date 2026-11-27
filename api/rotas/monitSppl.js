@@ -10,6 +10,8 @@
  *   (fase 2) GET quadros, rastreios-gerados, reembolso-logistica, sem-rastreio, busca
  *   (fase 3) GET tratativas/painel · POST tratativas · DELETE tratativas/:id · GET pedidos.xlsx
  *   (fase 4) GET prazos
+ *   (seção 8) GET email/modelos · POST email/preparar · POST email/simular · POST email/enviar · POST email/marcar · POST email/traduzir
+ *   A ficha (`pedido/:id/folha`) traz também a `jornada` do pedido (marcos e etapas com faixa de ritmo).
  *
  * Fases 1, 2 e 4 são SOMENTE LEITURA (a atualização grava só em `monit_pedidos`, tabela de apoio). A fase 3 grava tratativas em `sppl_ativo_acoes` (Suporte Ativo).
  * Dado pessoal só para quem já tem a página Rastreio.
@@ -23,6 +25,9 @@ import { kpis, rastreiosGerados, reembolsoLogistica, semRastreioTabelas, buscar 
 import { registrar, remover, painel } from '../monit/tratativas.js';
 import { prazos } from '../monit/prazos.js';
 import { gerarXlsx } from '../monit/exportar.js';
+import { listarModelos, preparar, simular, enviar, marcarEnviados } from '../monit/email.js';
+import { traduzir } from '../monit/traduzir.js';
+import { MODELO_POR_CLASSE, MODELO_PADRAO } from '../monit/emailPuro.js';
 
 const auth = { onRequest: [] };
 const quem = (req) => String(req.usuario?.nome || req.usuario?.email || 'desconhecido').slice(0, 120);
@@ -99,6 +104,32 @@ export default async function rotasMonitSppl(app) {
     const { buffer, nome, linhas } = await gerarXlsx(f, { ordem: req.query?.ordem, dir: req.query?.dir });
     return reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
       .header('Content-Disposition', `attachment; filename="pedidos.xlsx"; filename*=UTF-8''${encodeURIComponent(nome)}`).header('X-Linhas', String(linhas)).header('X-Nome-Arquivo', encodeURIComponent(nome)).send(buffer);
+  });
+
+  /* ───────────── seção 8: e-mail padrão (preparar, simular, enviar, marcar como enviados, traduzir) ───────────── */
+  const segs = [{ bearerAuth: [] }];
+  app.get('/api/rastreio/monit/email/modelos', { ...auth, schema: { tags, summary: 'MONIT-SPPL — modelos de e-mail ativos (do Suporte Ativo) e a tabela MODELO_POR_CLASSE', security: segs } }, async () => ({
+    modelos: await listarModelos(), modelo_por_classe: MODELO_POR_CLASSE, modelo_padrao: MODELO_PADRAO, traducao_ia: Boolean(process.env.ANTHROPIC_API_KEY),
+  }));
+  app.post('/api/rastreio/monit/email/preparar', { ...auth, schema: { tags, summary: 'MONIT-SPPL — "Preparar e-mail padrão": modelo sugerido pela classe e o texto de cada cliente (não grava nada)', security: segs } }, async (req) => preparar(req.body ?? {}));
+  app.post('/api/rastreio/monit/email/simular', { ...auth, schema: { tags, summary: 'MONIT-SPPL — conferência do envio: destinatários, exemplo, avisos e contatos anteriores (não grava nada)', security: segs } }, async (req) => simular(req.body ?? {}));
+  app.post('/api/rastreio/monit/email/enviar', { ...auth, schema: { tags, summary: 'MONIT-SPPL — confirma o envio individual (cria/atualiza o ticket, enfileira pelo Suporte Ativo e registra a tratativa)', security: segs } }, async (req) => {
+    // o envio em si é do Suporte Ativo: chama o endpoint dele por dentro, com a sessão de quem pediu (mesmas regras, fila, teto por hora e marcadores)
+    const chamarEnvio = async (corpo) => {
+      const h = { 'content-type': 'application/json', 'x-forwarded-for': String(req.headers['x-forwarded-for'] ?? req.ip).split(',')[0].trim() };
+      if (req.headers.authorization) h.authorization = req.headers.authorization;
+      if (req.headers.cookie) h.cookie = req.headers.cookie;
+      if (req.headers['x-painel']) h['x-painel'] = req.headers['x-painel'];
+      const r = await app.inject({ method: 'POST', url: '/api/rastreio/sppl/ativo/enviar', headers: h, payload: JSON.stringify(corpo) });
+      let dado; try { dado = JSON.parse(r.body); } catch { dado = {}; }
+      return { status: r.statusCode, corpo: dado };
+    };
+    return enviar(req.body ?? {}, quem(req), chamarEnvio);
+  });
+  app.post('/api/rastreio/monit/email/marcar', { ...auth, schema: { tags, summary: 'MONIT-SPPL — "Marcar como enviados": registra o contato feito fora do sistema (não envia nada)', security: segs } }, async (req) => marcarEnviados(req.body ?? {}, quem(req)));
+  app.post('/api/rastreio/monit/email/traduzir', { ...auth, schema: { tags, summary: 'MONIT-SPPL — traduz o e-mail de português para inglês americano por IA (rascunho: exige revisão)', security: segs } }, async (req) => {
+    const b = req.body ?? {};
+    return traduzir({ assunto: b.assunto, corpo: b.texto ?? b.corpo });
   });
 
   /* ───────────── fase 4: prazos ───────────── */

@@ -9,14 +9,47 @@ import { ErroHttp } from '../comum.js';
 import { MOTIVO_PROBLEMA } from '../sppl/ativoConstantes.js';
 import { TIPOS_TRATATIVA, CLASSE_POR_CHAVE } from './classes.js';
 import { CTE_APOIO, TRATADO_SQL } from './consultas.js';
+import { produtoPrincipal } from './emailPuro.js';
 
 const MAX_PEDIDOS = 1000;
 
 /**
- * Registra UMA tratativa em cada pedido (transação única: ou grava todas ou nenhuma). Devolve quantas gravou e quantos tickets criou.
- * `modelo`/`assunto` só para `email_cliente` marcado como enviado (seção 8).
+ * Acha (ou cria) o ticket do Suporte Ativo de UM pedido, dentro da transação `cli`. Ticket normal ou avulso aberto é reaproveitado; pedido sem ticket ganha um
+ * (`criado_pelo_monit = true`) com e-mail/nome/produto do Monitoramento (e-mail que o ticket já tinha vazio é completado). Devolve `{ d, tk, criado }` ou null
+ * se o pedido não existe. Usado pelas tratativas e pelo "Preparar e-mail padrão" (o envio em si é do Suporte Ativo).
  */
-export async function registrar({ pedidos, tipo, nota, modelo, assunto, por }) {
+export async function garantirTicket(cli, id, por) {
+  const { rows: [d] } = await cli.query(
+    `SELECT p.transacao_id, coalesce(nullif(p.order_number, ''), p.transacao_id) AS pedido, p.provedor, p.carrier_code, p.tracking_number, p.tracking_url,
+            coalesce(nullif(btrim(m.nome_cliente), ''), dv.nome) AS nome, coalesce(nullif(btrim(m.email_cliente), ''), dv.email) AS email, dv.produto, dv.plataforma, m.classe, m.transportadora, m.link_rastreio
+       FROM rastreio_pedidos p LEFT JOIN disparos_pos_venda dv ON dv.transacao_id = p.transacao_id LEFT JOIN monit_pedidos m ON m.transacao_id = p.transacao_id
+      WHERE p.transacao_id = $1`, [id]);
+  if (!d) return null;
+  let { rows: [tk] } = await cli.query(`SELECT id, email FROM sppl_ativo_tickets WHERE transacao_id IN ($1, 'avulso:' || $1) AND status_ticket <> 'fechado' ORDER BY id DESC LIMIT 1`, [id]);
+  let criado = false;
+  if (!tk) {
+    const motivo = MOTIVO_PROBLEMA.includes(CLASSE_POR_CHAVE[d.classe]?.motivo) ? CLASSE_POR_CHAVE[d.classe].motivo : 'Caso novo — Analisar';
+    ({ rows: [tk] } = await cli.query(
+      `INSERT INTO sppl_ativo_tickets (transacao_id, numero_pedido, email, nome, produto, plataforma, fulfillment, transportadora, rastreio_original, link_rastreio, motivo_problema, selecionado_por, criado_pelo_monit)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true) ON CONFLICT DO NOTHING RETURNING id`,
+      [id, d.pedido, d.email, d.nome, produtoPrincipal(d.produto) || d.produto, d.plataforma, d.provedor, d.transportadora ?? d.carrier_code, d.tracking_number, d.link_rastreio ?? d.tracking_url, motivo, por]));
+    if (!tk) ({ rows: [tk] } = await cli.query(`SELECT id, email FROM sppl_ativo_tickets WHERE transacao_id = $1 AND status_ticket <> 'fechado'`, [id]));
+    else {
+      criado = true;
+      await cli.query(`INSERT INTO sppl_ativo_acoes (ticket_id, tipo, detalhe, por) VALUES ($1, 'selecionado', $2, $3)`, [tk.id, JSON.stringify({ origem: 'monit-sppl' }), por]);
+    }
+  } else if (!String(tk.email ?? '').trim() && d.email) {
+    await cli.query(`UPDATE sppl_ativo_tickets SET email = $2, nome = coalesce(nullif(nome, ''), $3), atualizado_em = now() WHERE id = $1`, [tk.id, d.email, d.nome]);
+  }
+  return { d, tk, criado };
+}
+
+/**
+ * Registra UMA tratativa em cada pedido (transação única: ou grava todas ou nenhuma). Devolve quantas gravou e quantos tickets criou.
+ * `modelo`/`assunto` (ou `assuntos`: assunto de cada pedido, por id) só para `email_cliente` marcado como enviado (seção 8). `viaSistema` marca a tratativa de um
+ * e-mail ENVIADO pelo sistema (Suporte Ativo): ela aparece na lista de tratativas, mas NÃO conta de novo em "E-mails enviados" (o envio já conta; ponto 9 do PDF).
+ */
+export async function registrar({ pedidos, tipo, nota, modelo, assunto, assuntos, viaSistema = false, lote, por }) {
   if (!TIPOS_TRATATIVA[tipo]) throw new ErroHttp(400, 'Tipo de tratativa inválido.');
   const ids = [...new Set((Array.isArray(pedidos) ? pedidos : []).map((x) => String(x ?? '').slice(0, 120)).filter(Boolean))];
   if (!ids.length) throw new ErroHttp(400, 'Selecione pelo menos um pedido.');
@@ -27,28 +60,14 @@ export async function registrar({ pedidos, tipo, nota, modelo, assunto, por }) {
   try {
     await cli.query('BEGIN');
     for (const id of ids) {
-      const { rows: [d] } = await cli.query(
-        `SELECT p.transacao_id, coalesce(nullif(p.order_number, ''), p.transacao_id) AS pedido, p.provedor, p.carrier_code, p.tracking_number, p.tracking_url,
-                dv.nome, dv.email, dv.produto, dv.plataforma, m.classe, m.transportadora, m.link_rastreio
-           FROM rastreio_pedidos p LEFT JOIN disparos_pos_venda dv ON dv.transacao_id = p.transacao_id LEFT JOIN monit_pedidos m ON m.transacao_id = p.transacao_id
-          WHERE p.transacao_id = $1`, [id]);
-      if (!d) { semPedido.push(id); continue; }
-      let { rows: [tk] } = await cli.query(`SELECT id FROM sppl_ativo_tickets WHERE transacao_id IN ($1, 'avulso:' || $1) AND status_ticket <> 'fechado' ORDER BY id DESC LIMIT 1`, [id]);
-      if (!tk) {
-        const motivo = MOTIVO_PROBLEMA.includes(CLASSE_POR_CHAVE[d.classe]?.motivo) ? CLASSE_POR_CHAVE[d.classe].motivo : 'Caso novo — Analisar';
-        ({ rows: [tk] } = await cli.query(
-          `INSERT INTO sppl_ativo_tickets (transacao_id, numero_pedido, email, nome, produto, plataforma, fulfillment, transportadora, rastreio_original, link_rastreio, motivo_problema, selecionado_por, criado_pelo_monit)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true) ON CONFLICT DO NOTHING RETURNING id`,
-          [id, d.pedido, d.email, d.nome, d.produto, d.plataforma, d.provedor, d.transportadora ?? d.carrier_code, d.tracking_number, d.link_rastreio ?? d.tracking_url, motivo, por]));
-        if (!tk) ({ rows: [tk] } = await cli.query(`SELECT id FROM sppl_ativo_tickets WHERE transacao_id = $1 AND status_ticket <> 'fechado'`, [id]));
-        else {
-          ticketsCriados += 1;
-          await cli.query(`INSERT INTO sppl_ativo_acoes (ticket_id, tipo, detalhe, por) VALUES ($1, 'selecionado', $2, $3)`, [tk.id, JSON.stringify({ origem: 'monit-sppl' }), por]);
-        }
-      }
+      const g = await garantirTicket(cli, id, por);
+      if (!g) { semPedido.push(id); continue; }
+      const { d, tk } = g; if (g.criado) ticketsCriados += 1;
+      const marcado = tipo === 'email_cliente';   // `assuntos` = assunto já personalizado de cada pedido (e-mail marcado como enviado ou enviado pelo sistema)
       await cli.query(
         `INSERT INTO sppl_ativo_acoes (ticket_id, tipo, detalhe, por, trat_tipo, trat_nota, trat_classe, trat_modelo, trat_assunto) VALUES ($1, 'tratativa', $2, $3, $4, $5, $6, $7, $8)`,
-        [tk.id, JSON.stringify({ tipo, nota: texto, classe: d.classe ?? null, origem: 'monit-sppl' }), por, tipo, texto, d.classe ?? null, tipo === 'email_cliente' ? (modelo ?? null) : null, tipo === 'email_cliente' ? (assunto ?? null) : null]);
+        [tk.id, JSON.stringify({ tipo, nota: texto, classe: d.classe ?? null, origem: 'monit-sppl', ...(viaSistema ? { via_sistema: true, lote: lote ?? null } : {}) }), por, tipo, texto, d.classe ?? null,
+          marcado ? (modelo ?? null) : null, marcado ? (assuntos?.[id] ?? assunto ?? null) : null]);
       gravadas += 1;
     }
     await cli.query('COMMIT');

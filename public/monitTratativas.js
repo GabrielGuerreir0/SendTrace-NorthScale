@@ -126,15 +126,17 @@ async function carregarLista() {
   f.append(st.rotulo, b.rotulo); caixa.append(f);
   const barra = el('div', undefined, 'sppl-acoes'); const txt = el('span', '', 'cartao-sub'); const msg = el('span', '', 'cartao-sub'); msg.setAttribute('role', 'status');
   const bSel = el('button', 'Selecionar todos da lista', 'btn'); bSel.type = 'button';
-  const bReg = el('button', 'Registrar tratativa', 'btn btn-forte'); bReg.type = 'button';
+  const bReg = el('button', 'Registrar tratativa', 'btn'); bReg.type = 'button';
+  const bEmail = el('button', 'Preparar e-mail padrão', 'btn btn-forte'); bEmail.type = 'button';
   const bLimpa = el('button', 'Limpar seleção', 'btn'); bLimpa.type = 'button';
   const bXls = el('button', 'Baixar relatório (.xlsx)', 'btn'); bXls.type = 'button';
-  barra.append(txt, bSel, bReg, bLimpa, bXls, msg); caixa.append(barra);
+  barra.append(txt, bSel, bEmail, bReg, bLimpa, bXls, msg); caixa.append(barra);
   const envolve = el('div', undefined, 'tabela-envolve'); caixa.append(envolve);
   const sel = ctx.estado.selecionados;
-  const atualizarTxt = () => { txt.textContent = sel.size ? `${n(sel.size)} pedido(s) selecionado(s)` : 'Nenhum pedido selecionado'; bReg.disabled = !sel.size; bLimpa.disabled = !sel.size; };
+  const atualizarTxt = () => { const sem = [...sel].filter((id) => ctx.estado.semEmail?.has(id)).length; txt.textContent = sel.size ? `${n(sel.size)} pedido(s) selecionado(s)${sem ? ` · ${n(sem)} sem e-mail do cliente` : ''}` : 'Nenhum pedido selecionado'; bReg.disabled = !sel.size; bEmail.disabled = !sel.size; bLimpa.disabled = !sel.size; };
   const r = await ctx.api(`${BASE}/lista?${parametrosLista({ tamanho: LIMITE_TELA, pagina: 1 })}`);
   if (!r.ok) { envolve.append(el('p', r.dados?.detail ?? 'Não foi possível carregar a lista.', 'mon-vazio')); return; }
+  for (const p of r.dados.itens) { if (p.email_cliente) ctx.estado.semEmail?.delete(p.pedido_id); else ctx.estado.semEmail?.add(p.pedido_id); }
   const tab = el('table', undefined, 'tabela tabela--empilha tabela--larga mon-tabela'); const th = el('thead'); const trh = el('tr'); trh.append(el('th', ''));
   for (const h of ['Pedido', 'Cliente', 'Classificação', 'Dias desde o evento', 'Fulfillment', 'Tratativas', 'E-mails']) trh.append(el('th', h));
   th.append(trh); const tb = el('tbody');
@@ -157,6 +159,7 @@ async function carregarLista() {
     }
     for (const c of envolve.querySelectorAll('input[type=checkbox]')) c.checked = true; atualizarTxt(); mensagem(msg, ''); bSel.disabled = false;
   });
+  bEmail.addEventListener('click', () => ctx.abrirEmailPadrao?.());
   bLimpa.addEventListener('click', () => { sel.clear(); for (const c of envolve.querySelectorAll('input[type=checkbox]')) c.checked = false; atualizarTxt(); });
   bReg.addEventListener('click', () => abrirFormulario([...sel], (res) => { sel.clear(); mensagem(msg, `${res.gravadas} tratativa(s) registrada(s).`); recarregar(); document.dispatchEvent(new CustomEvent('monit:tratativa-mudou')); }));
   bXls.addEventListener('click', () => baixarRelatorio(parametrosLista({ tratado: filtro.tratado }), msg, bXls));

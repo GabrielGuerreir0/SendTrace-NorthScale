@@ -60,7 +60,8 @@ export default async function rotasSuporteEscaladoKpis(app) {
           GROUP BY r.board_id, r.primeira`,
       ),
       query(
-        `SELECT (SELECT count(*)::int FROM email_ia.suporte_escalado WHERE criado_em >= ${periodo.ini} AND criado_em < ${periodo.fim}) AS novos_hoje,
+        `SELECT (SELECT count(*)::int FROM email_ia.suporte_escalado WHERE criado_em >= ${periodo.ini} AND criado_em < ${periodo.fim} AND origem IS DISTINCT FROM 'equipe') AS novos_hoje,
+                (SELECT count(*)::int FROM email_ia.suporte_escalado WHERE criado_em >= ${periodo.ini} AND criado_em < ${periodo.fim} AND origem = 'equipe') AS iniciados_equipe_hoje,
                 (SELECT count(DISTINCT s.id)::int
                    FROM email_ia.suporte_escalado s
                    JOIN email_ia.emails e ON lower(e.remetente_email) = lower(s.remetente_email)
@@ -98,7 +99,8 @@ export default async function rotasSuporteEscaladoKpis(app) {
       dias: periodo.dias ?? null,
       periodo: descreverPeriodo(periodo),
       equipe: {
-        novos_hoje: eh.novos_hoje,
+        novos_hoje: eh.novos_hoje,   // só tickets que o CLIENTE abriu (143: os iniciados pela equipe ficam fora)
+        iniciados_equipe_hoje: eh.iniciados_equipe_hoje,
         clientes_responderam_hoje: eh.clientes_responderam_hoje,
         agentes_responderam_hoje: eh.agentes_responderam_hoje,
         agentes_responderam_tickets: eh.agentes_responderam_tickets,

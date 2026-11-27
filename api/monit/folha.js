@@ -7,6 +7,7 @@
 import { query } from '../../server/db.js';
 import { classificarTexto, textoDoEvento, traduzirTexto, limparTextoTransportadora, rotuloSt17 } from './classes.js';
 import { CTE_APOIO, enriquecer } from './consultas.js';
+import { montarJornada, primeiroMovimento } from './jornada.js';
 
 const LINK17 = (n) => `https://t.17track.net/pt#nums=${n}`;
 const SEM_MOVIMENTO = new Set(['InfoReceived', 'NotFound']);
@@ -35,9 +36,11 @@ export async function montarFolha(transacaoId) {
   const numeros = [...codigos.keys()];
 
   const eventos = [];
+  let evCodigoAtual = [];   // eventos do código atual no 17Track (base da "coleta" da jornada)
   if (numeros.length) {
     const { rows: ev } = await query(
       `SELECT numero, ocorreu_em, status, substatus, descricao, cidade, estado, pais, provedor_17t FROM rastreio_17t_eventos WHERE numero = ANY($1::text[]) ORDER BY ocorreu_em DESC NULLS LAST LIMIT 400`, [numeros]);
+    evCodigoAtual = ev.filter((e) => e.numero === p.tracking_number);
     let atual = null;   // o evento mais recente com classe, do código atual
     for (const e of ev) {
       const texto = textoDoEvento(e.descricao); const classe = classificarTexto(texto);
@@ -78,6 +81,14 @@ export async function montarFolha(transacaoId) {
       WHERE (t.transacao_id = $1 OR t.transacao_id = 'avulso:' || $1) AND a.trat_tipo IS NOT NULL AND a.removida_em IS NULL ORDER BY a.em DESC`, [transacaoId]);
   const { rows: tk } = await query(`SELECT id, status_ticket, motivo_problema FROM sppl_ativo_tickets WHERE (transacao_id = $1 OR transacao_id = 'avulso:' || $1) AND status_ticket <> 'fechado' ORDER BY id DESC LIMIT 1`, [transacaoId]);
 
+  // Jornada do pedido (pedido → código → coleta → entrega): datas como na aba Prazos; os dias úteis vêm de monit_dias_uteis (mesma função da classificação)
+  const tPed = p.order_created_at ?? p.criado_dv ?? p.cadastrado_em; const tCod = p.tracking_number ? p.shipped_at : null;
+  const tMov = p.numero_17t ? primeiroMovimento(evCodigoAtual, tCod) : null;
+  const ultimoEv = evCodigoAtual.reduce((mx, e) => (e.ocorreu_em && (!mx || new Date(e.ocorreu_em) > new Date(mx)) ? e.ocorreu_em : mx), null);
+  const tEnt = p.delivered_at ?? (p.ultimo_status === 'Delivered' ? ultimoEv : null);
+  const { rows: [du] } = await query(`SELECT monit_dias_uteis($1::timestamptz, coalesce($2::timestamptz, now())) AS ped_cod, monit_dias_uteis($2::timestamptz, coalesce($3::timestamptz, now())) AS cod_mov`, [tPed, tCod, tMov]);
+  const jornada = montarJornada({ pedido: tPed, codigo: tCod, coleta: tMov, entrega: tEnt, diasUteis: { ped_cod: du?.ped_cod, cod_mov: du?.cod_mov } });
+
   const dados = m ? enriquecer({ ...m, pedido_id: m.transacao_id }) : null;
   return {
     pedido: {
@@ -93,6 +104,7 @@ export async function montarFolha(transacaoId) {
       calculado_em: m.calculado_em,
     },
     em_aberto: Boolean(m),
+    jornada,
     codigos: [...codigos.values()],
     eventos,
     tratativas: trat,

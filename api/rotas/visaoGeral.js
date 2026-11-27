@@ -193,14 +193,14 @@ const sqlMedidasCs = (F) => `
            extract(epoch FROM (s.primeiro_toque_humano_em - s.criado_em)) / 3600.0
     FROM email_ia.suporte_escalado s
     LEFT JOIN area_cliente ac ON ac.email = lower(s.remetente_email)
-    WHERE s.primeiro_toque_humano_em >= $1 AND s.primeiro_toque_humano_em < $2 AND s.primeiro_toque_humano_em >= s.criado_em
+    WHERE s.primeiro_toque_humano_em >= $1 AND s.primeiro_toque_humano_em < $2 AND s.primeiro_toque_humano_em >= s.criado_em AND s.origem IS DISTINCT FROM 'equipe'   -- 143: ticket iniciado pela equipe não entra
       AND date_trunc('minute', s.primeiro_toque_humano_em) NOT IN (SELECT * FROM lote_inicio)${F.FC('s.remetente_email')}
     UNION ALL
     SELECT coalesce(ac.area_problema, 'sem_area'), 'humano_resolve',
            extract(epoch FROM (s.finalizado_em - s.criado_em)) / 3600.0
     FROM email_ia.suporte_escalado s
     LEFT JOIN area_cliente ac ON ac.email = lower(s.remetente_email)
-    WHERE s.finalizado_em >= $1 AND s.finalizado_em < $2 AND s.finalizado_em >= s.criado_em
+    WHERE s.finalizado_em >= $1 AND s.finalizado_em < $2 AND s.finalizado_em >= s.criado_em AND s.origem IS DISTINCT FROM 'equipe'   -- 143: idem
       AND date_trunc('minute', s.finalizado_em) NOT IN (SELECT * FROM lote_final)${F.FC('s.remetente_email')}
   )
   SELECT medida, area, count(*)::int AS casos,
@@ -471,7 +471,7 @@ async function coletarVisaoGeral(p, comparar, filtros = {}) {
              count(*) FILTER (WHERE now() - criado_em > interval '3 days' AND now() - criado_em <= interval '7 days')::int AS d3_7,
              count(*) FILTER (WHERE now() - criado_em > interval '7 days')::int AS mais_7d
       FROM email_ia.suporte_escalado
-      WHERE status IN ('pendente', 'pendente_recorrencia', 'iniciado', 'em_analise', 'esperando_resposta')${FC('remetente_email')}`),
+      WHERE status IN ('pendente', 'pendente_recorrencia', 'iniciado', 'em_analise', 'esperando_resposta') AND origem IS DISTINCT FROM 'equipe'${FC('remetente_email')}`),
 
     f5: query(`SELECT count(*) FILTER (WHERE reaberturas > 0)::int AS reabertos,
                       count(*) FILTER (WHERE status = 'resolvido' OR reaberturas > 0)::int AS resolvidos

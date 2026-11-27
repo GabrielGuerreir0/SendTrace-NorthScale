@@ -493,7 +493,8 @@ export default async function rotasSuporteEscaladoFicha(app) {
     await exigirLeitura(req, req.params.id);
     const { rows } = await query(
       `SELECT * FROM (
-         SELECT s.criado_em AS quando, 'Sistema' AS ator, 'chegada' AS tipo, 'Ticket chegou' AS titulo,
+         SELECT s.criado_em AS quando, CASE WHEN s.origem = 'equipe' THEN coalesce(s.iniciado_por, 'Equipe') ELSE 'Sistema' END AS ator, 'chegada' AS tipo,
+                CASE WHEN s.origem = 'equipe' THEN 'Ticket aberto pela equipe' ELSE 'Ticket chegou' END AS titulo,
                 concat_ws(' · ', 'Tag: ' || s.tag_motivo, 'Prioridade: ' || s.prioridade_nivel) AS detalhe
            FROM email_ia.suporte_escalado s WHERE s.id = $1
          UNION ALL
@@ -528,6 +529,11 @@ export default async function rotasSuporteEscaladoFicha(app) {
          SELECT r.enviado_em, coalesce(b.nome, 'Agente'), 'resposta_agente', 'Agente respondeu ao cliente', r.assunto
            FROM email_ia.respostas_agente r LEFT JOIN email_ia.suporte_escalado_boards b ON b.id = r.board_id
           WHERE r.caso_id IN (SELECT id FROM email_ia.suporte_escalado WHERE id = $1 OR ticket_mae_id = $1)
+         UNION ALL
+         SELECT q.enviado_em, coalesce(q.criado_por, 'Equipe'), 'email_equipe', 'Equipe enviou e-mail ao cliente',   -- 143: Novo ticket (não passa por respostas_agente)
+                concat_ws(' · ', q.assunto, 'Modelo: ' || q.modelo_nome, 'Pedido: ' || q.numero_pedido)
+           FROM email_ia.suporte_equipe_envios q
+          WHERE q.status = 'enviado' AND q.caso_id IN (SELECT id FROM email_ia.suporte_escalado WHERE id = $1 OR ticket_mae_id = $1)
          UNION ALL
          (SELECT e.data_email, coalesce(s.nome, s.remetente_email), 'cliente', 'Cliente enviou um e-mail', e.assunto
             FROM email_ia.suporte_escalado s

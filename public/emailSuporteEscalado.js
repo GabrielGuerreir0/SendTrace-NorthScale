@@ -1036,7 +1036,7 @@ const ROTULO_CAMPO = {
   novo_rastreio: 'Novo número de rastreio', responsavel_board_id: 'Responsável (logística)', status_ajuda: 'Status de ajuda',
   agente: 'Agente responsável alterado', mesclagem: 'Tickets mesclados', comissao: 'Comissão',
 };
-const ICONE_ATIVIDADE = { chegada: '📥', coluna: '🔀', atribuicao: '👤', nota: '📝', ajuda: '🆘', resposta_agente: '✉️', cliente: '💬', propriedade: '✏️' };
+const ICONE_ATIVIDADE = { chegada: '📥', coluna: '🔀', atribuicao: '👤', nota: '📝', ajuda: '🆘', resposta_agente: '✉️', email_equipe: '📤', cliente: '💬', propriedade: '✏️' };
 
 async function carregarAtividades(casoId, container) {
   try {

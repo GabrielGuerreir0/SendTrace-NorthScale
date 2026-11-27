@@ -23,7 +23,7 @@ export const CTE_APOIO = `
         FROM sppl_ativo_envios v JOIN tk ON tk.id = v.ticket_id WHERE v.enviado_em IS NOT NULL
       UNION ALL
       SELECT tk.pedido_id, coalesce(nullif(btrim(a.trat_modelo), ''), a.trat_assunto, 'E-mail enviado ao cliente'), a.em
-        FROM sppl_ativo_acoes a JOIN tk ON tk.id = a.ticket_id WHERE a.trat_tipo = 'email_cliente' AND a.removida_em IS NULL) x
+        FROM sppl_ativo_acoes a JOIN tk ON tk.id = a.ticket_id WHERE a.trat_tipo = 'email_cliente' AND a.removida_em IS NULL AND coalesce(a.detalhe->>'via_sistema', '') <> 'true') x
      GROUP BY 1),
   tr AS (
     SELECT tk.pedido_id, count(*)::int AS n, max(a.em) AS ultima_em, (array_agg(a.por ORDER BY a.em DESC))[1] AS ultima_por, array_agg(DISTINCT a.trat_tipo) AS tipos

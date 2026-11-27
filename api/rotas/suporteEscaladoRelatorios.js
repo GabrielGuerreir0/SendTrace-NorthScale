@@ -13,7 +13,7 @@ import { query } from '../../server/db.js';
 import { ErroHttp } from '../comum.js';
 import { memo } from '../cacheCurto.js';
 import { lerPeriodo, descreverPeriodo } from '../periodo.js';
-import { SITUACAO_FILA_SQL, MOTIVO_FORA_FILA_SQL } from './suporteEscaladoFila.js';
+import { SITUACAO_FILA_SQL, MOTIVO_FORA_FILA_SQL, ORIGEM_TICKET_SQL } from './suporteEscaladoFila.js';
 
 const HOJE = "(date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')";
 const LIMITE = 20000;
@@ -68,7 +68,10 @@ export default async function rotasSuporteEscaladoRelatorios(app) {
               fi.novo_rastreio, rb.nome AS responsavel_logistica, fi.logistica_atualizado_por, fi.logistica_atualizado_em,
               fi.status_ajuda, fi.ajuda_atualizado_por, fi.ajuda_atualizado_em,
               (SELECT count(*) FROM email_ia.suporte_escalado_ajuda a WHERE a.suporte_escalado_id = s.id)::int AS pedidos_ajuda,
-              s.primeira_resposta_agente_em, s.ultima_resposta_agente_em, s.ultimo_email_cliente_em, v.meta_min, v.primeira_resposta_min, v.primeira_resposta_sla, v.pausado,
+              s.primeira_resposta_agente_em, s.ultima_resposta_agente_em, s.ultimo_email_cliente_em, v.meta_min,
+              ${ORIGEM_TICKET_SQL} AS origem_ticket, s.iniciado_por,   -- 143: o 1º e-mail do ticket iniciado pela equipe não é resposta ao cliente: sem tempo de 1ª resposta
+              CASE WHEN s.origem = 'equipe' THEN NULL ELSE v.primeira_resposta_min END AS primeira_resposta_min,
+              CASE WHEN s.origem = 'equipe' THEN NULL ELSE v.primeira_resposta_sla END AS primeira_resposta_sla, v.pausado,
               ${SITUACAO_FILA_SQL} AS situacao_fila, ${MOTIVO_FORA_FILA_SQL} AS motivo_fora_fila
          FROM email_ia.suporte_escalado s
          LEFT JOIN email_ia.emails e ON e.id = s.email_id
@@ -119,6 +122,7 @@ export default async function rotasSuporteEscaladoRelatorios(app) {
          FROM email_ia.suporte_escalado s
          LEFT JOIN email_ia.suporte_escalado_ficha fi ON fi.suporte_escalado_id = s.id
         WHERE s.ticket_mae_id IS NULL AND s.criado_em >= ${periodo.ini} AND s.criado_em < ${periodo.fim}
+          AND s.origem IS DISTINCT FROM 'equipe'   -- 143: ticket iniciado pela equipe (Novo ticket) não entra nos painéis de tickets que o cliente abriu
           AND ($1::bigint IS NULL OR s.board_id = $1)
         GROUP BY 1, 2, 3, 4, 5`,
       [boardId],
@@ -186,6 +190,7 @@ export default async function rotasSuporteEscaladoRelatorios(app) {
          LEFT JOIN email_ia.suporte_escalado_ficha fi ON fi.suporte_escalado_id = s.id
          LEFT JOIN email_ia.suporte_escalado_boards b ON b.id = s.board_id
         WHERE s.ticket_mae_id IS NULL AND s.criado_em >= ${periodo.ini} AND s.criado_em < ${periodo.fim}
+          AND s.origem IS DISTINCT FROM 'equipe'   -- 143: idem
           AND (s.tag_motivo IN ('reembolso', 'chargeback') OR fi.motivo_contato IN ('Reembolso', 'Chargeback'))
           AND coalesce(fi.tipo_resolucao, '') NOT IN ('Não envolve reembolso', 'Não reembolsado - Fora da garantia')   -- fora do painel: 'Não envolve reembolso' (4º momento, decisão do Lucas, 13/10) e 'Fora da garantia' (5º momento, 19/10: a negativa é regra da empresa, não efetividade do agente)
         GROUP BY 1, 2, 3`,

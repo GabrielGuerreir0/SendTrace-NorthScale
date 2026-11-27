@@ -245,7 +245,7 @@ async function abrirModelos() {
   const dados = r.dados; const aviso = el('p', '', 'cartao-sub'); aviso.setAttribute('role', 'status');
   const desenhar = (selId) => {
     corpo.replaceChildren();
-    corpo.append(el('p', `Marcadores: ${dados.marcadores.map((m) => `{${m}}`).join(' ')}. Cada cliente recebe os dados DELE; marcador desconhecido é recusado ao salvar. A tradução automática ainda não existe: o texto em inglês é editado à mão.`, 'cartao-sub'));
+    corpo.append(el('p', `Marcadores: ${dados.marcadores.map((m) => `{${m}}`).join(' ')}. Cada cliente recebe os dados DELE; marcador desconhecido é recusado ao salvar. "Traduzir para inglês" gera um rascunho do inglês a partir do português (IA, quando configurada): revise antes de salvar.`, 'cartao-sub'));
     const ass = campoTexto('Assinatura padrão ({assinatura})', { valor: dados.assinatura, max: 200, cresce: true }); const bAss = el('button', 'Salvar assinatura', 'btn'); bAss.type = 'button';
     bAss.addEventListener('click', async () => { const g = await api('/api/rastreio/sppl/ativo/assinatura', { metodo: 'PUT', corpo: { assinatura: ass.input.value } }); if (!g.ok) { mensagem(aviso, erroDe(g, 'Não foi possível salvar a assinatura.'), true); return; } dados.assinatura = g.dados.assinatura; mensagem(aviso, 'Assinatura salva.'); });
     const linhaAss = el('div', undefined, 'sppl-acoes'); linhaAss.append(ass.rotulo, bAss); corpo.append(linhaAss);
@@ -268,7 +268,14 @@ async function abrirModelos() {
       const i = dados.modelos.findIndex((x) => x.id === g.dados.id); if (i >= 0) dados.modelos[i] = g.dados; else dados.modelos.push(g.dados);
       desenhar(g.dados.id); mensagem(aviso, 'Modelo salvo.');
     });
-    acoes.append(bSalvar);
+    const bTrad = el('button', 'Traduzir para inglês', 'btn'); bTrad.type = 'button'; bTrad.title = 'Gera um rascunho do inglês americano a partir do português (revise antes de salvar)';
+    bTrad.addEventListener('click', async () => {
+      bTrad.disabled = true; mensagem(aviso, 'Traduzindo…');
+      const g = await api('/api/rastreio/monit/email/traduzir', { metodo: 'POST', corpo: { assunto: aPt.input.value, texto: cPt.area.value } }); bTrad.disabled = false;
+      if (!g.ok) { mensagem(aviso, `${erroDe(g, 'Não foi possível traduzir.')} Escreva o inglês à mão.`, true); return; }
+      aEn.input.value = g.dados.assunto; cEn.area.value = g.dados.corpo; mensagem(aviso, 'Rascunho em inglês gerado por IA: leia e ajuste antes de salvar.');
+    });
+    acoes.append(bTrad, bSalvar);
     if (selId !== '__novo') {
       if (m.de_fabrica) { const bRest = el('button', 'Voltar ao texto original', 'btn'); bRest.type = 'button'; bRest.disabled = !m.editado; bRest.addEventListener('click', async () => {
         const g = await api(`/api/rastreio/sppl/ativo/modelos/${encodeURIComponent(selId)}/restaurar`, { metodo: 'POST', corpo: {} }); if (!g.ok) { mensagem(aviso, erroDe(g, 'Não foi possível restaurar.'), true); return; }

@@ -23,7 +23,7 @@ import { LIMITE_LINHAS, guardar, mimeDe, montar, nomeSeguro, obter } from '../ch
 let clienteAnthropic;
 
 /** null quando a chave não está configurada — os dois handlers tratam isso. */
-function obterClienteAnthropic() {
+export function obterClienteAnthropic() {
   const chave = process.env.ANTHROPIC_API_KEY;
   if (!chave) return null;
   if (!clienteAnthropic) clienteAnthropic = new Anthropic({ apiKey: chave });

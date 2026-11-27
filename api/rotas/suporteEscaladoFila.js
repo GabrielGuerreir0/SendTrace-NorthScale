@@ -30,10 +30,13 @@ const FILTROS_SQL = {
   deducao_min: { col: 'fi.deducao_frascos_usd', op: '>=', num: true }, deducao_max: { col: 'fi.deducao_frascos_usd', op: '<=', num: true },
   valor_reembolsar_min: { col: 'fi.valor_a_reembolsar_usd', op: '>=', num: true }, valor_reembolsar_max: { col: 'fi.valor_a_reembolsar_usd', op: '<=', num: true },
   agente_id: { col: 's.board_id', num: true },   // 5º momento, item 9: filtro por nome do agente (id do board)
+  origem_ticket: { sql: (ph) => `${ORIGEM_TICKET_SQL} = ${ph}` },   // 143: 'equipe' (Novo ticket) × 'cliente' (o cliente abriu)
   situacao_fila: { sql: (ph) => `${SITUACAO_FILA_SQL} = ${ph}` }, motivo_fora_fila: { sql: (ph) => `${MOTIVO_FORA_FILA_SQL} = ${ph}` },   // 20/10: na fila × fora da fila
   ajuda_para_id: { sql: (ph) => `EXISTS (SELECT 1 FROM email_ia.suporte_escalado_ajuda a WHERE a.suporte_escalado_id = s.id AND a.para_board_id = ${ph})`, num: true },
 };
 const ABERTO_SQL = `(s.status IN ${ABERTOS} AND ${ENCERRADO_NA_FICHA})`;
+/* 143: ticket iniciado pela equipe ("Novo ticket") × aberto pelo cliente. Os demais valores de s.origem (NULL, pos_forms_30d, sppl) contam como 'cliente'. */
+export const ORIGEM_TICKET_SQL = `(CASE WHEN s.origem = 'equipe' THEN 'equipe' ELSE 'cliente' END)`;
 
 /* Situação na fila (pedido da Késsia, 20/10): a pergunta única "o ticket está na fila ou fora dela?". Mesma regra da lista e do relatório.
  *   Ag. resposta do agente  = está na fila e o último e-mail é do cliente (ou o agente nunca respondeu)
@@ -119,7 +122,7 @@ export default async function rotasSuporteEscaladoFila(app) {
     const chaveCasos = `${chave}:${q}:${JSON.stringify(Object.keys(FILTROS_SQL).map((k) => req.query[k] ?? ''))}`;
     const [casosRes, resumoRes, hojeRes, slaRes, falhasRes, rankingRes, statusRes, slaEquipeRes] = await Promise.all([
       memo(`${chaveCasos}:casos`, 10_000, () => query(
-        `SELECT s.id, s.remetente_email, s.nome, e.assunto, s.status, s.tag_motivo, s.prioridade_nivel, s.prioridade, s.board_id, s.tier, s.valor_pedido_usd,
+        `SELECT s.id, s.remetente_email, s.nome, e.assunto, s.status, s.tag_motivo, s.prioridade_nivel, ${ORIGEM_TICKET_SQL} AS origem_ticket, s.iniciado_por, s.iniciado_pela_equipe_em, s.prioridade, s.board_id, s.tier, s.valor_pedido_usd,
                 b.nome AS agente, s.email_id, s.iniciado_em, s.finalizado_em, s.alerta_ameaca, s.criado_em, s.ultimo_email_cliente_em, s.primeira_resposta_agente_em, s.ultima_resposta_agente_em,
                 fi.motivo_contato, fi.detalhamento_motivo, fi.tipo_resolucao, fi.status_ticket, fi.motivo_reenvio, fi.status_logistica,
                 fi.responsavel_board_id AS responsavel_logistica_id, fi.status_ajuda, fi.quantidade_reenvio, fi.percentual_reembolso,

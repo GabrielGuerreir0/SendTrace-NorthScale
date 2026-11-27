@@ -6,6 +6,7 @@
 import { $, api, kpiCard, renderTabela, botaoCopiar, debounce, baixarCsv } from './emailComum.js';
 import { n, dataHora } from './format.js';
 import { abrirDetalheEscalado, abrirNoWebmail, ROTULO_TAG, etiquetaTier, rotuloDe, obterOpcoes } from './emailSuporteEscalado.js';
+import { botaoNovoTicket } from './suporteHumanoNovoTicket.js';
 
 let boardId = null;          // id de um board, ou 'todos' (só admin/gestor)
 let boards = [];
@@ -252,6 +253,7 @@ const SITUACOES_FILA = ['Ag. resposta do agente', 'Ag. resposta do cliente', 'Fo
 const MOTIVOS_FORA_FILA = ['Higienização', 'Reembolso direto pela plataforma', 'Fechado/resolvido pelo agente', 'Formulário - sem regra definida (conferir)', 'Finalizado - sem regra definida (conferir)', 'Outro - sem regra definida (conferir)'];
 const FILTROS_LISTA = [
   { chave: 'agente_id', rotulo: 'Agente', opcoes: (o) => (o.equipe ?? []).map((e) => [e.id, e.nome]) },
+  { chave: 'origem_ticket', rotulo: 'Quem abriu o ticket', opcoes: () => [['equipe', 'Iniciado pela equipe'], ['cliente', 'Aberto pelo cliente']] },   // 143: Novo ticket
   { chave: 'tag_motivo', rotulo: 'Motivo (tag automática)', opcoes: () => Object.entries(ROTULO_TAG) },
   { chave: 'motivo_contato', rotulo: 'Motivo do contato', opcoes: (o) => o.motivo_contato },
   { chave: 'detalhamento_motivo', rotulo: 'Detalhamento do motivo', opcoes: (o) => o.detalhamento_motivo },
@@ -323,7 +325,7 @@ const dia = (v) => (v ? String(v).slice(0, 10).split('-').reverse().join('/') : 
 const COLUNAS_RELATORIO = [
   ['Nº do ticket', (r) => `#${r.numero}`], ['Ticket-mãe', (r) => (r.ticket_mae_id ? `#${r.ticket_mae_id}` : '')],
   ['E-mail do cliente', (r) => r.remetente_email], ['Nome', (r) => r.nome], ['Assunto', (r) => r.assunto],
-  ['Agente responsável', (r) => r.agente], ['Status no Kanban', (r) => r.status_kanban],
+  ['Agente responsável', (r) => r.agente], ['Quem abriu o ticket', (r) => (r.origem_ticket === 'equipe' ? `Equipe${r.iniciado_por ? ` (${r.iniciado_por})` : ''}` : 'Cliente')], ['Status no Kanban', (r) => r.status_kanban],
   ['Situação na fila', (r) => r.situacao_fila], ['Motivo de estar fora da fila', (r) => r.motivo_fora_fila],
   ['Escalado em', (r) => dt(r.criado_em)], ['Iniciado em', (r) => dt(r.iniciado_em)], ['Finalizado em', (r) => dt(r.finalizado_em)],
   ['Tag do motivo do contato', (r) => ROTULO_TAG[r.tag_motivo] || ''], ['Prioridade', (r) => (r.prioridade_nivel === 'alta' ? 'Alta' : r.prioridade_nivel === 'media' ? 'Média' : '')],
@@ -521,6 +523,14 @@ async function carregarFila() {
   renderFila();
 }
 
+/** Botão "Novo ticket" (143): a equipe abre um ticket para mandar e-mail a um ou vários clientes. Fica no topo da Fila de respostas. */
+function barraNovoTicket() {
+  const caixa = document.createElement('div');
+  caixa.className = 'esc-fila-abas';
+  caixa.append(botaoNovoTicket({ boardAtual: () => boardId, aoCriar: () => carregarFila() }));
+  return caixa;
+}
+
 /** Ranking anônimo do dia (3º momento, item 5): a posição do agente entre os colegas, só com a quantidade de e-mails respondidos — sem nomes —,
     e o SLA dele comparado com a média do time (menos tempo = melhor). */
 function painelRanking(resumo) {
@@ -648,6 +658,11 @@ function renderFila() {
     linha.append(txt, botaoCopiar(c.remetente_email, { titulo: `Copiar ${c.remetente_email}` }), webmail);
     d.append(linha);
     if (c.nome) { const s2 = document.createElement('small'); s2.textContent = c.nome; d.append(s2); }
+    if (c.origem_ticket === 'equipe') {   // 143: ticket aberto pela equipe (Novo ticket), não pelo cliente
+      const sel = document.createElement('span'); sel.className = 'sppl-selo'; sel.textContent = 'Iniciado pela equipe';
+      sel.title = c.iniciado_por ? `Aberto por ${c.iniciado_por}. Sem prazo de resposta até o cliente responder.` : 'Aberto pela equipe. Sem prazo de resposta até o cliente responder.';
+      d.append(sel);
+    }
     return d;
   };
   const celulaSituacaoFila = (c) => {
@@ -721,7 +736,7 @@ function renderFila() {
     av.textContent = `⚠ ${n(resumo.envios_falhos)} resposta${resumo.envios_falhos > 1 ? 's' : ''} não saiu${resumo.envios_falhos > 1 ? 'ram' : ''} (últimas 48 h). Abra o ticket e use "Tentar de novo".`;
     avisos.push(av);
   }
-  raiz.replaceChildren(seletorPeriodoSla(), painel, ...(resumo.ranking ? [painelRanking(resumo)] : []), ...avisos, barraFiltros, abas, ...(podeSelecionar ? [barraSelecao(linhas)] : []), tabela, ...extras, nota);
+  raiz.replaceChildren(barraNovoTicket(), seletorPeriodoSla(), painel, ...(resumo.ranking ? [painelRanking(resumo)] : []), ...avisos, barraFiltros, abas, ...(podeSelecionar ? [barraSelecao(linhas)] : []), tabela, ...extras, nota);
 }
 
 /** Barra da seleção em massa: transferir os tickets marcados para outro agente de uma vez (item 7). */
@@ -823,7 +838,7 @@ function renderEquipe() {
   const painel = document.createElement('section');
   painel.className = 'kpis kpis--suporte';
   painel.append(
-    kpiCard({ icone: '●', tom: 'finalizado', rotulo: 'Tickets novos', valor: n(e.novos_hoje), nota: `chegaram ${periodo}` }),
+    kpiCard({ icone: '●', tom: 'finalizado', rotulo: 'Tickets novos', valor: n(e.novos_hoje), nota: `chegaram ${periodo}${e.iniciados_equipe_hoje ? ` · ${n(e.iniciados_equipe_hoje)} iniciado(s) pela equipe, fora desta conta` : ''}` }),
     kpiCard({ icone: '●', tom: 'travado', rotulo: 'Clientes que responderam', valor: n(e.clientes_responderam_hoje), nota: `tickets com novo e-mail do cliente ${periodo}` }),
     kpiCard({ icone: '●', tom: 'em_dia', rotulo: 'E-mails respondidos pelos agentes', valor: n(e.agentes_responderam_hoje), nota: `${n(e.agentes_responderam_tickets ?? 0)} tickets · ${periodo} (1ª e 2ª resposta em diante)` }),
     kpiCard({ icone: '●', tom: 'atrasado', rotulo: 'Novos na fila, sem atendimento', valor: n(e.sem_atendimento), nota: 'aguardando a 1ª resposta' }),
